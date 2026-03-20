@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import {
   Sheet,
   SheetContent,
@@ -12,32 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
 import { StatusActions } from "@/components/inbox/StatusActions";
 import { getThreadDetail } from "@/actions/inbox";
-import type { ThreadStatusValue } from "@/components/inbox/thread-status";
 
-interface ThreadMessage {
-  id: string;
-  direction: "INBOUND" | "OUTBOUND" | "SYSTEM";
-  body: string;
-  createdAt: Date;
-}
-
-interface ThreadData {
-  id: string;
-  title: string | null;
-  status: ThreadStatusValue;
-  createdAt: Date;
-  updatedAt: Date;
-  customer: {
-    displayName: string;
-    email: string | null;
-    source: "DISCORD" | "MANUAL" | "API";
-  };
-  assignedTo?: {
-    name: string | null;
-    email: string;
-  } | null;
-  messages: ThreadMessage[];
-}
+type ThreadData = NonNullable<Awaited<ReturnType<typeof getThreadDetail>>>;
 
 interface ThreadDetailSheetProps {
   threadId: string | null;
@@ -59,16 +35,29 @@ export function ThreadDetailSheet({ threadId, onClose }: ThreadDetailSheetProps)
   const [thread, setThread] = useState<ThreadData | null>(null);
   const [loading, startTransition] = useTransition();
 
+  const fetchThread = useCallback(
+    (id: string) => {
+      startTransition(async () => {
+        const data = await getThreadDetail(id);
+        setThread(data);
+      });
+    },
+    []
+  );
+
   useEffect(() => {
     if (!threadId) {
       setThread(null);
       return;
     }
-    startTransition(async () => {
-      const data = await getThreadDetail(threadId);
-      setThread(data as ThreadData | null);
-    });
-  }, [threadId]);
+    fetchThread(threadId);
+  }, [threadId, fetchThread]);
+
+  const handleStatusChange = useCallback(() => {
+    if (threadId) {
+      fetchThread(threadId);
+    }
+  }, [threadId, fetchThread]);
 
   return (
     <Sheet
@@ -101,7 +90,11 @@ export function ThreadDetailSheet({ threadId, onClose }: ThreadDetailSheetProps)
 
             {/* Status actions */}
             <div className="px-4 pb-2">
-              <StatusActions threadId={thread.id} currentStatus={thread.status} />
+              <StatusActions
+                threadId={thread.id}
+                currentStatus={thread.status}
+                onStatusChange={handleStatusChange}
+              />
             </div>
 
             {/* Messages */}
