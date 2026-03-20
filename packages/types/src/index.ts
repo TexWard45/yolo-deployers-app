@@ -12,7 +12,7 @@ export type {
   MessageDirection,
   CustomerSource,
 } from "./prisma-generated/client";
-
+export type * from "./prisma-generated";
 // Prisma generated input/output types and enums
 export type * from "./prisma-generated/models";
 export type * from "./prisma-generated/enums";
