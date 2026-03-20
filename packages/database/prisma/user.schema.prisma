@@ -8,8 +8,7 @@ model User {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  posts                Post[]
-  workspaces           WorkspaceMember[]
-  assignedSupportThreads SupportThread[] @relation("AssignedSupportThreads")
+  posts      Post[]
+  workspaces WorkspaceMember[]
   sessions   Session[]
 }

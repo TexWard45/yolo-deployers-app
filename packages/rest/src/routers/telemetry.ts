@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { createTRPCRouter, publicProcedure } from "../init";
+import { createTRPCRouter, publicProcedure, protectedProcedure } from "../init";
 import type { Prisma } from "@shared/types/prisma";
 
 const ReplayEventSchema = z.object({
@@ -46,7 +46,7 @@ export const telemetryRouter = createTRPCRouter({
       return { ingested: events.length, sessionId };
     }),
 
-  listSessions: publicProcedure
+  listSessions: protectedProcedure
     .input(
       z.object({
         limit: z.number().int().min(1).max(100).default(20),
@@ -72,7 +72,7 @@ export const telemetryRouter = createTRPCRouter({
       return { sessions, nextCursor };
     }),
 
-  getSessionReplay: publicProcedure
+  getSessionReplay: protectedProcedure
     .input(z.object({ sessionId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const [session, events] = await ctx.prisma.$transaction([
@@ -86,7 +86,7 @@ export const telemetryRouter = createTRPCRouter({
       return { session, events };
     }),
 
-  getSessionTimeline: publicProcedure
+  getSessionTimeline: protectedProcedure
     .input(z.object({ sessionId: z.string().min(1) }))
     .query(({ ctx, input }) => {
       return ctx.prisma.sessionTimeline.findMany({
@@ -95,7 +95,7 @@ export const telemetryRouter = createTRPCRouter({
       });
     }),
 
-  getSessionByTraceId: publicProcedure
+  getSessionByTraceId: protectedProcedure
     .input(z.object({ traceId: z.string().min(1) }))
     .query(async ({ ctx, input }) => {
       const links = await ctx.prisma.sessionTraceLink.findMany({

@@ -166,12 +166,11 @@ export async function processSessionEnrichment(sessionId: string): Promise<void>
       await tx.sessionClick.createMany({ data: clickInserts });
     }
 
-    // Upsert trace links for all discovered traceIds
-    for (const traceId of traceIdsFound) {
-      await tx.sessionTraceLink.upsert({
-        where: { sessionId_traceId: { sessionId, traceId } },
-        update: {},
-        create: { sessionId, traceId },
+    // Batch-insert trace links — skipDuplicates handles the unique(sessionId, traceId) constraint
+    if (traceIdsFound.size > 0) {
+      await tx.sessionTraceLink.createMany({
+        data: [...traceIdsFound].map((traceId) => ({ sessionId, traceId })),
+        skipDuplicates: true,
       });
     }
   });
