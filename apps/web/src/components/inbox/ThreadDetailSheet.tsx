@@ -14,7 +14,6 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
 import { getThreadDetail, sendReply } from "@/actions/inbox";

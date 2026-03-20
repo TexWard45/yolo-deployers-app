@@ -45,7 +45,9 @@ export async function createManualInboundMessage(data: {
   }
 }
 
-export async function getThreadDetail(threadId: string) {
+export async function getThreadDetail(threadId: string): Promise<Awaited<
+  ReturnType<ReturnType<typeof createCaller>["thread"]["getById"]>
+> | null> {
   const session = await getSession();
   if (!session) return null;
 

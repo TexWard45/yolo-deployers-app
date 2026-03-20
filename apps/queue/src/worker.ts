@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { NativeConnection, Worker } from "@temporalio/worker";
 import * as activities from "./activities/index.js";
 import { temporalConfig } from "./config.js";
+import { startDiscordBot } from "./discord-bot.js";
 
 function resolveWorkflowsPath(): string {
   const distPath = fileURLToPath(new URL("./workflows/index.js", import.meta.url));
@@ -29,6 +30,12 @@ async function runWorker(): Promise<void> {
   console.log(
     `Queue worker listening on ${temporalConfig.address} (namespace=${temporalConfig.namespace}, taskQueue=${temporalConfig.taskQueue})`
   );
+
+  // Start Discord bot if token is configured
+  const discordToken = process.env.DISCORD_BOT_TOKEN;
+  if (discordToken) {
+    startDiscordBot(discordToken);
+  }
 
   await worker.run();
 }
