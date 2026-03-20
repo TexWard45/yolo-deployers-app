@@ -165,14 +165,14 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 8 — CI + Remaining Adapters + Polish `[STATUS: NOT STARTED]`
+## Phase 8 — CI + Remaining Adapters + Polish `[STATUS: COMPLETE]`
 
 ### Tasks
 
-- [ ] Create `.github/workflows/build-codex.yml` — Follow build-queue.yml pattern
-- [ ] Create remaining adapters: gitlab, bitbucket, azure-devops, archive (full implementations)
-- [ ] Modify `apps/codex/src/adapters/factory.ts` — Wire all adapters
-- [ ] Modify `CLAUDE.md` — Document codex architecture, commands, dependency flow
+- [x] Create `.github/workflows/build-codex.yml` — Follow build-queue.yml pattern
+- [x] Create remaining adapters: gitlab, bitbucket, azure-devops, archive (full implementations)
+- [x] Modify `apps/codex/src/adapters/factory.ts` — Wire all adapters (already done in Phase 1)
+- [x] Modify `CLAUDE.md` — Document codex architecture, commands, dependency flow
 
 ---
 

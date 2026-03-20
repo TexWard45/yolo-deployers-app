@@ -38,6 +38,12 @@ apps/* → @shared/rest + @shared/database + @shared/types + @shared/env
 @shared/types → stands alone (no internal deps)
 ```
 
+### Apps
+
+- **`@app/web`** — Next.js 16 web app with tRPC + REST API surface
+- **`@app/queue`** — Temporal worker for general workflows (greetings, etc.)
+- **`@app/codex`** — Temporal worker for codebase indexing + search pipeline
+
 ### Queue Type Consistency
 
 - `apps/queue` must import domain types from `@shared/types` (`packages/types`) and never duplicate model/input types locally.
@@ -51,6 +57,50 @@ apps/* → @shared/rest + @shared/database + @shared/types + @shared/env
 - Register workflow exports centrally in `apps/queue/src/workflows/index.ts`.
 - Register workflow names centrally in `apps/queue/src/workflows/registry.ts`.
 - Register activity exports centrally in `apps/queue/src/activities/index.ts`.
+
+### Codex (Codebase Reader) Architecture
+
+`apps/codex` is a Temporal worker that ingests source code, parses it via Tree-sitter AST, generates vector embeddings, and powers hybrid search.
+
+```
+apps/codex/src/
+  adapters/           # Source adapters (GitHub, GitLab, Bitbucket, Azure DevOps, local git, archive)
+  parser/             # Tree-sitter AST parser + per-language queries
+  embedder/           # Batch embedding with contextual headers
+  workflows/          # Temporal workflows (sync-repo)
+  activities/         # Temporal activities (clone, parse, embed, cleanup, list-files, sync-status)
+  worker.ts           # Temporal worker entry point
+  config.ts           # Env loading from @shared/env/codex
+  client.ts           # Manual workflow trigger script
+```
+
+**Key constraints:**
+- Workflows can't import `@shared/database` (Temporal sandboxing). All DB ops in activities only.
+- Search logic lives in `packages/rest/src/routers/codex/` (not in apps/codex) — uses `ctx.prisma`.
+- Embedding/tsvector writes use `prisma.$executeRaw` with `::vector` cast.
+- `codexEnv` from `@shared/env/codex` provides all Codex-specific env vars.
+
+**Source adapters:** GitHub, GitLab, Bitbucket, Azure DevOps extend `GitAdapter` (shared `simple-git` base). LocalGit also extends `GitAdapter`. Archive downloads and extracts ZIP/tar.gz archives (no git history).
+
+**Codex tRPC procedures** (in `packages/rest/src/routers/codex/router.ts`):
+- `codex.repository.*` — CRUD + sync trigger for repositories
+- `codex.search` — hybrid search (semantic + keyword + symbol with RRF fusion)
+- `codex.chunk.*` — chunk retrieval
+
+**Codex REST endpoints** (in `apps/web/src/app/api/rest/codex/`):
+- `/api/rest/codex/repository` — list/create repositories
+- `/api/rest/codex/repository/[id]` — get/delete repository
+- `/api/rest/codex/repository/[id]/sync` — trigger sync
+- `/api/rest/codex/search` — hybrid search
+- `/api/rest/codex/chunk/[id]` — get chunk detail
+- `/api/rest/codex/repository/[id]/files` — list files
+
+**Codex frontend pages** (in `apps/web/src/app/workspace/[slug]/codex/`):
+- `/codex` — dashboard with repo list
+- `/codex/repository/new` — add repo form
+- `/codex/repository/[id]` — repo detail + sync actions
+- `/codex/search` — search interface
+- `/codex/chunk/[id]` — chunk viewer
 
 ### Environment Management
 
@@ -138,6 +188,8 @@ Each route handler calls tRPC procedures internally via `createCaller` — type-
 npm run dev            # start all apps (turbopack)
 npm run build          # build everything
 npm run build --workspace @app/queue  # build queue worker only
+npm run build --workspace @app/codex  # build codex worker only
+npm run dev:codex                     # start codex worker (dev mode)
 npm run db:generate    # regenerate Prisma types → packages/types/src/prisma-generated/
 npm run db:push        # push schema to DB (no migration file)
 npm run db:migrate     # create + apply migration
@@ -149,7 +201,8 @@ npm test               # run tests
 
 - `build-web.yml` validates web CI.
 - `build-queue.yml` validates queue CI.
-- Queue CI must run `db:generate`, `type-check`, `lint`, and `build --workspace @app/queue`.
+- `build-codex.yml` validates codex CI.
+- Queue/Codex CI must run `db:generate`, `type-check`, `lint`, and `build --workspace @app/<name>`.
 
 ## Adding a New App
 
