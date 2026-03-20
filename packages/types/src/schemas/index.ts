@@ -56,3 +56,101 @@ export type CreatePostInput = z.infer<typeof CreatePostSchema>;
 
 // ── Codex ──────────────────────────────────────────────────────────
 export * from "./codex";
+
+// ── Inbox / Threads ────────────────────────────────────────────────
+export const ThreadStatusSchema = z.enum([
+  "NEW",
+  "WAITING_REVIEW",
+  "WAITING_CUSTOMER",
+  "ESCALATED",
+  "IN_PROGRESS",
+  "CLOSED",
+]);
+
+export type ThreadStatusInput = z.infer<typeof ThreadStatusSchema>;
+
+export const CustomerSourceSchema = z.enum(["DISCORD", "MANUAL", "API"]);
+
+export type CustomerSourceInput = z.infer<typeof CustomerSourceSchema>;
+
+export const MessageDirectionSchema = z.enum(["INBOUND", "OUTBOUND", "SYSTEM"]);
+
+export type MessageDirectionInput = z.infer<typeof MessageDirectionSchema>;
+
+export const ListThreadsSchema = z.object({
+  workspaceId: z.string(),
+  status: ThreadStatusSchema.optional(),
+});
+
+export type ListThreadsInput = z.infer<typeof ListThreadsSchema>;
+
+export const GetThreadByIdSchema = z.object({
+  threadId: z.string(),
+});
+
+export type GetThreadByIdInput = z.infer<typeof GetThreadByIdSchema>;
+
+export const UpdateThreadStatusSchema = z.object({
+  threadId: z.string(),
+  status: ThreadStatusSchema,
+});
+
+export type UpdateThreadStatusInput = z.infer<typeof UpdateThreadStatusSchema>;
+
+export const AssignThreadSchema = z.object({
+  threadId: z.string(),
+  assignedToId: z.string().nullable(),
+});
+
+export type AssignThreadInput = z.infer<typeof AssignThreadSchema>;
+
+export const ListThreadMessagesSchema = z.object({
+  threadId: z.string(),
+});
+
+export type ListThreadMessagesInput = z.infer<typeof ListThreadMessagesSchema>;
+
+export const CreateOutgoingDraftSchema = z.object({
+  threadId: z.string(),
+  body: z.string().min(1, "Message body is required"),
+});
+
+export type CreateOutgoingDraftInput = z.infer<typeof CreateOutgoingDraftSchema>;
+
+export const UpsertExternalCustomerSchema = z.object({
+  workspaceId: z.string(),
+  source: CustomerSourceSchema,
+  externalCustomerId: z.string().min(1),
+  displayName: z.string().min(1),
+  avatarUrl: z.string().url().optional(),
+  email: z.string().email().optional(),
+});
+
+export type UpsertExternalCustomerInput = z.infer<typeof UpsertExternalCustomerSchema>;
+
+export const UpsertExternalThreadSchema = z.object({
+  workspaceId: z.string(),
+  customerId: z.string(),
+  source: CustomerSourceSchema,
+  externalThreadId: z.string().min(1),
+  title: z.string().optional(),
+  status: ThreadStatusSchema.optional(),
+});
+
+export type UpsertExternalThreadInput = z.infer<typeof UpsertExternalThreadSchema>;
+
+export const IngestExternalMessageSchema = z.object({
+  workspaceId: z.string(),
+  source: CustomerSourceSchema,
+  externalCustomerId: z.string().min(1),
+  externalThreadId: z.string().min(1),
+  customerDisplayName: z.string().min(1),
+  customerAvatarUrl: z.string().url().optional(),
+  customerEmail: z.string().email().optional(),
+  messageBody: z.string().min(1, "Message is required"),
+  externalMessageId: z.string().optional(),
+  title: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export type IngestExternalMessageInput = z.infer<typeof IngestExternalMessageSchema>;

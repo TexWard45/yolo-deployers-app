@@ -16,6 +16,12 @@ export type {
   CodexChunkType,
   CodexEmbeddingStatus,
   CodexSymbolRefKind,
+  Customer,
+  SupportThread,
+  ThreadMessage,
+  ThreadStatus,
+  MessageDirection,
+  CustomerSource,
 } from "./prisma-generated/client";
 
 // Prisma generated input/output types and enums

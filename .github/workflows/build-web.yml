@@ -33,5 +33,5 @@ jobs:
       - name: Build Web
         run: npm run build
 
-      - name: Test
-        run: npm run test
+      - name: Unit Tests (Web)
+        run: npm run test -w @app/web

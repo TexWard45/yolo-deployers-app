@@ -4,6 +4,9 @@ import { userRouter } from "./routers/user";
 import { postRouter } from "./routers/post";
 import { workspaceRouter } from "./routers/workspace";
 import { codexRouter } from "./routers/codex";
+import { threadRouter } from "./routers/thread";
+import { messageRouter } from "./routers/message";
+import { intakeRouter } from "./routers/intake";
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -11,6 +14,9 @@ export const appRouter = createTRPCRouter({
   post: postRouter,
   workspace: workspaceRouter,
   codex: codexRouter,
+  thread: threadRouter,
+  message: messageRouter,
+  intake: intakeRouter,
 });
 
 export type AppRouter = typeof appRouter;
