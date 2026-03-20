@@ -11,8 +11,10 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members WorkspaceMember[]
-  posts   Post[]
+  members        WorkspaceMember[]
+  posts          Post[]
+  customers      Customer[]
+  supportThreads SupportThread[]
 }
 
 model WorkspaceMember {

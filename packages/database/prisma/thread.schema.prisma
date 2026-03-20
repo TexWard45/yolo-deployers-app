@@ -1,0 +1,51 @@
+enum ThreadStatus {
+  NEW
+  WAITING_REVIEW
+  WAITING_CUSTOMER
+  ESCALATED
+  IN_PROGRESS
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+  SYSTEM
+}
+
+model SupportThread {
+  id               String         @id @default(cuid())
+  workspaceId      String
+  workspace        Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  customerId       String
+  customer         Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  source           CustomerSource
+  externalThreadId String
+  title            String?
+  status           ThreadStatus   @default(NEW)
+  assignedToId     String?
+  assignedTo       User?          @relation("AssignedSupportThreads", fields: [assignedToId], references: [id])
+  lastMessageAt    DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  messages ThreadMessage[]
+
+  @@unique([workspaceId, source, externalThreadId])
+  @@index([workspaceId, status, updatedAt])
+  @@index([customerId, createdAt])
+}
+
+model ThreadMessage {
+  id                String           @id @default(cuid())
+  threadId          String
+  thread            SupportThread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  direction         MessageDirection
+  body              String
+  externalMessageId String?
+  metadata          Json?
+  createdAt         DateTime         @default(now())
+
+  @@unique([threadId, externalMessageId])
+  @@index([threadId, createdAt])
+}

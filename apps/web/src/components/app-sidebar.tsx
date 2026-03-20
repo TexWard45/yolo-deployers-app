@@ -4,6 +4,7 @@ import {
   LayoutDashboard,
   Users,
   FileText,
+  Inbox,
   Settings,
   Shield,
   ChevronUp,
@@ -34,6 +35,7 @@ import { logout } from "@/actions/auth";
 
 const navItems = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
+  { title: "Inbox", href: "/inbox", icon: Inbox },
   { title: "Users", href: "/users", icon: Users },
   { title: "Posts", href: "/posts", icon: FileText },
   { title: "Settings", href: "/settings", icon: Settings },
