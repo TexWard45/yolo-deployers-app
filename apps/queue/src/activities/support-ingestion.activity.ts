@@ -5,8 +5,6 @@ export async function ingestSupportMessage(input: IngestSupportMessageInput): Pr
   conversationId: string;
   isNew: boolean;
 }> {
-  console.log("[activity:ingestSupportMessage] input:", JSON.stringify(input, null, 2));
-
   if (!input.channelConnectionId) {
     throw new Error(`Missing channelConnectionId. Received keys: ${Object.keys(input).join(", ")}`);
   }

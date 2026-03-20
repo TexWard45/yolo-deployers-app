@@ -1,26 +1,40 @@
 import { PrismaClient } from "@shared/types/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
+import pg from "pg";
 
-// In production, DATABASE_URL is injected by the runtime (Doppler, etc.).
-// In local dev, it comes from .env loaded by the app entry point (Next.js / tsx).
-// We do NOT traverse the filesystem here — that pattern is fragile in containers.
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
-function createPrismaClient() {
+function createPrismaClient(): PrismaClient {
   const url = process.env.DATABASE_URL;
   if (!url) {
-    console.warn("WARN: DATABASE_URL is not defined in process.env");
+    throw new Error("DATABASE_URL is not defined in process.env");
   }
-  const adapter = new PrismaPg({ connectionString: url });
+  // Use an explicit pg.Pool so PrismaPg reuses it instead of creating
+  // a new pool on every internal .connect() call.
+  const pool = new pg.Pool({ connectionString: url });
+  const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 }
 
-export const prisma: PrismaClient = globalForPrisma.prisma ?? createPrismaClient();
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+function getPrisma(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+  return globalForPrisma.prisma;
 }
+
+// Eager init when DATABASE_URL is available (normal case with Doppler).
+// Falls back to lazy proxy if env isn't set at import time.
+export const prisma: PrismaClient = process.env.DATABASE_URL
+  ? getPrisma()
+  : new Proxy({} as PrismaClient, {
+      get(_target, prop, receiver) {
+        const client = getPrisma();
+        const value = Reflect.get(client, prop, receiver);
+        return typeof value === "function" ? value.bind(client) : value;
+      },
+    });
 
 export { PrismaClient };

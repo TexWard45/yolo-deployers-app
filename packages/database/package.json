@@ -19,7 +19,8 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.4",
     "@shared/types": "*",
-    "dotenv": "^16.6.1"
+    "dotenv": "^16.6.1",
+    "pg": "^8.13"
   },
   "devDependencies": {
     "@shared/tsconfig": "*",
