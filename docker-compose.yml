@@ -1,0 +1,42 @@
+name: template-project
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mydb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  temporal:
+    image: temporalio/temporal:latest
+    command: server start-dev --ip 0.0.0.0 --ui-ip 0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "7233:7233"
+      - "8233:8233"
+
+  queue:
+    build:
+      context: .
+      dockerfile: apps/queue/Dockerfile
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: template-task-queue
+    restart: unless-stopped
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+volumes:
+  pgdata:
