@@ -9,7 +9,9 @@ import { getSession } from "@/actions/auth";
 export async function createManualInboundMessage(data: {
   workspaceId: string;
   customerName: string;
+  customerExternalId?: string;
   messageBody: string;
+  threadGroupingHint?: string;
 }) {
   const session = await getSession();
   if (!session) {
@@ -18,21 +20,20 @@ export async function createManualInboundMessage(data: {
 
   try {
     const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-    const externalCustomerId = `manual-customer-${data.customerName
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "-")}-${randomUUID()}`;
-    const externalThreadId = `manual-thread-${randomUUID()}`;
+    const normalizedCustomerName = data.customerName.trim().toLowerCase().replace(/\s+/g, "-");
+    const externalCustomerId = data.customerExternalId?.trim().length
+      ? data.customerExternalId.trim()
+      : `manual-customer-${normalizedCustomerName}`;
     const externalMessageId = `manual-message-${randomUUID()}`;
 
     const result = await trpc.intake.ingestExternalMessage({
       workspaceId: data.workspaceId,
       source: "MANUAL",
       externalCustomerId,
-      externalThreadId,
       customerDisplayName: data.customerName,
       messageBody: data.messageBody,
       externalMessageId,
+      threadGroupingHint: data.threadGroupingHint?.trim() || undefined,
       metadata: { source: "manual-ui-intake" },
     });
 
@@ -59,7 +60,11 @@ export async function getThreadDetail(threadId: string): Promise<Awaited<
   }
 }
 
-export async function sendReply(data: { threadId: string; body: string }) {
+export async function sendReply(data: {
+  threadId: string;
+  body: string;
+  inReplyToExternalMessageId?: string;
+}) {
   const session = await getSession();
   if (!session) {
     return { success: false, error: "Not authenticated" } as const;
@@ -70,6 +75,7 @@ export async function sendReply(data: { threadId: string; body: string }) {
     await trpc.message.createOutgoingDraft({
       threadId: data.threadId,
       body: data.body,
+      inReplyToExternalMessageId: data.inReplyToExternalMessageId,
     });
     return { success: true } as const;
   } catch (error) {

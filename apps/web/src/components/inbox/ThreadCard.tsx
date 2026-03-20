@@ -1,8 +1,10 @@
 interface ThreadCardProps {
   id: string;
   title: string | null;
+  summary: string | null;
   customerName: string;
   updatedAt: Date;
+  messageCount: number;
   assigneeName: string | null;
   selected: boolean;
   onClick: () => void;
@@ -27,8 +29,10 @@ function getInitial(name: string): string {
 
 export function ThreadCard({
   title,
+  summary,
   customerName,
   updatedAt,
+  messageCount,
   assigneeName,
   selected,
   onClick,
@@ -53,6 +57,11 @@ export function ThreadCard({
       <p className="mt-1.5 text-sm leading-snug line-clamp-2">
         {title ?? `Thread with ${customerName}`}
       </p>
+      {summary ? (
+        <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+          {summary}
+        </p>
+      ) : null}
 
       {/* Footer */}
       <div className="mt-2.5 flex items-center text-[11px] text-muted-foreground">
@@ -65,7 +74,7 @@ export function ThreadCard({
           </span>
         ) : null}
         <span className="ml-1.5">
-          &bull; {timeAgo(updatedAt)}
+          {messageCount} msgs &bull; {timeAgo(updatedAt)}
         </span>
       </div>
     </button>

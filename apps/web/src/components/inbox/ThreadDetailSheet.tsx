@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -17,6 +18,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
 import { getThreadDetail, sendReply } from "@/actions/inbox";
+import {
+  getDefaultReplySegmentId,
+  getReplyToExternalMessageId,
+  groupMessagesIntoSegments,
+} from "@/components/inbox/message-segments";
 
 type ThreadData = NonNullable<Awaited<ReturnType<typeof getThreadDetail>>>;
 
@@ -45,6 +51,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [loading, startTransition] = useTransition();
   const [replyBody, setReplyBody] = useState("");
   const [sending, startSending] = useTransition();
+  const [activeReplySegmentId, setActiveReplySegmentId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchThread = useCallback((id: string) => {
@@ -62,12 +69,37 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [thread?.messages.length]);
 
+  const segments = useMemo(() => {
+    if (!thread) return [];
+    return groupMessagesIntoSegments(
+      thread.messages.map((message) => ({
+        id: message.id,
+        direction: message.direction,
+        body: message.body,
+        createdAt: new Date(message.createdAt),
+        externalMessageId: message.externalMessageId,
+        inReplyToExternalMessageId: message.inReplyToExternalMessageId,
+      })),
+    );
+  }, [thread]);
+
+  const effectiveActiveReplySegmentId =
+    activeReplySegmentId ?? getDefaultReplySegmentId(segments);
+
+  const activeSegment =
+    segments.find((segment) => segment.id === effectiveActiveReplySegmentId) ?? null;
+  const replyToExternalMessageId = getReplyToExternalMessageId(activeSegment);
+
   function handleSendReply() {
     const body = replyBody.trim();
     if (!body) return;
 
     startSending(async () => {
-      const result = await sendReply({ threadId, body });
+      const result = await sendReply({
+        threadId,
+        body,
+        inReplyToExternalMessageId: replyToExternalMessageId,
+      });
       if (result.success) {
         setReplyBody("");
         fetchThread(threadId);
@@ -119,59 +151,82 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
               </p>
             ) : (
               <div className="flex flex-col gap-3">
-                {thread.messages.map((msg) => {
-                  const isInbound = msg.direction === "INBOUND";
-                  const isOutbound = msg.direction === "OUTBOUND";
-                  return (
-                    <div key={msg.id} className="flex gap-2.5">
-                      {/* Avatar */}
-                      <span
-                        className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                          isInbound
-                            ? "bg-blue-100 text-blue-700"
-                            : isOutbound
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {isInbound
-                          ? getInitial(thread.customer.displayName)
-                          : isOutbound
-                            ? "T"
-                            : "S"}
+                {segments.map((segment, index) => (
+                  <div
+                    key={segment.id}
+                    className={`rounded-lg border ${
+                      effectiveActiveReplySegmentId === segment.id
+                        ? "border-primary bg-accent/20"
+                        : "border-border"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between border-b px-3 py-2 text-left"
+                      onClick={() => setActiveReplySegmentId(segment.id)}
+                    >
+                      <span className="text-xs font-semibold">
+                        Thread {index + 1}
                       </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {segment.messages.length} msgs
+                      </span>
+                    </button>
+                    <div className="space-y-3 px-3 py-3">
+                      {segment.messages.map((msg) => {
+                        const isInbound = msg.direction === "INBOUND";
+                        const isOutbound = msg.direction === "OUTBOUND";
+                        return (
+                          <div key={msg.id} className="flex gap-2.5">
+                            <span
+                              className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                                isInbound
+                                  ? "bg-blue-100 text-blue-700"
+                                  : isOutbound
+                                    ? "bg-emerald-100 text-emerald-700"
+                                    : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {isInbound
+                                ? getInitial(thread.customer.displayName)
+                                : isOutbound
+                                  ? "T"
+                                  : "S"}
+                            </span>
 
-                      {/* Message bubble */}
-                      <div className="flex-1">
-                        <div className="mb-0.5 flex items-center gap-2">
-                          <span className="text-xs font-semibold">
-                            {isInbound
-                              ? thread.customer.displayName
-                              : isOutbound
-                                ? "Team"
-                                : "System"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {timeAgo(new Date(msg.createdAt))}
-                          </span>
-                        </div>
-                        <div
-                          className={`rounded-lg border p-3 ${
-                            isInbound
-                              ? "border-l-2 border-l-blue-500"
-                              : isOutbound
-                                ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
-                                : "border-l-2 border-l-muted-foreground bg-muted/30"
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap text-sm">
-                            {msg.body}
-                          </p>
-                        </div>
-                      </div>
+                            <div className="flex-1">
+                              <div className="mb-0.5 flex items-center gap-2">
+                                <span className="text-xs font-semibold">
+                                  {isInbound
+                                    ? thread.customer.displayName
+                                    : isOutbound
+                                      ? "Team"
+                                      : "System"}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground">
+                                  {timeAgo(new Date(msg.createdAt))}
+                                </span>
+                              </div>
+                              <div
+                                className={`rounded-lg border p-3 ${
+                                  isInbound
+                                    ? "border-l-2 border-l-blue-500"
+                                    : isOutbound
+                                      ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
+                                      : "border-l-2 border-l-muted-foreground bg-muted/30"
+                                }`}
+                              >
+                                <p className="whitespace-pre-wrap text-sm">
+                                  {msg.body}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
                 <div ref={messagesEndRef} />
               </div>
             )}
@@ -179,6 +234,12 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Reply bar - pinned at bottom */}
           <div className="shrink-0 border-t p-3">
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              Reply to{" "}
+              <span className="font-semibold text-foreground">
+                {activeSegment?.label ?? "latest thread"}
+              </span>
+            </p>
             <div className="flex gap-2">
               <textarea
                 className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
@@ -242,6 +303,16 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
               {thread.assignedTo
                 ? thread.assignedTo.name ?? thread.assignedTo.email
                 : "Unassigned"}
+            </p>
+          </div>
+
+          {/* Summary */}
+          <div>
+            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+              Summary
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {thread.summary ?? "No summary yet."}
             </p>
           </div>
 

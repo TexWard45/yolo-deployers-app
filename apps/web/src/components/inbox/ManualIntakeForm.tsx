@@ -26,7 +26,9 @@ export function ManualIntakeForm({ workspaceId }: ManualIntakeFormProps) {
     const form = event.currentTarget;
     const formData = new FormData(form);
     const customerName = String(formData.get("customerName") ?? "").trim();
+    const customerExternalId = String(formData.get("customerExternalId") ?? "").trim();
     const messageBody = String(formData.get("messageBody") ?? "").trim();
+    const threadGroupingHint = String(formData.get("threadGroupingHint") ?? "").trim();
 
     if (!customerName || !messageBody) {
       setError("Customer and message are required");
@@ -37,7 +39,9 @@ export function ManualIntakeForm({ workspaceId }: ManualIntakeFormProps) {
     const result = await createManualInboundMessage({
       workspaceId,
       customerName,
+      customerExternalId: customerExternalId || undefined,
       messageBody,
+      threadGroupingHint: threadGroupingHint || undefined,
     });
 
     if (!result.success) {
@@ -71,12 +75,30 @@ export function ManualIntakeForm({ workspaceId }: ManualIntakeFormProps) {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="customerExternalId">Customer External ID (optional)</Label>
+            <Input
+              id="customerExternalId"
+              name="customerExternalId"
+              placeholder="cust-123 (stable id for grouping)"
+            />
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="messageBody">Incoming message</Label>
             <Textarea
               id="messageBody"
               name="messageBody"
               placeholder="Paste customer message here..."
               rows={4}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="threadGroupingHint">Thread Grouping Hint (optional)</Label>
+            <Input
+              id="threadGroupingHint"
+              name="threadGroupingHint"
+              placeholder="e.g. webhook-delivery-failure"
             />
           </div>
 

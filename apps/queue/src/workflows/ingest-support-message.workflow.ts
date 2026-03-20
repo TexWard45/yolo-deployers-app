@@ -5,19 +5,8 @@ import {
   condition,
   continueAsNew,
 } from "@temporalio/workflow";
+import type { IngestSupportMessageInput } from "@shared/types";
 import type * as activities from "../activities/index.js";
-
-export interface IngestSupportMessageInput {
-  channelConnectionId: string;
-  externalMessageId: string;
-  externalUserId: string;
-  username: string | null;
-  displayName: string | null;
-  body: string;
-  timestamp: string;
-  rawPayload: Record<string, unknown>;
-  externalThreadId: string | null;
-}
 
 /** Signal to push a new inbound message into the workflow for processing. */
 export const inboundMessageSignal = defineSignal<[IngestSupportMessageInput]>("inboundMessage");
