@@ -65,6 +65,7 @@ model CodexRepository {
   // Sync configuration
   syncMode       CodexSyncMode   @default(MANUAL)
   cronExpression String?
+  webhookSecret  String?
   syncStatus     CodexSyncStatus @default(IDLE)
   lastSyncAt     DateTime?
   lastSyncCommit String?

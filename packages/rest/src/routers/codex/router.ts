@@ -13,6 +13,12 @@ import {
 } from "@shared/types";
 import { hybridSearch } from "./search";
 import type { EmbedQueryFn } from "./search";
+import { createCronSchedule, updateCronSchedule, deleteCronSchedule } from "./schedule";
+import { randomBytes } from "node:crypto";
+
+function generateWebhookSecret(): string {
+  return randomBytes(32).toString("hex");
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -65,7 +71,7 @@ const repositoryRouter = createTRPCRouter({
   create: publicProcedure
     .input(CreateCodexRepositorySchema)
     .mutation(async ({ ctx, input }) => {
-      return ctx.prisma.codexRepository.create({
+      const repo = await ctx.prisma.codexRepository.create({
         data: {
           workspaceId: input.workspaceId,
           sourceType: input.sourceType,
@@ -78,6 +84,7 @@ const repositoryRouter = createTRPCRouter({
               : (input.credentials as Prisma.InputJsonValue),
           syncMode: input.syncMode,
           cronExpression: input.cronExpression ?? null,
+          webhookSecret: input.syncMode === "WEBHOOK" ? generateWebhookSecret() : null,
           extensionAllowlist: input.extensionAllowlist,
           pathDenylist: input.pathDenylist,
           maxFileSizeBytes: input.maxFileSizeBytes,
@@ -85,6 +92,12 @@ const repositoryRouter = createTRPCRouter({
           description: input.description ?? null,
         },
       });
+
+      if (input.syncMode === "CRON" && input.cronExpression) {
+        await createCronSchedule(repo.id, input.cronExpression);
+      }
+
+      return repo;
     }),
 
   list: publicProcedure
@@ -129,10 +142,21 @@ const repositoryRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "Repository not found" });
       }
 
-      return ctx.prisma.codexRepository.update({
+      const newSyncMode = rest.syncMode ?? existing.syncMode;
+
+      // Generate a webhook secret when switching to WEBHOOK mode
+      const webhookSecretUpdate =
+        newSyncMode === "WEBHOOK" && !existing.webhookSecret
+          ? { webhookSecret: generateWebhookSecret() }
+          : newSyncMode !== "WEBHOOK" && existing.webhookSecret
+            ? { webhookSecret: null }
+            : {};
+
+      const updated = await ctx.prisma.codexRepository.update({
         where: { id },
         data: {
           ...rest,
+          ...webhookSecretUpdate,
           ...(credentials !== undefined && {
             credentials: credentials === null
               ? Prisma.JsonNull
@@ -140,6 +164,17 @@ const repositoryRouter = createTRPCRouter({
           }),
         },
       });
+      const newCronExpr = rest.cronExpression !== undefined
+        ? rest.cronExpression
+        : existing.cronExpression;
+
+      if (newSyncMode === "CRON" && newCronExpr) {
+        await updateCronSchedule(id, newCronExpr);
+      } else if (existing.syncMode === "CRON" && newSyncMode !== "CRON") {
+        await deleteCronSchedule(id);
+      }
+
+      return updated;
     }),
 
   delete: publicProcedure
@@ -151,6 +186,10 @@ const repositoryRouter = createTRPCRouter({
 
       if (!existing) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Repository not found" });
+      }
+
+      if (existing.syncMode === "CRON") {
+        await deleteCronSchedule(input.id);
       }
 
       await ctx.prisma.codexRepository.delete({ where: { id: input.id } });

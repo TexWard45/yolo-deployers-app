@@ -150,6 +150,25 @@ export default async function RepositoryDetailPage({ params }: RepositoryDetailP
                 <dd className="font-mono">{repository.cronExpression}</dd>
               </div>
             )}
+            {repository.syncMode === "WEBHOOK" && repository.webhookSecret && (
+              <>
+                <div className="md:col-span-2">
+                  <dt className="font-medium text-muted-foreground">Webhook URL</dt>
+                  <dd className="mt-1 break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+                    {`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/api/rest/codex/webhook/${repository.id}`}
+                  </dd>
+                </div>
+                <div className="md:col-span-2">
+                  <dt className="font-medium text-muted-foreground">Webhook Secret</dt>
+                  <dd className="mt-1 break-all rounded bg-muted px-2 py-1 font-mono text-xs">
+                    {repository.webhookSecret}
+                  </dd>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Configure this secret in your source provider&apos;s webhook settings.
+                  </p>
+                </div>
+              </>
+            )}
             <div>
               <dt className="font-medium text-muted-foreground">Extension Allowlist</dt>
               <dd>
