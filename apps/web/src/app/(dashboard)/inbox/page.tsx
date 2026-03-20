@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { getSession } from "@/actions/auth";
-import { ManualIntakeForm } from "@/components/inbox/ManualIntakeForm";
 import { ThreadList } from "@/components/inbox/ThreadList";
 
 export default async function InboxPage() {
@@ -25,18 +24,5 @@ export default async function InboxPage() {
     workspaceId: workspace.id,
   });
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Inbox</h2>
-        <p className="text-muted-foreground">
-          Track customer threads and update handling status.
-        </p>
-      </div>
-
-      <ManualIntakeForm workspaceId={workspace.id} />
-
-      <ThreadList threads={threads} />
-    </div>
-  );
+  return <ThreadList threads={threads} />;
 }
