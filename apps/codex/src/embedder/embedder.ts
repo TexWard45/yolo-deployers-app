@@ -23,6 +23,8 @@ export interface EmbeddingResult {
 const MAX_BATCH_SIZE = 2048;
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
+/** Conservative character limit — ~4 chars per token, 8192 token max */
+const MAX_INPUT_CHARS = 30000;
 
 /**
  * Generate embeddings for a batch of texts using OpenAI's embedding API.
@@ -78,7 +80,7 @@ async function embedBatch(
 
   const response = await openai.embeddings.create({
     model: codexConfig.embedding.model,
-    input: batch.map((r) => r.text),
+    input: batch.map((r) => r.text.length > MAX_INPUT_CHARS ? r.text.slice(0, MAX_INPUT_CHARS) : r.text),
     dimensions: codexConfig.embedding.dimensions,
   });
 
