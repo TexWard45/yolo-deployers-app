@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+.turbo
+.env
+.env.local
+*.tsbuildinfo
+packages/types/src/prisma-generated/
+packages/types/src/prisma-generated/**

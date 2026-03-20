@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create PR Summary"
+  short_description: "Open/merge PRs to main with <author>/<feature> branch naming."
+  default_prompt: "Create or update a PR targeting main using <author>/<feature> branch naming, with a concise summary, validation checklist, and Mermaid diagram. Merge when explicitly requested."

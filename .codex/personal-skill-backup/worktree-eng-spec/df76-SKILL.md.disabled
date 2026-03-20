@@ -1,0 +1,525 @@
+---
+name: eng-spec
+description: Generate Jobs-to-be-Done (JTBD) documents and Engineering Specs matching established repo patterns. Supports three modes — full (both docs), --jtbd-only, --spec-only — plus master spec generation for large multi-workstream features. Enforces JTBD clarity first (user goals, current workflow, why hard/not possible), then architecture and implementation.
+---
+
+# Engineering Spec Generator
+
+You generate high-quality Jobs-to-be-Done (JTBD) documents and Engineering Specs that match the established patterns in this repo (125+ eng specs, 29+ JTBD docs).
+
+## Core Principle: JTBD Before Design
+
+Before proposing implementation, make the user problem unambiguous:
+- What the end user is trying to do right now
+- Why it is hard, slow, risky, or impossible today
+- What “good” looks like in user terms (not just system terms)
+
+If this is unclear, ask more questions before writing the spec.
+
+## Input Format
+
+User provides one of:
+- `/eng-spec <feature-name>` — Full mode: generates both JTBD + Engineering Spec
+- `/eng-spec --jtbd-only <feature-name>` — JTBD document only
+- `/eng-spec --spec-only <feature-name>` — Engineering Spec only
+- `/eng-spec --master <feature-name>` — Master Spec for 5+ workstream features
+
+Optional flags:
+- `--app <app-name>` — Force placement in a specific app's docs folder (e.g., `--app livekit-worker`)
+- `--dir <path>` — Force output to a specific directory
+
+## Execution Steps
+
+Follow these 6 steps in order. Never skip steps 1-2.
+
+---
+
+### Step 1: Socratic Discovery
+
+**Before writing anything**, batch-ask the user clarifying questions. Present them as a numbered list and wait for answers.
+
+Ask about:
+
+1. **Problem**: What specific problem are we solving? Who experiences it?
+2. **Current workflow (as-is)**: What are users trying to do today, step by step?
+3. **Pain/friction**: Exactly where does the current workflow break? Why is it hard or not possible?
+4. **Outcome (to-be)**: What does success look like for the end user after this ships?
+5. **Scope**: Is this a new feature, enhancement, migration, or fix? How many services are touched?
+6. **Architecture**: Which apps/services are involved? (`evals-web`, `evals-queue`, `livekit-worker`, other?)
+7. **Constraints**: Are there backward compatibility requirements? Feature flags? Migration concerns?
+8. **Prior art**: Is there an existing spec, PRD, or Slack thread with context? (Ask for links)
+9. **Size estimate**: Roughly how many workstreams/PRs do you expect? (Determines split vs combined, master spec)
+
+Adapt questions based on context — if the user already provided detailed context, skip questions they've answered. But always confirm scope and architecture.
+
+**Do not proceed until the user answers.**
+
+After answers, restate a short **Discovery Summary** and ask for confirmation:
+- Primary user/persona
+- Current workflow
+- Why current behavior fails
+- Target outcome
+- Confirmed in-scope services
+
+---
+
+### Step 2: Codebase Exploration
+
+Search the codebase to ground the spec in reality. Every spec MUST cite real `file:line` references.
+
+#### 2a. Check for existing documentation
+
+```
+Search in these locations:
+- docs/<feature-name>/
+- docs/engineering-specs/<feature-name>*
+- apps/*/docs/<feature-name>*
+- product-specs/<feature-name>*
+```
+
+If existing docs are found, inform the user and ask whether to extend, replace, or create alongside them.
+
+#### 2b. Explore related code
+
+Based on the user's answers in Step 1, search for:
+- **Data models**: Search Prisma schemas (`*.prisma`) for related models
+- **Seed surfaces**: If Prisma models change in `evals-web`, inspect `apps/evals-web/prisma/seeds/seed.ts` and `apps/evals-web/prisma/seeds/factories/*` for local/staging fixture impact
+- **API routes**: Search tRPC routers, REST routes, ISC routes for related endpoints
+- **Services**: Search `*.service.ts`, `*.utils.ts` for related business logic
+- **Worker code**: Search `apps/livekit-worker/` for related Python modules
+- **Queue activities**: Search `apps/evals-queue/` for related Temporal workflows/activities
+- **UI components**: Search `apps/evals-web/src/components/` for related React components
+
+#### 2c. Collect citations
+
+Build a list of `file:line` references for every piece of existing code that will be modified or extended. These citations go into the spec.
+
+**How to capture reliable line numbers:**
+- Use `Grep` with `-n` flag to get line numbers: search for the function/class/model name and note the line
+- Use `Read` tool with specific line ranges to confirm context around the match
+- If you can't confidently determine a line number (e.g., file is generated or changes frequently), cite `file:(line TBD)` rather than guessing
+- Never fabricate line numbers — an incorrect citation is worse than no citation
+
+---
+
+### Step 3: Determine File Placement
+
+Choose where to put the output files based on these rules:
+
+| Condition | Location | Example |
+|-----------|----------|---------|
+| Cross-service feature (2+ apps) | `docs/<feature-name>/` | `docs/sip-endpoint-testing/` |
+| Standalone engineering spec | `docs/engineering-specs/` | `docs/engineering-specs/sms-bridge-master-spec.md` |
+| Single-service feature | `apps/<app>/docs/` | `apps/livekit-worker/docs/turn-detection.md` |
+| User specified `--dir` | Use provided path | Whatever they said |
+
+**File naming:**
+- JTBD: `jobs-to-be-done.md`
+- Engineering Spec: `engineering-spec.md`
+- Combined (small features): `<feature-name>-spec.md`
+- Master Spec: `<feature-name>-master-spec.md`
+
+**Split vs Combined:**
+- **Default (most features):** Single combined file with JTBD + Engineering Spec sections in one document. Use `<feature-name>-spec.md` naming.
+- **Only split into two files** when: the user explicitly requests `--jtbd-only` or `--spec-only`, OR the combined document would exceed ~2000 lines.
+- **Master Spec** (5+ workstreams): Separate coordination document alongside individual workstream specs.
+
+**Announce the chosen path to the user before writing.** Example:
+> I'll create one file:
+> - `docs/sip-endpoint-testing/jobs-to-be-done.md`
+> - `docs/sip-endpoint-testing/engineering-spec.md`
+
+---
+
+### Step 4: Generate JTBD Document
+
+Write the JTBD following this template. Fill every section with real data from Steps 1-2. Reference: `docs/scoring-metrics/measuring-stt-quality/jobs-to-be-done.md`
+
+```markdown
+# <Feature Name> — Jobs to Be Done
+
+## Executive Summary
+
+<2-3 sentence summary: what we're building, why, and the key outcome.>
+
+## Context
+
+- <Bullet points explaining current system state, relevant models, existing infrastructure.>
+- <Include file:line citations for key existing code.>
+
+## Current User Workflow (As-Is)
+
+1. <Step 1 of what the user tries to do today>
+2. <Step 2>
+3. <Step 3>
+
+## Current Problems
+
+- <Problem 1: specific, not vague. Include who is affected.>
+- <Problem 2>
+- <Problem 3>
+
+## Why It Is Hard / Not Possible Today
+
+- <Concrete blocker tied to current product/system behavior>
+- <Why workaround is high-friction, incorrect, or risky>
+- <What cannot be done at all today>
+
+## North Star Outcome
+
+- <The ideal end state once this is fully shipped.>
+- <What success looks like for users.>
+
+## End-User Goals and Success Signals
+
+- <Goal 1 in user language> → <How we will know this improved>
+- <Goal 2 in user language> → <How we will know this improved>
+
+## Key Jobs to Be Done
+
+1) <Job Title>
+   - When <situation>, we need <capability>, so that <outcome>.
+   - <Implementation details grounded in codebase exploration.>
+
+2) <Job Title>
+   - When <situation>, we need <capability>, so that <outcome>.
+
+3) <Job Title>
+   - When <situation>, we need <capability>, so that <outcome>.
+
+<Add as many jobs as needed. Typically 3-6.>
+
+## Proposed Product Behaviors
+
+- <Behavior 1: How the product should work from the user's perspective.>
+- <Behavior 2>
+
+## Gaps & Resolutions
+
+| Gap | Resolution |
+|-----|------------|
+| <What's missing or unclear> | <Decision made and rationale> |
+
+## Acceptance Criteria
+
+- [ ] <Measurable, testable criterion 1>
+- [ ] <Criterion 2>
+- [ ] <Criterion 3>
+
+## Out of Scope
+
+- <Explicitly excluded item 1>
+- <Explicitly excluded item 2>
+
+## Milestones
+
+### ✅ Completed: <Phase Name>
+- <What's already done, if anything>
+
+### 🎯 Next: <Phase Name>
+- <What's coming next>
+
+## JTBD Quality Check
+
+- [ ] The current user workflow is explicit and realistic.
+- [ ] It is clear why users are blocked today (not just “system is missing X”).
+- [ ] Each job maps to an end-user outcome.
+- [ ] Acceptance criteria are user-observable and testable.
+```
+
+---
+
+### Step 5: Generate Engineering Spec
+
+Write the Engineering Spec following this template. Fill every section with real data from Steps 1-2. Reference: `docs/sip-endpoint-testing/engineering-spec.md`
+
+```markdown
+# Engineering Spec — <Feature Name>
+
+## TL;DR / Context
+
+- **Current state:** <How the system works today. Cite specific files and models.>
+- **Problem:** <What's broken or missing. Be specific.>
+- **Goal:** <What we're building. 1-2 sentences.>
+
+## ASCII Architecture Snapshot
+
+### Current Flow
+
+<ASCII box diagram showing the current data/control flow.
+Use this style:>
+
+    ┌──────────────────────────────┐
+    │ Component Name               │
+    │ - key detail                 │
+    └───────────────┬──────────────┘
+                    │ description of flow
+    ┌───────────────▼──────────────┐
+    │ Next Component               │
+    └──────────────────────────────┘
+
+### Proposed Flow
+
+<ASCII box diagram showing the new data/control flow.
+Highlight what changed from current.>
+
+#### Sequence Diagram
+
+    ```mermaid
+    sequenceDiagram
+        participant A as Component A
+        participant B as Component B
+        A->>B: action description
+        B-->>A: response
+    ```
+
+#### Data Flow Diagram
+
+    ```mermaid
+    flowchart LR
+        A[Step 1] -->|data| B[Step 2]
+        B -->|result| C[Step 3]
+    ```
+
+## Detailed Design
+
+### 1. Data Model Changes
+
+<Prisma schema additions/modifications.
+Show the actual model definition.
+Cite the file: e.g., `apps/evals-web/prisma/models/testing.prisma`>
+
+### 1.1 Seed & Backfill Impact
+
+<If Prisma schema changes touch seeded entities, describe how `apps/evals-web/prisma/seeds/seed.ts`
+and/or factories under `apps/evals-web/prisma/seeds/factories/` will be updated so local/staging
+fixtures expose new fields. Include rollout ordering notes (migration -> code -> backfill/seed).
+If no seed impact, explicitly state why.>
+
+### 2. API & Schema Changes
+
+<New/modified endpoints. Include request/response shapes.
+Cite router files with line numbers.>
+
+### 3. Service Layer
+
+<Business logic changes. Cite service files.>
+
+### 4. Queue / Worker Changes
+
+<Temporal workflow/activity changes (evals-queue).
+Python worker changes (livekit-worker).
+Cite files with line numbers.>
+
+### 5. UI Changes
+
+<React component additions/modifications.
+Cite component files.>
+
+### 6. Observability
+
+<Tracing spans, metrics, logging additions.>
+
+<Omit sections that don't apply. Add sections that do.>
+
+## JTBD-to-Implementation Traceability
+
+| JTBD | Product Behavior | Implementation Surface |
+|------|------------------|------------------------|
+| <Job 1> | <Behavior> | `<file:line>` |
+| <Job 2> | <Behavior> | `<file:line>` |
+
+## Example Scenarios & Payloads
+
+### Example 1 — <Scenario Name>
+
+<Describe the scenario in 1-2 sentences.>
+
+_Input payload:_
+    ```json
+    { ... }
+    ```
+
+_Expected output:_
+    ```json
+    { ... }
+    ```
+
+### Example 2 — <Scenario Name>
+
+<At least 2 examples. 3 if the feature has multiple modes/flavors.>
+
+## Key Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| <Decision 1> | <What we chose> | <Why> |
+| <Decision 2> | <What we chose> | <Why> |
+
+## Open Questions & Answers
+
+| # | Question | Answer | Status |
+|---|----------|--------|--------|
+| 1 | <Question> | <Answer or "TBD"> | ✅ / ⏳ |
+
+## Testing & Validation Plan
+
+- **Unit tests**: <What to test, which files>
+- **Integration tests**: <Cross-service scenarios>
+- **Manual validation**: <Steps to verify in staging>
+- **Seed validation**: <If schema changes impact seeded entities, include `npm run db:seed` validation and local UI verification steps>
+- **Regression risks**: <What existing behavior could break>
+
+## Phased Implementation Plan
+
+### Phase 1 — <Name> (PR #1)
+- [ ] <Task with file path: `apps/evals-web/prisma/models/...`>
+- [ ] <Task with file path>
+- [ ] <Task with file path>
+
+### Phase 2 — <Name> (PR #2)
+- [ ] <Task with file path>
+- [ ] <Task with file path>
+
+<Add phases as needed. Each phase = 1 PR.>
+
+## Success Metrics
+
+- <Metric 1: quantifiable>
+- <Metric 2: quantifiable>
+
+## Rollout Plan
+
+1. <If feature flag is required: ship behind `<FLAG_NAME>`; otherwise explicitly state “no feature flag” and why>
+2. Staging validation
+3. Production canary (or direct prod if low-risk/additive)
+4. GA
+
+## References
+
+- <Link to related docs using wiki-style links: [[/apps/evals-web/docs/service-layer-pattern]]>
+- <Link to related code: `apps/evals-web/src/server/...`>
+- <External links if applicable>
+```
+
+---
+
+### Step 6: Master Spec (Conditional)
+
+**Only generate this for features with 5+ workstreams.** This is a coordination document that sits above individual workstream specs.
+
+Reference: `docs/engineering-specs/sms-bridge-master-spec.md`
+
+```markdown
+# <FEATURE-NAME>: <Full Feature Title> — Master Spec
+
+**Status**: <In Progress / Planning / Complete>
+**Feature Flag**: `<FLAG_NAME>`
+
+---
+
+## Overview
+
+<2-3 sentence summary of the full feature.>
+
+---
+
+## Workstream Tracker
+
+| Status | Workstream | Spec | Tasks | Description |
+|--------|-----------|------|-------|-------------|
+| [ ] | **A — <Name>** | `<docs/engineering-specs/<feature>-workstream-a-<name>.md>` | `<PREFIX>-01` through `<PREFIX>-NN` | <One-line description> |
+| [ ] | **B — <Name>** | TBD | `<PREFIX>-NN` through `<PREFIX>-NN` | <One-line description> |
+
+---
+
+## Dependency Graph
+
+    A (<Name>)
+    ├── B (<Name>)         — needs <what> from A
+    ├── C (<Name>)         — needs <what> from A
+    │   └── D (<Name>)     — needs <what> from C
+    └── E (<Name>)         — can start after B, parallel with C-D
+
+    **Critical path**: A → B → C → D → E
+
+---
+
+## Key Architecture Decisions
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| <Decision> | <Choice> | <Why> |
+
+---
+
+## Rollout Plan
+
+1. Ship <Workstream A + B> (foundation)
+2. Ship <Workstream C + D> behind `<FLAG>`
+3. Ship <Workstream E> (UI)
+4. Staging validation
+5. Production canary → GA
+
+---
+
+## Success Metrics
+
+- <Metric 1>
+- <Metric 2>
+
+---
+
+## References
+
+- <Wiki links to individual workstream specs>
+- <Key code paths>
+```
+
+---
+
+## Guardrails
+
+### ALWAYS
+
+- Ask clarifying questions before writing (Step 1 is mandatory)
+- Explore the codebase before writing (Step 2 is mandatory)
+- Confirm the as-is user workflow and why it is hard/not possible today before proposing design
+- Include `file:line` citations for every referenced code path
+- Include both ASCII box diagrams AND mermaid diagrams in engineering specs
+- Include at least 2 example scenarios with JSON payloads
+- Include acceptance criteria as checkboxes in JTBD
+- Include explicit end-user goals and success signals in JTBD
+- Include "Out of Scope" section in JTBD
+- Include a testing & validation plan in engineering specs
+- If Prisma schema changes are proposed, include explicit seed/backfill impact and rollout ordering notes (or explicitly state no seed impact)
+- Include a phased implementation plan with file paths in engineering specs
+- Include a JTBD-to-implementation traceability table in engineering specs
+- Use wiki-style links for cross-references: `[[/apps/evals-web/docs/service-layer-pattern]]`
+- Cross-check risky migration/backfill plans with [$migration-safety](../migration-safety/SKILL.md)
+- Match the tone and depth of existing specs (see reference files below)
+
+### NEVER
+
+- Write without asking questions first — the Socratic step is mandatory
+- Skip codebase exploration — no writing blind
+- Jump straight to technical design before clarifying user goals and blockers
+- Use vague references like "the service" or "the model" — always cite `file:line`
+- Create a JTBD without acceptance criteria
+- Create an engineering spec without a testing plan
+- Propose Prisma model changes for seeded entities without stating how local/staging seeds remain usable
+- Create an engineering spec without a phased implementation plan
+- Put cross-service docs in app-local folders (use `docs/<feature>/` instead)
+- Invent file paths that don't exist in the codebase — verify with search first
+- Skip the "Out of Scope" section — it prevents scope creep
+
+## Reference Examples
+
+These are the gold-standard specs in this repo. Study their structure when in doubt:
+
+| Document | Path | Notable Pattern |
+|----------|------|-----------------|
+| JTBD (metrics) | `docs/scoring-metrics/measuring-stt-quality/jobs-to-be-done.md` | Executive summary, "When/Need/So that" jobs, gaps table, milestones with status emoji |
+| JTBD (assertions) | `docs/workspace-level-assertions/jobs-to-be-done.md` | Implementation status tracking, phase-based completion, remaining tasks |
+| Engineering Spec | `docs/sip-endpoint-testing/engineering-spec.md` | ASCII + mermaid diagrams, 3 example scenarios with JSON, endpoint flavor comparison table, phased PR plan |
+| Master Spec | `docs/engineering-specs/sms-bridge-master-spec.md` | Workstream tracker table, ASCII dependency graph with critical path, feature flag header, rollout plan |

@@ -1,0 +1,13 @@
+model User {
+  id            String   @id @default(cuid())
+  username      String   @unique
+  email         String   @unique
+  password      String
+  name          String?
+  isSystemAdmin Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  posts      Post[]
+  workspaces WorkspaceMember[]
+}
