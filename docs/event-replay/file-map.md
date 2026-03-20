@@ -47,13 +47,13 @@ Telemetry.getSessionId(): string | null
 | `packages/rest/src/root.ts` | **Root router** — import và đăng ký `telemetryRouter` |
 | `packages/rest/src/init.ts` | tRPC context factory (inject `prisma`) |
 
-### Chi tiết `telemetry.ts` — 4 Endpoints
+### Chi tiết `telemetry.ts` — 5 Endpoints
 
 #### `ingestEvents` (mutation)
-- **Input**: `{ sessionId: string, userId?: string, userAgent?: string, events: Array<{type, timestamp, payload, sequence}> }`
+- **Input**: `{ sessionId, userId?, userAgent?, events: Array<{type, timestamp, payload, sequence, traceId?, route?}> }`
 - **Validation**: events min 1, max 500; sequence >= 0
-- **Logic**: `$transaction([ session.upsert(), replayEvent.createMany() ])`
-- **Output**: `{ ingested: number }`
+- **Logic**: `$transaction([ session.upsert(), replayEvent.createMany() ])` — lưu `traceId` + `route` per event
+- **Output**: `{ ingested: number, sessionId: string }`
 
 #### `listSessions` (query)
 - **Input**: `{ limit?: number (default 20, max 100), cursor?: string }`
@@ -70,6 +70,11 @@ Telemetry.getSessionId(): string | null
 - **Logic**: `sessionTimeline.findMany() ordered by timestamp ASC`
 - **Output**: `SessionTimeline[]`
 
+#### `getSessionByTraceId` (query)
+- **Input**: `{ traceId: string }`
+- **Logic**: Tìm qua `SessionTraceLink` + fallback qua `ReplayEvent.traceId`; dedup
+- **Output**: `{ sessions: Session[] }`
+
 ---
 
 ## 3. Database Schema (`packages/database/`)
@@ -79,7 +84,9 @@ Telemetry.getSessionId(): string | null
 | `packages/database/prisma/schema.prisma` | Prisma schema — chứa 3 models telemetry |
 | `packages/database/src/index.ts` | Prisma client singleton export |
 
-### Models (lines 69-110 trong schema.prisma)
+### Models (telemetry.schema.prisma)
+
+**5 models**: `Session`, `ReplayEvent` (+ traceId/route), `SessionTimeline`, `SessionClick`, `SessionTraceLink`
 
 Xem chi tiết tại [api-contracts.md](./api-contracts.md).
 
@@ -101,10 +108,12 @@ Xem chi tiết tại [api-contracts.md](./api-contracts.md).
 processSessionEnrichment(sessionId: string): Promise<void>
 ```
 
-1. Đọc tất cả `ReplayEvent` of session, ordered by `sequence ASC`
+1. Đọc tất cả `ReplayEvent` của session, ordered by `sequence ASC`
 2. Tạo `session_summary` (duration, event count)
-3. Lọc click events: rrweb `type === 3` (IncrementalSnapshot) + `data.source === 2` (MouseInteraction)
-4. Xóa timeline cũ (`deleteMany`) → Insert mới (`createMany`) → **Idempotent**
+3. Lọc clicks: rrweb `type=3/source=2/type=2` **và** `type === "ui.click"` (structured format)
+4. Ghi `SessionClick` với selector, tagName, text, x/y, traceId, route
+5. Thu thập tất cả traceId → upsert `SessionTraceLink` per traceId
+6. **Atomic transaction**: deleteMany cũ → createMany mới → upsert trace links → **Idempotent**
 
 ---
 
@@ -138,6 +147,10 @@ processSessionEnrichment(sessionId: string): Promise<void>
 
 | File | Liên quan |
 |------|-----------|
-| `apps/web/package.json` | Dependencies: `@shared/telemetry`, `rrweb`, `rrweb-player` |
+| `apps/web/package.json` | Dependencies: `@shared/telemetry`, `rrweb`, `rrweb-player`, `@temporalio/client` |
+| `apps/web/src/lib/temporal.ts` | Temporal client singleton + `dispatchSessionEnrichment()` — dùng trong ingest route |
+| `apps/web/next.config.ts` | `serverExternalPackages: ["@temporalio/client"]` — ngăn Next.js bundle native module |
+| `packages/env/src/web.ts` | Thêm `TEMPORAL_ADDRESS`, `TEMPORAL_NAMESPACE`, `TEMPORAL_TASK_QUEUE` |
 | `packages/rest/package.json` | Dependencies: `zod`, `@trpc/server`, `@shared/database` |
+| `packages/database/prisma/seed.ts` | Demo data: 3 users, 2 workspaces, 4 posts, 2 sessions, replay events, clicks, trace links |
 | `.env` (root) | `DATABASE_URL` — cần đúng để Prisma connect |

@@ -7,6 +7,8 @@ const ReplayEventSchema = z.object({
   timestamp: z.coerce.date(),
   payload: z.record(z.string(), z.unknown()),
   sequence: z.number().int().min(0),
+  traceId: z.string().optional(),
+  route: z.string().optional(),
 });
 
 const IngestInputSchema = z.object({
@@ -35,11 +37,13 @@ export const telemetryRouter = createTRPCRouter({
             timestamp: event.timestamp,
             payload: event.payload as Prisma.InputJsonValue,
             sequence: event.sequence,
+            traceId: event.traceId,
+            route: event.route,
           })),
         }),
       ]);
 
-      return { ingested: events.length };
+      return { ingested: events.length, sessionId };
     }),
 
   listSessions: publicProcedure
@@ -89,5 +93,38 @@ export const telemetryRouter = createTRPCRouter({
         where: { sessionId: input.sessionId },
         orderBy: { timestamp: "asc" },
       });
+    }),
+
+  getSessionByTraceId: publicProcedure
+    .input(z.object({ traceId: z.string().min(1) }))
+    .query(async ({ ctx, input }) => {
+      const links = await ctx.prisma.sessionTraceLink.findMany({
+        where: { traceId: input.traceId },
+        include: { session: true },
+      });
+
+      const sessions = links.map((l) => l.session);
+
+      // Also check events that have this traceId directly
+      const eventsWithTrace = await ctx.prisma.replayEvent.findMany({
+        where: { traceId: input.traceId },
+        select: { sessionId: true },
+        distinct: ["sessionId"],
+      });
+
+      const sessionIdsFromEvents = eventsWithTrace.map((e) => e.sessionId);
+      const linkedSessionIds = new Set(sessions.map((s) => s.id));
+
+      const additionalSessions = sessionIdsFromEvents.filter(
+        (id) => !linkedSessionIds.has(id)
+      ).length > 0
+        ? await ctx.prisma.session.findMany({
+            where: {
+              id: { in: sessionIdsFromEvents.filter((id) => !linkedSessionIds.has(id)) },
+            },
+          })
+        : [];
+
+      return { sessions: [...sessions, ...additionalSessions] };
     }),
 });

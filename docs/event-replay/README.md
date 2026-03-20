@@ -11,12 +11,13 @@
 
 ## Trạng thái hiện tại
 
-- **SDK capture**: ✅ Hoạt động (rrweb ghi lại DOM + interactions)
-- **Ingest API**: ✅ Hoạt động (tRPC endpoint nhận batch events)
-- **Database**: ✅ Schema đã sync (Session, ReplayEvent, SessionTimeline)
-- **Temporal Enrichment**: ✅ Workflow + Activity đã đăng ký
+- **SDK capture**: ✅ Hoạt động (rrweb + maskAllInputs mặc định)
+- **Ingest API**: ✅ REST route gọi tRPC; nhận `traceId` + `route` per event
+- **Database**: ✅ Schema sync — Session, ReplayEvent, SessionTimeline, **SessionClick**, **SessionTraceLink**
+- **Temporal Enrichment**: ✅ Workflow tự động dispatch sau mỗi ingest (fire-and-forget)
+- **Trace Correlation**: ✅ `getSessionByTraceId` endpoint, `SessionTraceLink` model
 - **Admin UI**: ✅ Trang `/admin/replays` với session list + replay viewer
-- **Blocker**: ⚠️ `DATABASE_URL` cần được set đúng trong `.env` root
+- **Demo data**: ✅ Seed script tại `packages/database/prisma/seed.ts`
 
 ## Quick Reference
 

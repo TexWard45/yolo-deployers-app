@@ -25,23 +25,23 @@
 ┌──────────────────────────────▼──────────────────────────────────┐
 │                      NEXT.JS SERVER                              │
 │                                                                  │
-│  apps/web/src/app/api/rest/[...trpc]/route.ts                   │
+│  apps/web/src/app/api/rest/telemetry.ingestEvents/route.ts      │
 │       │                                                          │
 │       ▼                                                          │
-│  fetchRequestHandler(appRouter)                                  │
-│       │                                                          │
-│       ▼                                                          │
-│  packages/rest/src/routers/telemetry.ts                         │
+│  trpc.telemetry.ingestEvents()  ← validates + persists           │
 │       │                                                          │
 │       ├── session.upsert()  ──┐                                  │
 │       └── replayEvent.createMany() ──┤  $transaction             │
-│                                      │                           │
-│                                      ▼                           │
+│                  (traceId + route per event)  │                  │
+│                                              ▼                   │
 │                              POSTGRESQL                          │
-│                     (Session, ReplayEvent tables)                │
+│                (Session, ReplayEvent + traceId/route)            │
+│                                                                  │
+│  dispatchSessionEnrichment(sessionId)  ← fire-and-forget         │
+│  apps/web/src/lib/temporal.ts                                    │
 └──────────────────────────────────────────────────────────────────┘
                                │
-                    (Enrichment — triggered riêng)
+                    Temporal workflow dispatch
                                │
 ┌──────────────────────────────▼──────────────────────────────────┐
 │                     TEMPORAL WORKER                               │
@@ -52,9 +52,11 @@
 │  apps/queue/src/activities/session-enrichment.activity.ts        │
 │       │                                                          │
 │       ├── Đọc ReplayEvent theo sessionId                        │
-│       ├── Phân tích clicks (rrweb type=3, source=2)             │
+│       ├── Phân tích clicks (rrweb type=3/source=2 + ui.click)   │
 │       ├── Tạo session_summary                                   │
-│       └── Bulk insert → SessionTimeline                         │
+│       ├── Bulk insert → SessionTimeline                         │
+│       ├── Bulk insert → SessionClick (selector, text, x/y)      │
+│       └── Upsert → SessionTraceLink (per traceId tìm thấy)      │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -77,14 +79,15 @@
 - **Atomic**: Sử dụng `$transaction` cho upsert session + createMany events
 
 ### Tầng 4: Storage (PostgreSQL + Prisma)
-- **File**: `packages/database/prisma/schema.prisma`
-- **3 models**: `Session`, `ReplayEvent`, `SessionTimeline`
-- **Index**: `[sessionId, timestamp]` trên cả ReplayEvent và SessionTimeline
+- **Files**: `packages/database/prisma/telemetry.schema.prisma`
+- **5 models**: `Session`, `ReplayEvent`, `SessionTimeline`, `SessionClick`, `SessionTraceLink`
+- **Index**: `[sessionId, timestamp]` trên ReplayEvent/SessionTimeline/SessionClick; `[traceId]` trên ReplayEvent/SessionClick/SessionTraceLink
 
 ### Tầng 5: Enrichment (Temporal)
 - **Workflow**: `apps/queue/src/workflows/session-enrichment.workflow.ts`
 - **Activity**: `apps/queue/src/activities/session-enrichment.activity.ts`
-- **Tính năng**: Tạo click index, session summary — idempotent (deleteMany + createMany)
+- **Dispatch**: Tự động trigger từ `apps/web/src/lib/temporal.ts` sau mỗi ingest thành công
+- **Tính năng**: Tạo SessionTimeline + SessionClick + SessionTraceLink — idempotent (deleteMany + createMany trong transaction)
 
 ### Tầng 6: Visualization (Admin UI)
 - **Page**: `apps/web/src/app/admin/replays/page.tsx` (route: `/admin/replays`)

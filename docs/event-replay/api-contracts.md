@@ -26,14 +26,53 @@ model ReplayEvent {
   id        String   @id @default(cuid())
   sessionId String                           // FK to Session
   session   Session  @relation(..., onDelete: Cascade)
-  type      String                           // "rrweb" | "user.identify" | "ui.click" etc.
+  type      String                           // "rrweb" | "ui.click" | "network.error" | "console.error" etc.
   timestamp DateTime                         // Thời điểm event xảy ra trên client
-  payload   Json                             // Raw rrweb event data hoặc custom payload
+  payload   Json                             // Raw event data
   sequence  Int                              // Số thứ tự tăng dần trong session
+  traceId   String?                          // W3C trace context — dùng để join với backend trace
+  route     String?                          // Browser route/path tại thời điểm event
 
   createdAt DateTime @default(now())
 
   @@index([sessionId, timestamp])
+  @@index([traceId])
+}
+```
+
+### Model: SessionClick
+```prisma
+model SessionClick {
+  id        String  @id @default(cuid())
+  sessionId String
+  session   Session @relation(..., onDelete: Cascade)
+  selector  String?   // CSS selector của phần tử được click
+  tagName   String?   // HTML tag name
+  text      String?   // Visible text của phần tử
+  x         Float?    // Tọa độ x
+  y         Float?    // Tọa độ y
+  traceId   String?   // Backend trace liên quan
+  route     String?   // Route tại thời điểm click
+  timestamp DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, timestamp])
+  @@index([traceId])
+}
+```
+
+### Model: SessionTraceLink
+```prisma
+model SessionTraceLink {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(..., onDelete: Cascade)
+  traceId   String   // Backend W3C traceId
+  timestamp DateTime @default(now())
+
+  @@unique([sessionId, traceId])
+  @@index([traceId])
 }
 ```
 
@@ -93,10 +132,17 @@ model SessionTimeline {
 { "ingested": 12 }
 ```
 
+**Response**:
+```json
+{ "ingested": 12, "sessionId": "0abe7ef9-..." }
+```
+
 **Validation (Zod)**:
 - `sessionId`: string, min 1 char
 - `events`: array, min 1, max 500 items
-- Mỗi event: `type` string, `timestamp` coerce date, `payload` record<string, unknown>, `sequence` int >= 0
+- Mỗi event: `type` string, `timestamp` coerce date, `payload` record<string, unknown>, `sequence` int >= 0, `traceId?` string, `route?` string
+
+**Side effect**: Sau khi persist thành công, REST route dispatch `sessionEnrichmentWorkflow` tới Temporal (fire-and-forget, không block response).
 
 ---
 
@@ -138,6 +184,23 @@ model SessionTimeline {
   ]
 }
 ```
+
+---
+
+### `telemetry.getSessionByTraceId` — Query
+
+**Input**: `{ traceId: string }`
+
+**Output**:
+```json
+{
+  "sessions": [
+    { "id": "demo-session-001", "userId": "...", "userAgent": "...", "createdAt": "..." }
+  ]
+}
+```
+
+**Logic**: Tìm sessions qua `SessionTraceLink` table; fallback tìm thêm qua `ReplayEvent.traceId`; dedup kết quả.
 
 ---
 
