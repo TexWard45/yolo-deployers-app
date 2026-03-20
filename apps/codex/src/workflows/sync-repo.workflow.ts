@@ -20,7 +20,9 @@ export interface SyncRepoResult {
 const {
   updateSyncStatus,
   createSyncLog,
+  updateSyncLog,
   cleanupDeletedFiles,
+  cleanupStaleFiles,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: "30 seconds",
 });
@@ -74,34 +76,52 @@ export async function syncRepoWorkflow(
   // Mark repository as syncing
   await updateSyncStatus({ repositoryId, status: "SYNCING" });
 
-  let previousCommit: string | null = null;
+  // Create sync log upfront so progress is visible in the UI
+  const syncLogId = await createSyncLog({
+    repositoryId,
+    status: "SYNCING",
+    commitBefore: null,
+    commitAfter: null,
+    filesChanged: 0,
+    chunksCreated: 0,
+    chunksUpdated: 0,
+    chunksDeleted: 0,
+  });
 
   try {
     // Step 1: Clone or pull the repository
     const cloneResult = await cloneRepository({ repositoryId });
-    previousCommit = cloneResult.previousCommit;
 
     const isFullSync = cloneResult.changedFiles === null;
+
+    // Update log with commit info
+    await updateSyncLog({
+      syncLogId,
+      commitAfter: cloneResult.headCommit,
+    });
 
     // Step 2: Determine which files to process
     let filesToProcess: string[];
     let deletedFiles: string[] = [];
+    let totalChunksDeleted = 0;
 
     if (isFullSync) {
       // Initial clone — process all files
       filesToProcess = await listRepositoryFiles({
         localPath: cloneResult.localPath,
       });
+
+      // Clean up stale CodexFile records not in the current file set
+      const staleCleanup = await cleanupStaleFiles({
+        repositoryId,
+        currentFilePaths: filesToProcess,
+      });
+      totalChunksDeleted += staleCleanup.chunksDeleted;
     } else {
       // Incremental pull — only process changed files
       filesToProcess = cloneResult.changedFiles!;
 
       // Identify deleted files (present in changedFiles but missing on disk)
-      // The git diff includes all changed/added/deleted files.
-      // We parse what exists; listRepositoryFiles for deleted detection isn't needed
-      // since git diff already tells us which files changed. Files that were deleted
-      // will fail to read in the parse activity and be skipped.
-      // However, we should explicitly clean up DB records for deleted files.
       const allCurrentFiles = await listRepositoryFiles({
         localPath: cloneResult.localPath,
       });
@@ -111,7 +131,6 @@ export async function syncRepoWorkflow(
     }
 
     // Step 3: Cleanup deleted files
-    let totalChunksDeleted = 0;
     if (deletedFiles.length > 0) {
       const cleanupResult = await cleanupDeletedFiles({
         repositoryId,
@@ -149,6 +168,15 @@ export async function syncRepoWorkflow(
         totalChunksUpdated += result.chunksUpdated;
         totalChunksDeleted += result.chunksDeleted;
       }
+
+      // Update log after each batch so progress is visible
+      await updateSyncLog({
+        syncLogId,
+        filesChanged: filesProcessed,
+        chunksCreated: totalChunksCreated,
+        chunksUpdated: totalChunksUpdated,
+        chunksDeleted: totalChunksDeleted,
+      });
     }
 
     // Step 5: Embed PENDING chunks
@@ -162,11 +190,10 @@ export async function syncRepoWorkflow(
       lastSyncError: null,
     });
 
-    // Step 7: Create sync log
-    const syncLogId = await createSyncLog({
-      repositoryId,
+    // Step 7: Finalize sync log
+    await updateSyncLog({
+      syncLogId,
       status: "COMPLETED",
-      commitBefore: previousCommit,
       commitAfter: cloneResult.headCommit,
       filesChanged: filesProcessed,
       chunksCreated: totalChunksCreated,
@@ -196,16 +223,10 @@ export async function syncRepoWorkflow(
       lastSyncError: errorMessage,
     });
 
-    // Log the failure
-    await createSyncLog({
-      repositoryId,
+    // Update sync log with failure
+    await updateSyncLog({
+      syncLogId,
       status: "FAILED",
-      commitBefore: previousCommit,
-      commitAfter: null,
-      filesChanged: 0,
-      chunksCreated: 0,
-      chunksUpdated: 0,
-      chunksDeleted: 0,
       errorMessage,
     });
 

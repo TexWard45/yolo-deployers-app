@@ -77,6 +77,7 @@ function formatChunkType(type: CodexChunkType): string {
     case "ROUTE_HANDLER": return "Route Handler";
     case "MODULE": return "Module";
     case "FRAGMENT": return "Fragment";
+    case "FILE": return "File";
     default: return type;
   }
 }

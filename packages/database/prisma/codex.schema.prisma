@@ -32,6 +32,7 @@ enum CodexChunkType {
   ROUTE_HANDLER
   MODULE
   FRAGMENT
+  FILE
 }
 
 enum CodexEmbeddingStatus {

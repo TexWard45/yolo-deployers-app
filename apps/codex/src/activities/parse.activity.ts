@@ -4,6 +4,8 @@ import { createHash } from "node:crypto";
 import { prisma } from "@shared/database";
 import type { CodexChunkType } from "@shared/types";
 import { parseFile, isLanguageSupported } from "../parser/tree-sitter.js";
+import { parseRawTextFile } from "../parser/raw-text-parser.js";
+import { isBinaryExtension, contentLooksBinary } from "../parser/binary-detect.js";
 import type { ParsedChunk } from "../parser/types.js";
 
 export interface ParseFileInput {
@@ -42,9 +44,10 @@ export async function parseFileActivity(
 
   const ext = extname(filePath).toLowerCase();
   const language = ext.replace(".", "");
+  const treeSitterSupported = isLanguageSupported(language);
 
-  // Skip unsupported languages
-  if (!isLanguageSupported(language)) {
+  // Skip binary files by extension
+  if (isBinaryExtension(ext)) {
     return { filePath, chunksCreated: 0, chunksUpdated: 0, chunksDeleted: 0, skipped: true };
   }
 
@@ -71,6 +74,11 @@ export async function parseFileActivity(
 
   // Skip files exceeding size limit
   if (Buffer.byteLength(content, "utf-8") > repo.maxFileSizeBytes) {
+    return { filePath, chunksCreated: 0, chunksUpdated: 0, chunksDeleted: 0, skipped: true };
+  }
+
+  // Skip binary content (files with unknown extensions that contain null bytes)
+  if (contentLooksBinary(Buffer.from(content.slice(0, 8192)))) {
     return { filePath, chunksCreated: 0, chunksUpdated: 0, chunksDeleted: 0, skipped: true };
   }
 
@@ -105,8 +113,10 @@ export async function parseFileActivity(
     },
   });
 
-  // Parse file into chunks
-  const parsedChunks = await parseFile(content, language);
+  // Parse file into chunks — Tree-sitter for supported languages, raw text for others
+  const parsedChunks = treeSitterSupported
+    ? await parseFile(content, language)
+    : parseRawTextFile(content, filePath);
 
   // Flatten chunks (including children) for DB operations
   const flatChunks = flattenChunks(parsedChunks);
