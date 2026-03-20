@@ -6,7 +6,9 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./codex": "./src/routers/codex/index.ts",
+    "./src/routers/codex": "./src/routers/codex/index.ts"
   },
   "scripts": {
     "build": "tsc --build",
@@ -15,7 +17,9 @@
   "dependencies": {
     "@shared/database": "*",
     "@shared/types": "*",
+    "@temporalio/client": "^1",
     "@trpc/server": "^11",
+    "openai": "^4",
     "superjson": "^2",
     "zod": "^4.0.0"
   },

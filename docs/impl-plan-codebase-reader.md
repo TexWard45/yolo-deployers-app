@@ -123,18 +123,22 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 6 — tRPC Router + REST Endpoints `[STATUS: NOT STARTED]`
+## Phase 6 — tRPC Router + REST Endpoints `[STATUS: COMPLETE]`
 
 **Goal:** Full API surface. Depends on Phase 5.
 
 ### Tasks
 
-- [ ] Create `packages/rest/src/routers/codex/router.ts` — All 11 procedures from spec
-- [ ] Create `packages/rest/src/routers/codex/index.ts` — Re-export router
-- [ ] Create REST routes in `apps/web/src/app/api/rest/codex/` — 6 route files mapping to tRPC procedures
-- [ ] Modify `packages/rest/src/root.ts` — Register `codexRouter`
-- [ ] Modify `packages/rest/package.json` — Add `openai` + `@temporalio/client` deps
-- [ ] Run verification: Curl all REST endpoints. Full flow: create repo → sync → search → view chunk.
+- [x] Create `packages/rest/src/routers/codex/router.ts` — All 11 procedures from spec
+- [x] Modify `packages/rest/src/routers/codex/index.ts` — Re-export router
+- [x] Create REST routes in `apps/web/src/app/api/rest/codex/` — 6 route files mapping to tRPC procedures
+- [x] Modify `packages/rest/src/root.ts` — Register `codexRouter`
+- [x] Modify `packages/rest/package.json` — Add `openai` + `@temporalio/client` deps
+- [x] Modify `packages/rest/src/index.ts` — Re-export codex types for TS declaration portability
+- [x] Modify `packages/rest/package.json` — Add `./codex` and `./src/routers/codex` exports
+- [ ] Run verification: Curl all REST endpoints. Full flow: create repo → sync → search → view chunk. (blocked: requires running Temporal server + PostgreSQL + OpenAI API key)
+
+### Verify: `npm run db:generate` + `npm run type-check` — PASSED
 
 ### Trigger sync decision: `codex.repository.sync` creates a Temporal Client connection from the web process to start the workflow.
 
