@@ -110,6 +110,7 @@ export type ListThreadMessagesInput = z.infer<typeof ListThreadMessagesSchema>;
 export const CreateOutgoingDraftSchema = z.object({
   threadId: z.string(),
   body: z.string().min(1, "Message body is required"),
+  inReplyToExternalMessageId: z.string().optional(),
 });
 
 export type CreateOutgoingDraftInput = z.infer<typeof CreateOutgoingDraftSchema>;
@@ -140,12 +141,14 @@ export const IngestExternalMessageSchema = z.object({
   workspaceId: z.string(),
   source: CustomerSourceSchema,
   externalCustomerId: z.string().min(1),
-  externalThreadId: z.string().min(1),
+  externalThreadId: z.string().min(1).optional(),
   customerDisplayName: z.string().min(1),
   customerAvatarUrl: z.string().url().optional(),
   customerEmail: z.string().email().optional(),
   messageBody: z.string().min(1, "Message is required"),
   externalMessageId: z.string().optional(),
+  inReplyToExternalMessageId: z.string().optional(),
+  threadGroupingHint: z.string().optional(),
   title: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -292,3 +295,72 @@ export const IngestSupportMessageInputSchema = z.object({
 });
 
 export type IngestSupportMessageInput = z.infer<typeof IngestSupportMessageInputSchema>;
+
+// ── Thread Match Decision (deterministic + LLM fallback contract) ─
+export const ThreadMatchStrategySchema = z.enum([
+  "external_thread_id",
+  "reply_chain",
+  "fingerprint",
+  "llm_fallback",
+  "new_thread",
+]);
+
+export type ThreadMatchStrategy = z.infer<typeof ThreadMatchStrategySchema>;
+
+export const ThreadMatchDecisionSchema = z.object({
+  threadId: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+  strategy: ThreadMatchStrategySchema,
+  issueFingerprint: z.string(),
+  requiresReview: z.boolean(),
+});
+
+export type ThreadMatchDecision = z.infer<typeof ThreadMatchDecisionSchema>;
+
+export const LlmThreadMatchInputSchema = z.object({
+  incomingMessage: z.string().min(1),
+  threadGroupingHint: z.string().optional(),
+  candidates: z.array(
+    z.object({
+      id: z.string(),
+      issueFingerprint: z.string().nullable().optional(),
+      summary: z.string().nullable().optional(),
+    }),
+  ),
+});
+
+export type LlmThreadMatchInput = z.infer<typeof LlmThreadMatchInputSchema>;
+
+export const LlmThreadMatchResultSchema = z.object({
+  matchedThreadId: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+  reason: z.string(),
+});
+
+export type LlmThreadMatchResult = z.infer<typeof LlmThreadMatchResultSchema>;
+
+// ── Inbox Thread Resolution Workflow ──────────────────────────────
+export const ResolveInboxThreadWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  source: CustomerSourceSchema,
+  customerId: z.string(),
+  threadId: z.string(),
+  messageId: z.string(),
+  messageBody: z.string().min(1),
+  issueFingerprint: z.string().min(1),
+});
+
+export type ResolveInboxThreadWorkflowInput = z.infer<
+  typeof ResolveInboxThreadWorkflowInputSchema
+>;
+
+export const ResolveInboxThreadWorkflowResultSchema = z.object({
+  applied: z.boolean(),
+  matchedThreadId: z.string().nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+  reason: z.string(),
+});
+
+export type ResolveInboxThreadWorkflowResult = z.infer<
+  typeof ResolveInboxThreadWorkflowResultSchema
+>;

@@ -1,6 +1,8 @@
 import { TRPCError } from "@trpc/server";
+import type { Prisma } from "@shared/types/prisma";
 import { CreateOutgoingDraftSchema, ListThreadMessagesSchema } from "@shared/types";
 import { createTRPCRouter, protectedProcedure } from "../init";
+import { buildIssueFingerprint, buildThreadSummary } from "./helpers/thread-matching";
 
 async function assertThreadMember(params: {
   prisma: {
@@ -12,7 +14,7 @@ async function assertThreadMember(params: {
 }) {
   const thread = await params.prisma.supportThread.findUnique({
     where: { id: params.threadId },
-    select: { id: true, workspaceId: true },
+    select: { id: true, workspaceId: true, summary: true },
   });
 
   if (!thread) {
@@ -69,12 +71,23 @@ export const messageRouter = createTRPCRouter({
           threadId: input.threadId,
           direction: "OUTBOUND",
           body: input.body,
+          inReplyToExternalMessageId: input.inReplyToExternalMessageId,
+          messageFingerprint: buildIssueFingerprint(input.body),
+          metadata: {
+            source: "manual-reply",
+          } as Prisma.InputJsonValue,
         },
       });
 
       await ctx.prisma.supportThread.update({
         where: { id: thread.id },
-        data: { lastMessageAt: message.createdAt },
+        data: {
+          lastMessageAt: message.createdAt,
+          lastOutboundAt: message.createdAt,
+          status: "WAITING_CUSTOMER",
+          summary: buildThreadSummary(thread.summary, input.body),
+          summaryUpdatedAt: message.createdAt,
+        },
       });
 
       return message;

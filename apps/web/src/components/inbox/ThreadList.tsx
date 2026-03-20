@@ -13,6 +13,7 @@ import {
 interface ThreadListItem {
   id: string;
   title: string | null;
+  summary: string | null;
   status: ThreadStatusValue;
   updatedAt: Date;
   customer: {
@@ -148,8 +149,10 @@ export function ThreadList({ threads }: ThreadListProps) {
                       <ThreadCard
                         id={thread.id}
                         title={thread.title}
+                        summary={thread.summary}
                         customerName={thread.customer.displayName}
                         updatedAt={new Date(thread.updatedAt)}
+                        messageCount={thread._count.messages}
                         assigneeName={
                           thread.assignedTo?.name ??
                           thread.assignedTo?.email ??
