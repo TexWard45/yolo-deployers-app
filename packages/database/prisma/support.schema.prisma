@@ -1,0 +1,160 @@
+// ── Support Domain Enums ─────────────────────────────────────────────
+
+enum ChannelType {
+  DISCORD
+  IN_APP
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  SPAM
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum SenderKind {
+  CUSTOMER
+  AGENT
+  AI_AGENT
+  SYSTEM
+}
+
+enum DraftStatus {
+  GENERATED
+  APPROVED
+  SENT
+  DISMISSED
+  FAILED
+}
+
+// ── Support Domain Models ────────────────────────────────────────────
+
+model ChannelConnection {
+  id                String      @id @default(cuid())
+  type              ChannelType
+  name              String
+  status            String      @default("active")
+  externalAccountId String?
+  configJson        Json?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+
+  customerIdentities CustomerChannelIdentity[]
+  messages           ConversationMessage[]
+}
+
+model CustomerProfile {
+  id          String  @id @default(cuid())
+  displayName String?
+  email       String?
+  externalRef String?
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+
+  identities    CustomerChannelIdentity[]
+  conversations Conversation[]
+}
+
+model CustomerChannelIdentity {
+  id             String  @id @default(cuid())
+  externalUserId String
+  username       String?
+  displayName    String?
+  createdAt      DateTime @default(now())
+
+  customerProfile   CustomerProfile   @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
+  customerProfileId String
+  channelConnection ChannelConnection @relation(fields: [channelConnectionId], references: [id], onDelete: Cascade)
+  channelConnectionId String
+
+  @@unique([channelConnectionId, externalUserId])
+}
+
+model Conversation {
+  id                 String             @id @default(cuid())
+  primaryChannelType ChannelType
+  status             ConversationStatus @default(OPEN)
+  subject            String?
+  externalThreadId   String?
+  lastMessageAt      DateTime?
+  lastInboundAt      DateTime?
+  lastOutboundAt     DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  workspace          Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId        String
+  customerProfile    CustomerProfile  @relation(fields: [customerProfileId], references: [id])
+  customerProfileId  String
+  assignedTo         User?            @relation(fields: [assignedToUserId], references: [id])
+  assignedToUserId   String?
+
+  messages ConversationMessage[]
+  drafts   ReplyDraft[]
+}
+
+model ConversationMessage {
+  id                  String           @id @default(cuid())
+  direction           MessageDirection
+  senderKind          SenderKind
+  externalMessageId   String?
+  body                String
+  rawPayloadJson      Json?
+  sentAt              DateTime         @default(now())
+  deliveryStatus      String           @default("delivered")
+
+  conversation        Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId      String
+  channelConnection   ChannelConnection? @relation(fields: [channelConnectionId], references: [id])
+  channelConnectionId String?
+
+  basedOnDrafts ReplyDraft[]
+
+  @@unique([channelConnectionId, externalMessageId])
+}
+
+model ReplyDraft {
+  id             String      @id @default(cuid())
+  status         DraftStatus @default(GENERATED)
+  model          String?
+  promptVersion  String?
+  body           String
+  metadataJson   Json?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  conversation      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId    String
+  basedOnMessage    ConversationMessage? @relation(fields: [basedOnMessageId], references: [id])
+  basedOnMessageId  String?
+  createdByUser     User?               @relation(fields: [createdByUserId], references: [id])
+  createdByUserId   String?
+}
+
+model WorkspaceAgentConfig {
+  id                 String  @id @default(cuid())
+  enabled            Boolean @default(false)
+  systemPrompt       String?
+  tone               String?
+  replyPolicy        String?
+  autoDraftOnInbound Boolean @default(true)
+  handoffRulesJson   Json?
+  model              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String    @unique
+}

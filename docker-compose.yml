@@ -30,13 +30,19 @@ services:
       context: .
       dockerfile: apps/queue/Dockerfile
     environment:
+      DATABASE_URL: postgresql://user:password@postgres:5432/mydb?schema=public
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: default
       TEMPORAL_TASK_QUEUE: template-task-queue
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL_DEFAULT: ${LLM_MODEL_DEFAULT:-claude-sonnet-4-20250514}
     restart: unless-stopped
     depends_on:
       temporal:
         condition: service_healthy
+      postgres:
+        condition: service_started
 
 volumes:
   pgdata:

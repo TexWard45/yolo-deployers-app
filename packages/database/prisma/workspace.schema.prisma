@@ -13,6 +13,11 @@ model Workspace {
 
   members WorkspaceMember[]
   posts   Post[]
+
+  channelConnections ChannelConnection[]
+  customerProfiles   CustomerProfile[]
+  conversations      Conversation[]
+  agentConfig        WorkspaceAgentConfig?
 }
 
 model WorkspaceMember {

@@ -4,6 +4,10 @@ import {
   TemporalAddressSchema,
   TemporalNamespaceSchema,
   TemporalTaskQueueSchema,
+  LlmApiKeySchema,
+  LlmModelDefaultSchema,
+  DiscordBotTokenSchema,
+  SupportSecretEncryptionKeySchema,
 } from "./shared";
 
 export const queueEnv = createEnv({
@@ -12,6 +16,10 @@ export const queueEnv = createEnv({
     TEMPORAL_ADDRESS: TemporalAddressSchema,
     TEMPORAL_NAMESPACE: TemporalNamespaceSchema,
     TEMPORAL_TASK_QUEUE: TemporalTaskQueueSchema,
+    LLM_API_KEY: LlmApiKeySchema.optional(),
+    LLM_MODEL_DEFAULT: LlmModelDefaultSchema,
+    DISCORD_BOT_TOKEN: DiscordBotTokenSchema.optional(),
+    SUPPORT_SECRET_ENCRYPTION_KEY: SupportSecretEncryptionKeySchema.optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

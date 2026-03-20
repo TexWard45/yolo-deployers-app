@@ -10,4 +10,7 @@ model User {
 
   posts      Post[]
   workspaces WorkspaceMember[]
+
+  assignedConversations Conversation[]
+  replyDrafts           ReplyDraft[]
 }
