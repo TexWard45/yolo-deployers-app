@@ -3,6 +3,7 @@ import { authRouter } from "./routers/auth";
 import { userRouter } from "./routers/user";
 import { postRouter } from "./routers/post";
 import { workspaceRouter } from "./routers/workspace";
+import { codexRouter } from "./routers/codex";
 import { channelConnectionRouter } from "./routers/channel-connection";
 import { conversationRouter } from "./routers/conversation";
 import { agentRouter } from "./routers/agent";
@@ -16,6 +17,7 @@ export const appRouter = createTRPCRouter({
   user: userRouter,
   post: postRouter,
   workspace: workspaceRouter,
+  codex: codexRouter,
   channelConnection: channelConnectionRouter,
   conversation: conversationRouter,
   agent: agentRouter,

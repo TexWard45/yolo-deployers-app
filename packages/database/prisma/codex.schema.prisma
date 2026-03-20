@@ -1,0 +1,203 @@
+// ─── Codex Enums ───
+
+enum CodexSourceType {
+  GITHUB
+  GITLAB
+  BITBUCKET
+  AZURE_DEVOPS
+  LOCAL_GIT
+  ARCHIVE
+}
+
+enum CodexSyncMode {
+  WEBHOOK
+  CRON
+  MANUAL
+}
+
+enum CodexSyncStatus {
+  IDLE
+  SYNCING
+  FAILED
+  COMPLETED
+}
+
+enum CodexChunkType {
+  FUNCTION
+  METHOD
+  CLASS
+  TYPE
+  INTERFACE
+  ENUM
+  ROUTE_HANDLER
+  MODULE
+  FRAGMENT
+  FILE
+}
+
+enum CodexEmbeddingStatus {
+  PENDING
+  EMBEDDED
+  FAILED
+  STALE
+}
+
+enum CodexSymbolRefKind {
+  CALLS
+  IMPORTS
+  EXTENDS
+  IMPLEMENTS
+}
+
+// ─── Source & Repository ───
+
+model CodexRepository {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Source configuration
+  sourceType    CodexSourceType
+  sourceUrl     String
+  defaultBranch String          @default("main")
+  credentials   Json?
+
+  // Sync configuration
+  syncMode       CodexSyncMode   @default(MANUAL)
+  cronExpression String?
+  webhookSecret  String?
+  syncStatus     CodexSyncStatus @default(IDLE)
+  lastSyncAt     DateTime?
+  lastSyncCommit String?
+  lastSyncError  String?
+
+  // File filtering
+  extensionAllowlist String[] @default([])
+  pathDenylist       String[] @default([])
+  maxFileSizeBytes   Int      @default(1048576)
+
+  // Metadata
+  displayName String
+  description String?
+  language    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  files CodexFile[]
+  syncs CodexSyncLog[]
+
+  @@index([workspaceId])
+  @@index([sourceType])
+}
+
+// ─── Sync Log ───
+
+model CodexSyncLog {
+  id           String          @id @default(cuid())
+  repositoryId String
+  repository   CodexRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  status        CodexSyncStatus
+  startedAt     DateTime        @default(now())
+  completedAt   DateTime?
+  commitBefore  String?
+  commitAfter   String?
+  filesChanged  Int             @default(0)
+  chunksCreated Int             @default(0)
+  chunksUpdated Int             @default(0)
+  chunksDeleted Int             @default(0)
+  embeddingsGen Int             @default(0)
+  errorMessage  String?
+
+  @@index([repositoryId])
+}
+
+// ─── File ───
+
+model CodexFile {
+  id           String          @id @default(cuid())
+  repositoryId String
+  repository   CodexRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  filePath      String
+  language      String
+  contentHash   String
+  lastCommitSha String?
+  lastCommitAt  DateTime?
+  lastAuthor    String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chunks CodexChunk[]
+
+  @@unique([repositoryId, filePath])
+  @@index([repositoryId])
+  @@index([language])
+}
+
+// ─── Chunk ───
+
+model CodexChunk {
+  id     String    @id @default(cuid())
+  fileId String
+  file   CodexFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  // Chunk identity
+  chunkType   CodexChunkType
+  symbolName  String?
+  lineStart   Int
+  lineEnd     Int
+  content     String
+  contentHash String
+
+  // AST-extracted metadata
+  parameters String[]  @default([])
+  returnType String?
+  imports    String[]  @default([])
+  exportType String?
+  isAsync    Boolean   @default(false)
+  docstring  String?
+
+  // Hierarchy
+  parentChunkId String?
+  parentChunk   CodexChunk?  @relation("ChunkHierarchy", fields: [parentChunkId], references: [id], onDelete: SetNull)
+  childChunks   CodexChunk[] @relation("ChunkHierarchy")
+
+  // Embedding
+  embedding        Unsupported("vector(1536)")?
+  embeddingStatus  CodexEmbeddingStatus @default(PENDING)
+  embeddingModelId String?
+  embeddedAt       DateTime?
+
+  // Full-text search
+  searchVector Unsupported("tsvector")?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // V2: Symbol references
+  referencesFrom CodexSymbolRef[] @relation("RefSource")
+  referencesTo   CodexSymbolRef[] @relation("RefTarget")
+
+  @@index([fileId])
+  @@index([chunkType])
+  @@index([symbolName])
+  @@index([contentHash])
+}
+
+// ─── V2: Symbol Reference / Call Graph ───
+
+model CodexSymbolRef {
+  id            String             @id @default(cuid())
+  sourceChunkId String
+  sourceChunk   CodexChunk         @relation("RefSource", fields: [sourceChunkId], references: [id], onDelete: Cascade)
+  targetChunkId String
+  targetChunk   CodexChunk         @relation("RefTarget", fields: [targetChunkId], references: [id], onDelete: Cascade)
+  kind          CodexSymbolRefKind
+  line          Int?
+
+  @@unique([sourceChunkId, targetChunkId, kind])
+  @@index([sourceChunkId])
+  @@index([targetChunkId])
+}
