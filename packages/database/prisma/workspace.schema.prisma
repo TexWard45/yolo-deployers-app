@@ -16,6 +16,11 @@ model Workspace {
   codexRepositories  CodexRepository[]
   customers          Customer[]
   supportThreads     SupportThread[]
+
+  channelConnections ChannelConnection[]
+  customerProfiles   CustomerProfile[]
+  conversations      Conversation[]
+  agentConfig        WorkspaceAgentConfig?
 }
 
 model WorkspaceMember {

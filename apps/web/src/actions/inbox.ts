@@ -45,7 +45,9 @@ export async function createManualInboundMessage(data: {
   }
 }
 
-export async function getThreadDetail(threadId: string) {
+export async function getThreadDetail(threadId: string): Promise<Awaited<
+  ReturnType<ReturnType<typeof createCaller>["thread"]["getById"]>
+> | null> {
   const session = await getSession();
   if (!session) return null;
 
@@ -54,6 +56,27 @@ export async function getThreadDetail(threadId: string) {
     return await trpc.thread.getById({ threadId });
   } catch {
     return null;
+  }
+}
+
+export async function sendReply(data: { threadId: string; body: string }) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    await trpc.message.createOutgoingDraft({
+      threadId: data.threadId,
+      body: data.body,
+    });
+    return { success: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { success: false, error: error.message } as const;
+    }
+    return { success: false, error: "Something went wrong" } as const;
   }
 }
 

@@ -1,0 +1,77 @@
+model Session {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  userAgent String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events      ReplayEvent[]
+  timelines   SessionTimeline[]
+  clicks      SessionClick[]
+  traceLinks  SessionTraceLink[]
+
+  @@index([userId])
+}
+
+model ReplayEvent {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      String // e.g., "dom.snapshot", "dom.mutation", "ui.click", "console"
+  timestamp DateTime
+  payload   Json // Raw event data
+  sequence  Int
+  traceId   String? // W3C trace context for backend correlation
+  route     String? // Browser route/path at time of event
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, timestamp])
+  @@index([traceId])
+}
+
+model SessionTimeline {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      String // e.g., "click_summary", "page_summary", "error_summary"
+  content   String
+  metadata  Json?
+  timestamp DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, timestamp])
+}
+
+model SessionClick {
+  id        String  @id @default(cuid())
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  selector  String?
+  tagName   String?
+  text      String?
+  x         Float?
+  y         Float?
+  traceId   String?
+  route     String?
+  timestamp DateTime
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, timestamp])
+  @@index([traceId])
+}
+
+model SessionTraceLink {
+  id        String   @id @default(cuid())
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  traceId   String
+  timestamp DateTime @default(now())
+
+  @@unique([sessionId, traceId])
+  @@index([traceId])
+}

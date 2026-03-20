@@ -10,6 +10,7 @@ import {
   ChevronUp,
   LogOut,
   Code,
+  Play,
 } from "lucide-react";
 
 import {
@@ -39,6 +40,7 @@ const navItems = [
   { title: "Inbox", href: "/inbox", icon: Inbox },
   { title: "Users", href: "/users", icon: Users },
   { title: "Posts", href: "/posts", icon: FileText },
+  { title: "Replays", href: "/admin/replays", icon: Play },
   { title: "Settings", href: "/settings", icon: Settings },
 ];
 
