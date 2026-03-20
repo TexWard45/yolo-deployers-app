@@ -19,6 +19,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
+import Link from "next/link";
+import { cn } from "@/lib/utils";
 import { CreateWorkspaceForm } from "@/components/admin/create-workspace-form";
 import { AddMemberForm } from "@/components/admin/add-member-form";
 
@@ -49,6 +52,42 @@ export default async function AdminPage() {
         <p className="text-muted-foreground">
           Manage all workspaces and user assignments.
         </p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <Card className="border-primary/50 bg-primary/5">
+          <CardHeader>
+            <CardTitle>Telemetry Demo</CardTitle>
+            <CardDescription>
+              Test session recording and event tracking in real-time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link 
+              href="/test-telemetry" 
+              className={cn(buttonVariants({ variant: "default" }), "w-full")}
+            >
+              Launch Test Page →
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Session Replays</CardTitle>
+            <CardDescription>
+              View recorded user sessions and playback recordings.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link 
+              href="/admin/replays" 
+              className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+            >
+              Open Replay Portal →
+            </Link>
+          </CardContent>
+        </Card>
       </div>
 
       <CreateWorkspaceForm userId={session.id} />

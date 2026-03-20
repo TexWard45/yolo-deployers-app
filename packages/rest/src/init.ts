@@ -1,13 +1,17 @@
 import { TRPCError } from "@trpc/server";
 import { initTRPC } from "@trpc/server";
 import superjson from "superjson";
-import { prisma } from "@shared/database";
+import { prisma, type PrismaClient } from "@shared/database";
 
-export function createTRPCContext(opts?: { sessionUserId?: string | null }) {
+export interface TRPCContext {
+  prisma: PrismaClient;
+  sessionUserId: string | null;
+}
+
+export function createTRPCContext(opts?: { sessionUserId?: string | null }): TRPCContext {
   return { prisma, sessionUserId: opts?.sessionUserId ?? null };
 }
 
-export type TRPCContext = ReturnType<typeof createTRPCContext>;
 
 const t = initTRPC.context<TRPCContext>().create({
   transformer: superjson,

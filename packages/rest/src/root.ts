@@ -9,6 +9,7 @@ import { agentRouter } from "./routers/agent";
 import { threadRouter } from "./routers/thread";
 import { messageRouter } from "./routers/message";
 import { intakeRouter } from "./routers/intake";
+import { telemetryRouter } from "./routers/telemetry";
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -21,6 +22,7 @@ export const appRouter = createTRPCRouter({
   thread: threadRouter,
   message: messageRouter,
   intake: intakeRouter,
+  telemetry: telemetryRouter,
 });
 
 export type AppRouter = typeof appRouter;

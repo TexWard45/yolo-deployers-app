@@ -8,3 +8,4 @@ export {
   deliverSupportReply,
   updateMessageDeliveryStatus,
 } from "./deliver-reply.activity.js";
+export { processSessionEnrichment } from "./session-enrichment.activity.js";

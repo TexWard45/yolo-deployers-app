@@ -7,6 +7,9 @@ import {
   DiscordWebhookSecretSchema,
   InAppChatSigningSecretSchema,
   SupportSecretEncryptionKeySchema,
+  TemporalAddressSchema,
+  TemporalNamespaceSchema,
+  TemporalTaskQueueSchema,
 } from "./shared";
 
 export const webEnv = createEnv({
@@ -19,6 +22,9 @@ export const webEnv = createEnv({
     SUPPORT_SECRET_ENCRYPTION_KEY: SupportSecretEncryptionKeySchema.optional(),
     // Only consumed server-side (e.g. SSR/API routes)
     DATABASE_URL: z.string().url().optional(),
+    TEMPORAL_ADDRESS: TemporalAddressSchema,
+    TEMPORAL_NAMESPACE: TemporalNamespaceSchema,
+    TEMPORAL_TASK_QUEUE: TemporalTaskQueueSchema,
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

@@ -2,7 +2,14 @@
   "extends": "@shared/tsconfig/library.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "src",
+    "declaration": false,
+    "declarationMap": false
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/routers/intake.ts",
+    "src/routers/message.ts",
+    "src/routers/thread.ts"
+  ]
 }

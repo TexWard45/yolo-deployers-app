@@ -3,4 +3,5 @@ export const workflowRegistry = {
   ingestSupportMessage: "ingestSupportMessageWorkflow",
   generateReplyDraft: "generateReplyDraftWorkflow",
   deliverSupportReply: "deliverSupportReplyWorkflow",
+  sessionEnrichment: "sessionEnrichmentWorkflow",
 } as const;
