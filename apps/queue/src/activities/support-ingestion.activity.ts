@@ -1,18 +1,7 @@
 import { prisma } from "@shared/database";
+import type { IngestSupportMessageInput } from "@shared/types";
 
-export interface IngestMessageInput {
-  channelConnectionId: string;
-  externalMessageId: string;
-  externalUserId: string;
-  username: string | null;
-  displayName: string | null;
-  body: string;
-  timestamp: string;
-  rawPayload: Record<string, unknown>;
-  externalThreadId: string | null;
-}
-
-export async function ingestSupportMessage(input: IngestMessageInput): Promise<{
+export async function ingestSupportMessage(input: IngestSupportMessageInput): Promise<{
   conversationId: string;
   isNew: boolean;
 }> {

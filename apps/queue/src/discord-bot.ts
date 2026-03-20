@@ -1,6 +1,104 @@
 import { Client, GatewayIntentBits, Events } from "discord.js";
 import { prisma } from "@shared/database";
+import type { DiscordChannelConfig, IngestSupportMessageInput } from "@shared/types";
+import { DiscordChannelConfigSchema } from "@shared/types";
+import { getTemporalClient } from "./temporal-client.js";
+import { temporalConfig } from "./config.js";
+import { workflowRegistry } from "./workflows/registry.js";
 
+// ── Connection cache ──────────────────────────────────────────────
+interface CachedConnection {
+  id: string;
+  externalAccountId: string | null;
+  workspaceId: string;
+  config: DiscordChannelConfig;
+}
+
+let connectionCache: CachedConnection[] = [];
+let cacheLastRefreshed = 0;
+const CACHE_TTL_MS = 60_000;
+
+async function refreshConnectionCache(): Promise<void> {
+  const now = Date.now();
+  if (now - cacheLastRefreshed < CACHE_TTL_MS && connectionCache.length > 0) return;
+
+  const connections = await prisma.channelConnection.findMany({
+    where: { type: "DISCORD", status: "active" },
+  });
+
+  connectionCache = connections
+    .map((c) => {
+      const parsed = DiscordChannelConfigSchema.safeParse(c.configJson);
+      if (!parsed.success) return null;
+      return {
+        id: c.id,
+        externalAccountId: c.externalAccountId,
+        workspaceId: c.workspaceId,
+        config: parsed.data,
+      };
+    })
+    .filter((c): c is CachedConnection => c !== null);
+
+  cacheLastRefreshed = now;
+  console.log(`[discord-bot] Refreshed connection cache: ${connectionCache.length} active connections`);
+}
+
+function findMatchingConnection(
+  guildId: string | null,
+  channelId: string,
+  parentChannelId: string | null,
+): CachedConnection | undefined {
+  return connectionCache.find((conn) => {
+    // Connection must match the guild
+    if (conn.externalAccountId !== guildId) return false;
+    // Channel or parent channel must be in the configured list
+    return (
+      conn.config.channelIds.includes(channelId) ||
+      (parentChannelId !== null && conn.config.channelIds.includes(parentChannelId))
+    );
+  });
+}
+
+// ── Workflow handle cache (one long-running workflow per connection) ─
+const workflowHandles = new Map<string, boolean>();
+
+async function ensureWorkflowRunning(connectionId: string): Promise<void> {
+  if (workflowHandles.has(connectionId)) return;
+
+  const temporal = await getTemporalClient();
+  const workflowId = `discord-ingest-${connectionId}`;
+
+  try {
+    const handle = temporal.workflow.getHandle(workflowId);
+    await handle.describe();
+    // Workflow already running
+    workflowHandles.set(connectionId, true);
+  } catch {
+    // Workflow not found — start it
+    await temporal.workflow.start(workflowRegistry.ingestSupportMessage, {
+      args: [connectionId, 0],
+      taskQueue: temporalConfig.taskQueue,
+      workflowId,
+    });
+    workflowHandles.set(connectionId, true);
+    console.log(`[discord-bot] Started ingest workflow for connection ${connectionId}`);
+  }
+}
+
+async function signalWorkflow(
+  connectionId: string,
+  input: IngestSupportMessageInput,
+): Promise<void> {
+  const temporal = await getTemporalClient();
+  const workflowId = `discord-ingest-${connectionId}`;
+
+  await ensureWorkflowRunning(connectionId);
+
+  const handle = temporal.workflow.getHandle(workflowId);
+  await handle.signal("inboundMessage", input);
+}
+
+// ── Discord bot ───────────────────────────────────────────────────
 export function startDiscordBot(botToken: string): void {
   const client = new Client({
     intents: [
@@ -10,152 +108,55 @@ export function startDiscordBot(botToken: string): void {
     ],
   });
 
-  client.once(Events.ClientReady, (c) => {
+  client.once(Events.ClientReady, async (c) => {
     console.log(`[discord-bot] Logged in as ${c.user.tag}`);
+    await refreshConnectionCache();
   });
 
   client.on(Events.MessageCreate, async (message) => {
-    // Ignore bot messages
     if (message.author.bot) return;
 
-    // Only listen to channels with "support" or "company" in their name
-    const channelName = "name" in message.channel ? (message.channel.name ?? "") : "";
-    // For threads, check the parent channel name
-    const parentName = message.channel.isThread() && message.channel.parent
-      ? ("name" in message.channel.parent ? (message.channel.parent.name ?? "") : "")
-      : "";
-    const nameToCheck = (channelName + " " + parentName).toLowerCase();
+    try {
+      await refreshConnectionCache();
 
-    if (!nameToCheck.includes("support") && !nameToCheck.includes("company")) {
-      return;
-    }
+      const guildId = message.guildId;
+      const channelId = message.channelId;
+      const parentChannelId = message.channel.isThread()
+        ? message.channel.parentId
+        : null;
 
-    const guildId = message.guildId;
-    const channelId = message.channelId;
+      const connection = findMatchingConnection(guildId, channelId, parentChannelId);
+      if (!connection) return;
 
-    // Find a matching channel connection
-    const connection = await prisma.channelConnection.findFirst({
-      where: {
-        type: "DISCORD",
-        status: "active",
-        OR: [
-          { externalAccountId: guildId },
-          { externalAccountId: channelId },
-        ],
-      },
-    });
+      const isThread = message.channel.isThread();
+      const externalThreadId = isThread ? channelId : null;
 
-    if (!connection) return;
-
-    // Check for idempotency
-    const existing = await prisma.conversationMessage.findFirst({
-      where: {
+      const input: IngestSupportMessageInput = {
         channelConnectionId: connection.id,
         externalMessageId: message.id,
-      },
-    });
-
-    if (existing) return;
-
-    // Upsert customer identity
-    let identity = await prisma.customerChannelIdentity.findUnique({
-      where: {
-        channelConnectionId_externalUserId: {
-          channelConnectionId: connection.id,
-          externalUserId: message.author.id,
-        },
-      },
-    });
-
-    if (!identity) {
-      const profile = await prisma.customerProfile.create({
-        data: {
-          workspaceId: connection.workspaceId,
-          displayName: message.author.globalName ?? message.author.username,
-        },
-      });
-
-      identity = await prisma.customerChannelIdentity.create({
-        data: {
-          customerProfileId: profile.id,
-          channelConnectionId: connection.id,
-          externalUserId: message.author.id,
-          username: message.author.username,
-          displayName: message.author.globalName ?? message.author.username,
-        },
-      });
-    }
-
-    // Check if this message is inside a thread we already track
-    const threadId = message.channel.isThread() ? message.channelId : null;
-
-    let conversation = threadId
-      ? await prisma.conversation.findFirst({
-          where: {
-            workspaceId: connection.workspaceId,
-            customerProfileId: identity.customerProfileId,
-            externalThreadId: threadId,
-            status: { notIn: ["CLOSED"] },
-          },
-        })
-      : null;
-
-    if (!conversation) {
-      conversation = await prisma.conversation.findFirst({
-        where: {
-          workspaceId: connection.workspaceId,
-          customerProfileId: identity.customerProfileId,
-          primaryChannelType: "DISCORD",
-          status: { notIn: ["CLOSED"] },
-        },
-        orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
-      });
-    }
-
-    const now = new Date();
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          workspaceId: connection.workspaceId,
-          customerProfileId: identity.customerProfileId,
-          primaryChannelType: "DISCORD",
-          status: "NEW",
-          subject: message.content.slice(0, 100),
-          externalThreadId: threadId,
-          lastMessageAt: now,
-          lastInboundAt: now,
-        },
-      });
-    } else {
-      conversation = await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { lastMessageAt: now, lastInboundAt: now, status: "WAITING_REVIEW" },
-      });
-    }
-
-    // Store the inbound message
-    await prisma.conversationMessage.create({
-      data: {
-        conversationId: conversation.id,
-        channelConnectionId: connection.id,
-        direction: "INBOUND",
-        senderKind: "CUSTOMER",
-        externalMessageId: message.id,
+        externalUserId: message.author.id,
+        username: message.author.username,
+        displayName: message.author.globalName ?? message.author.username,
         body: message.content,
-        rawPayloadJson: JSON.parse(JSON.stringify({
+        timestamp: message.createdAt.toISOString(),
+        rawPayload: {
           authorId: message.author.id,
           username: message.author.username,
           channelId: message.channelId,
           guildId: message.guildId,
-        })),
-        sentAt: message.createdAt,
-      },
-    });
+        },
+        externalThreadId,
+      };
 
-    console.log(
-      `[discord-bot] Ingested message from ${message.author.username} in #${message.channel.isTextBased() ? ("name" in message.channel ? message.channel.name : channelId) : channelId} → conversation ${conversation.id}`
-    );
+      await signalWorkflow(connection.id, input);
+
+      const channelName = "name" in message.channel ? (message.channel.name ?? channelId) : channelId;
+      console.log(
+        `[discord-bot] Signaled ingest workflow for message from ${message.author.username} in #${channelName}`,
+      );
+    } catch (err) {
+      console.error("[discord-bot] Failed to process message:", err);
+    }
   });
 
   client.login(botToken).catch((err) => {

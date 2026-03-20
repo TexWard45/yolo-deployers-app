@@ -269,3 +269,26 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
 });
 
 export type UpdateWorkspaceAgentConfigInput = z.infer<typeof UpdateWorkspaceAgentConfigSchema>;
+
+// ── Discord Channel Config ────────────────────────────────────────
+export const DiscordChannelConfigSchema = z.object({
+  channelIds: z.array(z.string()).min(1, "At least one channel ID required"),
+  listenToThreads: z.boolean().optional().default(true),
+});
+
+export type DiscordChannelConfig = z.infer<typeof DiscordChannelConfigSchema>;
+
+// ── Ingest Support Message (shared between bot, workflow, activity) ─
+export const IngestSupportMessageInputSchema = z.object({
+  channelConnectionId: z.string(),
+  externalMessageId: z.string(),
+  externalUserId: z.string(),
+  username: z.string().nullable(),
+  displayName: z.string().nullable(),
+  body: z.string(),
+  timestamp: z.string(),
+  rawPayload: z.record(z.string(), z.unknown()),
+  externalThreadId: z.string().nullable(),
+});
+
+export type IngestSupportMessageInput = z.infer<typeof IngestSupportMessageInputSchema>;
