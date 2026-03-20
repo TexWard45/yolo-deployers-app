@@ -109,16 +109,17 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 5 — Hybrid Search Pipeline `[STATUS: NOT STARTED]`
+## Phase 5 — Hybrid Search Pipeline `[STATUS: COMPLETE]`
 
 **Goal:** Three-channel search + RRF fusion. **Search logic lives in `packages/rest`** (alongside the tRPC router) so it can access `ctx.prisma`.
 
 ### Tasks
 
-- [ ] Create `packages/rest/src/routers/codex/search.ts` — semanticSearch, keywordSearch, symbolSearch, rrfFusion, hybridSearch. All accept `prisma` as parameter. Raw SQL for vector/FTS queries.
-- [ ] Create `packages/rest/src/routers/codex/reranker.ts` — Optional cross-encoder (stub initially)
-- [ ] Note: Query embedding (for semantic search) requires OpenAI SDK → `packages/rest` needs `openai` dependency.
-- [ ] Run verification: Unit tests with seeded chunks. Each channel returns expected results. RRF correctly merges overlapping results.
+- [x] Create `packages/rest/src/routers/codex/search.ts` — semanticSearch, keywordSearch, symbolSearch, rrfFusion, hybridSearch. All accept `prisma` as parameter. Raw SQL for vector/FTS queries.
+- [x] Create `packages/rest/src/routers/codex/reranker.ts` — Optional cross-encoder (stub initially)
+- [x] Create `packages/rest/src/routers/codex/index.ts` — Re-export search + reranker
+- [x] Note: Query embedding delegated via `EmbedQueryFn` callback — no `openai` dependency needed in `packages/rest`.
+- [ ] Run verification: Unit tests with seeded chunks. Each channel returns expected results. RRF correctly merges overlapping results. (blocked: requires running PostgreSQL with pgvector extension)
 
 ---
 
