@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useState, useTransition } from "react";
 import {
   Sheet,
   SheetContent,
@@ -31,34 +31,119 @@ function timeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
-export function ThreadDetailSheet({ threadId, onClose }: ThreadDetailSheetProps) {
+function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [thread, setThread] = useState<ThreadData | null>(null);
   const [loading, startTransition] = useTransition();
+  const [initialized, setInitialized] = useState(false);
 
-  const fetchThread = useCallback(
-    (id: string) => {
-      startTransition(async () => {
-        const data = await getThreadDetail(id);
-        setThread(data);
-      });
-    },
-    []
-  );
+  const fetchThread = useCallback((id: string) => {
+    startTransition(async () => {
+      const data = await getThreadDetail(id);
+      setThread(data);
+    });
+  }, []);
 
-  useEffect(() => {
-    if (!threadId) {
-      setThread(null);
-      return;
-    }
+  if (!initialized) {
+    setInitialized(true);
+    fetchThread(threadId);
+  }
+
+  const handleStatusChange = useCallback(() => {
     fetchThread(threadId);
   }, [threadId, fetchThread]);
 
-  const handleStatusChange = useCallback(() => {
-    if (threadId) {
-      fetchThread(threadId);
-    }
-  }, [threadId, fetchThread]);
+  if (loading && !thread) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <span className="text-sm text-muted-foreground">Loading...</span>
+      </div>
+    );
+  }
 
+  if (!thread) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <span className="text-sm text-muted-foreground">Thread not found.</span>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <SheetHeader>
+        <div className="flex items-start justify-between gap-3 pr-8">
+          <SheetTitle className="text-base leading-snug">
+            {thread.title ?? `Thread with ${thread.customer.displayName}`}
+          </SheetTitle>
+          <ThreadStatusBadge status={thread.status} />
+        </div>
+        <SheetDescription>
+          {thread.customer.displayName}
+          {thread.customer.email ? ` · ${thread.customer.email}` : ""}
+          {" · "}
+          {thread.customer.source}
+        </SheetDescription>
+      </SheetHeader>
+
+      {/* Status actions */}
+      <div className="px-4 pb-2">
+        <StatusActions
+          threadId={thread.id}
+          currentStatus={thread.status}
+          onStatusChange={handleStatusChange}
+        />
+      </div>
+
+      {/* Messages */}
+      <div className="flex flex-col gap-2 px-4 pb-4">
+        <h3 className="text-sm font-semibold">
+          Messages ({thread.messages.length})
+        </h3>
+        {thread.messages.length === 0 ? (
+          <p className="text-xs text-muted-foreground">No messages yet.</p>
+        ) : (
+          thread.messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`rounded-lg border p-3 ${
+                msg.direction === "INBOUND"
+                  ? "border-l-2 border-l-blue-500"
+                  : msg.direction === "OUTBOUND"
+                    ? "border-l-2 border-l-emerald-500"
+                    : "border-l-2 border-l-muted-foreground bg-muted/30"
+              }`}
+            >
+              <div className="mb-1 flex items-center justify-between">
+                <Badge
+                  variant={
+                    msg.direction === "INBOUND"
+                      ? "default"
+                      : msg.direction === "OUTBOUND"
+                        ? "secondary"
+                        : "outline"
+                  }
+                  className="text-[10px]"
+                >
+                  {msg.direction === "INBOUND"
+                    ? "Customer"
+                    : msg.direction === "OUTBOUND"
+                      ? "Team"
+                      : "System"}
+                </Badge>
+                <span className="text-[10px] text-muted-foreground">
+                  {timeAgo(new Date(msg.createdAt))}
+                </span>
+              </div>
+              <p className="whitespace-pre-wrap text-sm">{msg.body}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+export function ThreadDetailSheet({ threadId, onClose }: ThreadDetailSheetProps) {
   return (
     <Sheet
       open={threadId !== null}
@@ -67,87 +152,7 @@ export function ThreadDetailSheet({ threadId, onClose }: ThreadDetailSheetProps)
       }}
     >
       <SheetContent side="right" className="sm:max-w-lg w-full overflow-y-auto">
-        {loading ? (
-          <div className="flex h-full items-center justify-center">
-            <span className="text-sm text-muted-foreground">Loading...</span>
-          </div>
-        ) : thread ? (
-          <>
-            <SheetHeader>
-              <div className="flex items-start justify-between gap-3 pr-8">
-                <SheetTitle className="text-base leading-snug">
-                  {thread.title ?? `Thread with ${thread.customer.displayName}`}
-                </SheetTitle>
-                <ThreadStatusBadge status={thread.status} />
-              </div>
-              <SheetDescription>
-                {thread.customer.displayName}
-                {thread.customer.email ? ` · ${thread.customer.email}` : ""}
-                {" · "}
-                {thread.customer.source}
-              </SheetDescription>
-            </SheetHeader>
-
-            {/* Status actions */}
-            <div className="px-4 pb-2">
-              <StatusActions
-                threadId={thread.id}
-                currentStatus={thread.status}
-                onStatusChange={handleStatusChange}
-              />
-            </div>
-
-            {/* Messages */}
-            <div className="flex flex-col gap-2 px-4 pb-4">
-              <h3 className="text-sm font-semibold">
-                Messages ({thread.messages.length})
-              </h3>
-              {thread.messages.length === 0 ? (
-                <p className="text-xs text-muted-foreground">No messages yet.</p>
-              ) : (
-                thread.messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`rounded-lg border p-3 ${
-                      msg.direction === "INBOUND"
-                        ? "border-l-2 border-l-blue-500"
-                        : msg.direction === "OUTBOUND"
-                          ? "border-l-2 border-l-emerald-500"
-                          : "border-l-2 border-l-muted-foreground bg-muted/30"
-                    }`}
-                  >
-                    <div className="mb-1 flex items-center justify-between">
-                      <Badge
-                        variant={
-                          msg.direction === "INBOUND"
-                            ? "default"
-                            : msg.direction === "OUTBOUND"
-                              ? "secondary"
-                              : "outline"
-                        }
-                        className="text-[10px]"
-                      >
-                        {msg.direction === "INBOUND"
-                          ? "Customer"
-                          : msg.direction === "OUTBOUND"
-                            ? "Team"
-                            : "System"}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground">
-                        {timeAgo(new Date(msg.createdAt))}
-                      </span>
-                    </div>
-                    <p className="whitespace-pre-wrap text-sm">{msg.body}</p>
-                  </div>
-                ))
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <span className="text-sm text-muted-foreground">Thread not found.</span>
-          </div>
-        )}
+        {threadId ? <ThreadSheetContent key={threadId} threadId={threadId} /> : null}
       </SheetContent>
     </Sheet>
   );
