@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { redirect } from "next/navigation";
-import { trpc } from "@/trpc/server";
+import { createCaller, createTRPCContext } from "@shared/rest";
 import { getSession } from "@/actions/auth";
 import { ManualIntakeForm } from "@/components/inbox/ManualIntakeForm";
 import { ThreadList } from "@/components/inbox/ThreadList";
@@ -20,9 +20,9 @@ export default async function InboxPage() {
     );
   }
 
+  const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
   const threads = await trpc.thread.listByWorkspace({
     workspaceId: workspace.id,
-    userId: session.id,
   });
 
   return (

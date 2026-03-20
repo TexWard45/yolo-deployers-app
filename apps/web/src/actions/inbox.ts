@@ -16,17 +16,16 @@ export async function createManualInboundMessage(data: {
   }
 
   try {
-    const trpc = createCaller(createTRPCContext());
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
     const externalCustomerId = `manual-customer-${data.customerName
       .trim()
       .toLowerCase()
-      .replace(/\s+/g, "-")}`;
+      .replace(/\s+/g, "-")}-${randomUUID()}`;
     const externalThreadId = `manual-thread-${randomUUID()}`;
     const externalMessageId = `manual-message-${randomUUID()}`;
 
     const result = await trpc.intake.ingestExternalMessage({
       workspaceId: data.workspaceId,
-      userId: session.id,
       source: "MANUAL",
       externalCustomerId,
       externalThreadId,
@@ -61,10 +60,9 @@ export async function updateThreadStatusAction(data: {
   }
 
   try {
-    const trpc = createCaller(createTRPCContext());
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
     const updated = await trpc.thread.updateStatus({
       threadId: data.threadId,
-      userId: session.id,
       status: data.status,
     });
     return { success: true, thread: updated } as const;

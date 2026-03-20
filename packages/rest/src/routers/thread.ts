@@ -5,7 +5,7 @@ import {
   ListThreadsSchema,
   UpdateThreadStatusSchema,
 } from "@shared/types";
-import { createTRPCRouter, publicProcedure } from "../init";
+import { createTRPCRouter, protectedProcedure } from "../init";
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -27,13 +27,15 @@ async function assertWorkspaceMember(params: {
 }
 
 export const threadRouter = createTRPCRouter({
-  listByWorkspace: publicProcedure
+  listByWorkspace: protectedProcedure
     .input(ListThreadsSchema)
     .query(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: input.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
       return ctx.prisma.supportThread.findMany({
@@ -50,9 +52,11 @@ export const threadRouter = createTRPCRouter({
       });
     }),
 
-  getById: publicProcedure
+  getById: protectedProcedure
     .input(GetThreadByIdSchema)
     .query(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       const thread = await ctx.prisma.supportThread.findUnique({
         where: { id: input.threadId },
         include: {
@@ -69,15 +73,17 @@ export const threadRouter = createTRPCRouter({
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: thread.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
       return thread;
     }),
 
-  updateStatus: publicProcedure
+  updateStatus: protectedProcedure
     .input(UpdateThreadStatusSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       const thread = await ctx.prisma.supportThread.findUnique({
         where: { id: input.threadId },
         select: { id: true, workspaceId: true },
@@ -90,7 +96,7 @@ export const threadRouter = createTRPCRouter({
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: thread.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
       return ctx.prisma.supportThread.update({
@@ -99,9 +105,11 @@ export const threadRouter = createTRPCRouter({
       });
     }),
 
-  assign: publicProcedure
+  assign: protectedProcedure
     .input(AssignThreadSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       const thread = await ctx.prisma.supportThread.findUnique({
         where: { id: input.threadId },
         select: { id: true, workspaceId: true },
@@ -114,7 +122,7 @@ export const threadRouter = createTRPCRouter({
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: thread.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
       if (input.assignedToId) {

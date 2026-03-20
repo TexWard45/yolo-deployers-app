@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { redirect } from "next/navigation";
 import { TRPCError } from "@trpc/server";
-import { trpc } from "@/trpc/server";
+import { createCaller, createTRPCContext } from "@shared/rest";
 import { getSession } from "@/actions/auth";
 import { ThreadDetail } from "@/components/inbox/ThreadDetail";
 
@@ -15,10 +15,10 @@ export default async function ThreadDetailPage({ params }: ThreadDetailPageProps
   if (!session) redirect("/login");
 
   const { threadId } = await params;
+  const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
   const thread = await trpc.thread
     .getById({
       threadId,
-      userId: session.id,
     })
     .catch((error: unknown) => {
       if (error instanceof TRPCError && error.code === "FORBIDDEN") {

@@ -34,4 +34,4 @@ jobs:
         run: npm run build
 
       - name: Unit Tests (Web)
-        run: npm run test --workspace @app/web
+        run: npm run test -w @app/web

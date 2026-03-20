@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 import { CreateOutgoingDraftSchema, ListThreadMessagesSchema } from "@shared/types";
-import { createTRPCRouter, publicProcedure } from "../init";
+import { createTRPCRouter, protectedProcedure } from "../init";
 
 async function assertThreadMember(params: {
   prisma: {
@@ -36,13 +36,15 @@ async function assertThreadMember(params: {
 }
 
 export const messageRouter = createTRPCRouter({
-  listByThread: publicProcedure
+  listByThread: protectedProcedure
     .input(ListThreadMessagesSchema)
     .query(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       await assertThreadMember({
         prisma: ctx.prisma,
         threadId: input.threadId,
-        userId: input.userId,
+        userId,
       });
 
       return ctx.prisma.threadMessage.findMany({
@@ -51,13 +53,15 @@ export const messageRouter = createTRPCRouter({
       });
     }),
 
-  createOutgoingDraft: publicProcedure
+  createOutgoingDraft: protectedProcedure
     .input(CreateOutgoingDraftSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       const thread = await assertThreadMember({
         prisma: ctx.prisma,
         threadId: input.threadId,
-        userId: input.userId,
+        userId,
       });
 
       const message = await ctx.prisma.threadMessage.create({

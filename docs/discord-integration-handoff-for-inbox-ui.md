@@ -31,17 +31,16 @@ Recommended primary entrypoint:
 Map Discord event fields into `ingestExternalMessage`:
 
 1. `workspaceId`: internal workspace to route this Discord server/channel into
-2. `userId`: internal operator/service-account user who is a member of the workspace
-3. `source`: `"DISCORD"`
-4. `externalCustomerId`: Discord user ID
-5. `externalThreadId`: Discord channel/thread ID
-6. `customerDisplayName`: Discord display name / username
-7. `customerAvatarUrl`: Discord avatar URL (optional)
-8. `customerEmail`: optional if known from your own mapping
-9. `messageBody`: Discord message content
-10. `externalMessageId`: Discord message ID (for idempotency)
-11. `title`: thread title (optional)
-12. `metadata`: structured raw context (attachments, guild/channel IDs, etc.)
+2. `source`: `"DISCORD"`
+3. `externalCustomerId`: Discord user ID
+4. `externalThreadId`: Discord channel/thread ID
+5. `customerDisplayName`: Discord display name / username
+6. `customerAvatarUrl`: Discord avatar URL (optional)
+7. `customerEmail`: optional if known from your own mapping
+8. `messageBody`: Discord message content
+9. `externalMessageId`: Discord message ID (for idempotency)
+10. `title`: thread title (optional)
+11. `metadata`: structured raw context (attachments, guild/channel IDs, etc.)
 
 ## Behavior Guarantees
 
@@ -75,11 +74,12 @@ export async function ingestDiscordMessage(event: {
   guildId: string;
   channelId: string;
 }) {
-  const trpc = createCaller(createTRPCContext());
+  const trpc = createCaller(
+    createTRPCContext({ sessionUserId: event.serviceUserId }),
+  );
 
   return trpc.intake.ingestExternalMessage({
     workspaceId: event.workspaceId,
-    userId: event.serviceUserId,
     source: "DISCORD",
     externalCustomerId: event.discordUserId,
     externalThreadId: event.discordThreadId,
@@ -105,7 +105,7 @@ Recommended approach:
 
 1. Maintain a mapping table from Discord `guildId`/`channelId` -> internal `workspaceId`.
 2. Maintain one integration/service user per workspace (or shared service user added to each workspace).
-3. Pass that member `userId` into the intake procedures for authorization checks.
+3. Pass that member ID as `sessionUserId` when creating tRPC context.
 
 ## Status Update Hooks (Optional)
 
@@ -137,4 +137,4 @@ To avoid duplicate UI messages:
 ## Notes
 
 1. Current UI also includes a manual intake path for local testing; this can remain for QA.
-2. If auth model changes later, move intake procedures behind a service-auth gateway instead of accepting raw `userId`.
+2. Intake procedures now require authenticated context (no client-supplied `userId` field).

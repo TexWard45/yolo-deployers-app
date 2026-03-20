@@ -76,7 +76,6 @@ export type MessageDirectionInput = z.infer<typeof MessageDirectionSchema>;
 
 export const ListThreadsSchema = z.object({
   workspaceId: z.string(),
-  userId: z.string(),
   status: ThreadStatusSchema.optional(),
 });
 
@@ -84,14 +83,12 @@ export type ListThreadsInput = z.infer<typeof ListThreadsSchema>;
 
 export const GetThreadByIdSchema = z.object({
   threadId: z.string(),
-  userId: z.string(),
 });
 
 export type GetThreadByIdInput = z.infer<typeof GetThreadByIdSchema>;
 
 export const UpdateThreadStatusSchema = z.object({
   threadId: z.string(),
-  userId: z.string(),
   status: ThreadStatusSchema,
 });
 
@@ -99,7 +96,6 @@ export type UpdateThreadStatusInput = z.infer<typeof UpdateThreadStatusSchema>;
 
 export const AssignThreadSchema = z.object({
   threadId: z.string(),
-  userId: z.string(),
   assignedToId: z.string().nullable(),
 });
 
@@ -107,14 +103,12 @@ export type AssignThreadInput = z.infer<typeof AssignThreadSchema>;
 
 export const ListThreadMessagesSchema = z.object({
   threadId: z.string(),
-  userId: z.string(),
 });
 
 export type ListThreadMessagesInput = z.infer<typeof ListThreadMessagesSchema>;
 
 export const CreateOutgoingDraftSchema = z.object({
   threadId: z.string(),
-  userId: z.string(),
   body: z.string().min(1, "Message body is required"),
 });
 
@@ -122,7 +116,6 @@ export type CreateOutgoingDraftInput = z.infer<typeof CreateOutgoingDraftSchema>
 
 export const UpsertExternalCustomerSchema = z.object({
   workspaceId: z.string(),
-  userId: z.string(),
   source: CustomerSourceSchema,
   externalCustomerId: z.string().min(1),
   displayName: z.string().min(1),
@@ -134,7 +127,6 @@ export type UpsertExternalCustomerInput = z.infer<typeof UpsertExternalCustomerS
 
 export const UpsertExternalThreadSchema = z.object({
   workspaceId: z.string(),
-  userId: z.string(),
   customerId: z.string(),
   source: CustomerSourceSchema,
   externalThreadId: z.string().min(1),
@@ -146,7 +138,6 @@ export type UpsertExternalThreadInput = z.infer<typeof UpsertExternalThreadSchem
 
 export const IngestExternalMessageSchema = z.object({
   workspaceId: z.string(),
-  userId: z.string(),
   source: CustomerSourceSchema,
   externalCustomerId: z.string().min(1),
   externalThreadId: z.string().min(1),

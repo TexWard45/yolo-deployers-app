@@ -6,7 +6,7 @@ import {
   UpsertExternalCustomerSchema,
   UpsertExternalThreadSchema,
 } from "@shared/types";
-import { createTRPCRouter, publicProcedure } from "../init";
+import { createTRPCRouter, protectedProcedure } from "../init";
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -28,13 +28,15 @@ async function assertWorkspaceMember(params: {
 }
 
 export const intakeRouter = createTRPCRouter({
-  upsertExternalCustomer: publicProcedure
+  upsertExternalCustomer: protectedProcedure
     .input(UpsertExternalCustomerSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: input.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
       return ctx.prisma.customer.upsert({
@@ -61,13 +63,15 @@ export const intakeRouter = createTRPCRouter({
       });
     }),
 
-  upsertExternalThread: publicProcedure
+  upsertExternalThread: protectedProcedure
     .input(UpsertExternalThreadSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: input.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
       return ctx.prisma.supportThread.upsert({
@@ -94,78 +98,79 @@ export const intakeRouter = createTRPCRouter({
       });
     }),
 
-  ingestExternalMessage: publicProcedure
+  ingestExternalMessage: protectedProcedure
     .input(IngestExternalMessageSchema)
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: input.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
-      const customer = await ctx.prisma.customer.upsert({
-        where: {
-          workspaceId_source_externalCustomerId: {
+      return ctx.prisma.$transaction(async (tx) => {
+        const customer = await tx.customer.upsert({
+          where: {
+            workspaceId_source_externalCustomerId: {
+              workspaceId: input.workspaceId,
+              source: input.source,
+              externalCustomerId: input.externalCustomerId,
+            },
+          },
+          create: {
             workspaceId: input.workspaceId,
             source: input.source,
             externalCustomerId: input.externalCustomerId,
+            displayName: input.customerDisplayName,
+            avatarUrl: input.customerAvatarUrl,
+            email: input.customerEmail,
           },
-        },
-        create: {
-          workspaceId: input.workspaceId,
-          source: input.source,
-          externalCustomerId: input.externalCustomerId,
-          displayName: input.customerDisplayName,
-          avatarUrl: input.customerAvatarUrl,
-          email: input.customerEmail,
-        },
-        update: {
-          displayName: input.customerDisplayName,
-          avatarUrl: input.customerAvatarUrl,
-          email: input.customerEmail,
-        },
-      });
+          update: {
+            displayName: input.customerDisplayName,
+            avatarUrl: input.customerAvatarUrl,
+            email: input.customerEmail,
+          },
+        });
 
-      const thread = await ctx.prisma.supportThread.upsert({
-        where: {
-          workspaceId_source_externalThreadId: {
+        const thread = await tx.supportThread.upsert({
+          where: {
+            workspaceId_source_externalThreadId: {
+              workspaceId: input.workspaceId,
+              source: input.source,
+              externalThreadId: input.externalThreadId,
+            },
+          },
+          create: {
             workspaceId: input.workspaceId,
+            customerId: customer.id,
             source: input.source,
             externalThreadId: input.externalThreadId,
+            title: input.title,
+            status: "WAITING_REVIEW",
           },
-        },
-        create: {
-          workspaceId: input.workspaceId,
-          customerId: customer.id,
-          source: input.source,
-          externalThreadId: input.externalThreadId,
-          title: input.title,
-          status: "WAITING_REVIEW",
-          lastMessageAt: new Date(),
-        },
-        update: {
-          customerId: customer.id,
-          title: input.title,
-          lastMessageAt: new Date(),
-          status: "WAITING_REVIEW",
-        },
-      });
+          update: {
+            customerId: customer.id,
+            title: input.title,
+            status: "WAITING_REVIEW",
+          },
+        });
 
-      const existingMessage =
-        input.externalMessageId
-          ? await ctx.prisma.threadMessage.findUnique({
-              where: {
-                threadId_externalMessageId: {
-                  threadId: thread.id,
-                  externalMessageId: input.externalMessageId,
+        const existingMessage =
+          input.externalMessageId
+            ? await tx.threadMessage.findUnique({
+                where: {
+                  threadId_externalMessageId: {
+                    threadId: thread.id,
+                    externalMessageId: input.externalMessageId,
+                  },
                 },
-              },
-            })
-          : null;
+              })
+            : null;
 
-      const message = existingMessage
-        ? existingMessage
-        : await ctx.prisma.threadMessage.create({
+        const message =
+          existingMessage ??
+          (await tx.threadMessage.create({
             data: {
               threadId: thread.id,
               direction: "INBOUND",
@@ -173,21 +178,21 @@ export const intakeRouter = createTRPCRouter({
               externalMessageId: input.externalMessageId,
               metadata: input.metadata as Prisma.InputJsonValue | undefined,
             },
-          });
+          }));
 
-      await ctx.prisma.supportThread.update({
-        where: { id: thread.id },
-        data: { lastMessageAt: message.createdAt },
+        const updatedThread = await tx.supportThread.update({
+          where: { id: thread.id },
+          data: { lastMessageAt: message.createdAt },
+        });
+
+        return { customer, thread: updatedThread, message };
       });
-
-      return { customer, thread, message };
     }),
 
-  touchThreadStatusFromIngestion: publicProcedure
+  touchThreadStatusFromIngestion: protectedProcedure
     .input(
       UpsertExternalThreadSchema.pick({
         workspaceId: true,
-        userId: true,
         source: true,
         externalThreadId: true,
       }).extend({
@@ -195,10 +200,12 @@ export const intakeRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const userId = ctx.sessionUserId!;
+
       await assertWorkspaceMember({
         prisma: ctx.prisma,
         workspaceId: input.workspaceId,
-        userId: input.userId,
+        userId,
       });
 
       const thread = await ctx.prisma.supportThread.findUnique({
