@@ -3,20 +3,19 @@ import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
 import { dispatchSessionEnrichment } from "@/lib/temporal";
 
-// Safe fallback CORS origin — computed once at module load so every response
-// (including error paths) always has Access-Control-Allow-Origin.
-const CORS_ORIGIN =
-  process.env.NODE_ENV === "production"
-    ? process.env.NEXT_PUBLIC_APP_URL ?? (() => {
-        throw new Error("NEXT_PUBLIC_APP_URL must be set in production");
-      })()
-    : "*";
-
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": CORS_ORIGIN,
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+// Safe fallback CORS origin — deferred to request time so the build step
+// doesn't throw when NEXT_PUBLIC_APP_URL is absent during `next build`.
+function getCorsHeaders() {
+  const origin =
+    process.env.NODE_ENV === "production"
+      ? process.env.NEXT_PUBLIC_APP_URL ?? "*"
+      : "*";
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  } as const;
+}
 
 export async function POST(req: Request) {
   try {
@@ -36,22 +35,22 @@ export async function POST(req: Request) {
       console.warn("[Telemetry] Failed to dispatch enrichment workflow:", err);
     });
 
-    return NextResponse.json({ ingested: result.ingested }, { headers: CORS_HEADERS });
+    return NextResponse.json({ ingested: result.ingested }, { headers: getCorsHeaders() });
   } catch (error) {
     if (error instanceof TRPCError) {
       return NextResponse.json(
         { error: error.message },
-        { status: error.code === "BAD_REQUEST" ? 400 : 500, headers: CORS_HEADERS }
+        { status: error.code === "BAD_REQUEST" ? 400 : 500, headers: getCorsHeaders() }
       );
     }
     console.error("[Telemetry Ingest Error]:", error);
     return NextResponse.json(
       { error: "Internal Server Error" },
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500, headers: getCorsHeaders() }
     );
   }
 }
 
 export async function OPTIONS() {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
+  return new Response(null, { status: 204, headers: getCorsHeaders() });
 }

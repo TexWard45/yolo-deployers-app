@@ -31,7 +31,7 @@ export default function TelemetryTestPage() {
             Telemetry Demo & Test
           </CardTitle>
           <p className="text-muted-foreground mt-2">
-            This page is used to test the "Event Replay" migration. Every action you take here 
+            This page is used to test the &ldquo;Event Replay&rdquo; migration. Every action you take here
             (clicks, typing, scrolling) is being recorded by the Telemetry SDK.
           </p>
         </CardHeader>
