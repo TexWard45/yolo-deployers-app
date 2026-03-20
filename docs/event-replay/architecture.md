@@ -87,6 +87,7 @@
 - **Workflow**: `apps/queue/src/workflows/session-enrichment.workflow.ts`
 - **Activity**: `apps/queue/src/activities/session-enrichment.activity.ts`
 - **Dispatch**: Tự động trigger từ `apps/web/src/lib/temporal.ts` sau mỗi ingest thành công
+- **Idempotent dispatch**: `workflowId = session-enrichment-{sessionId}` — nếu workflow đã chạy, `WorkflowExecutionAlreadyStartedError` được bỏ qua (browser SDK gửi nhiều batch cho cùng một session)
 - **Tính năng**: Tạo SessionTimeline + SessionClick + SessionTraceLink — idempotent (deleteMany + createMany trong transaction)
 
 ### Tầng 6: Visualization (Admin UI)

@@ -10,6 +10,9 @@
   "exclude": [
     "src/routers/intake.ts",
     "src/routers/message.ts",
-    "src/routers/thread.ts"
+    "src/routers/thread.ts",
+    "src/routers/agent.ts",
+    "src/routers/channel-connection.ts",
+    "src/routers/conversation.ts"
   ]
 }

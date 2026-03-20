@@ -27,7 +27,12 @@ export async function dispatchSessionEnrichment(sessionId: string): Promise<void
       workflowId: `session-enrichment-${sessionId}`,
     });
   } catch (err) {
-    // If workflow.start fails due to a broken connection, clear cache so next call reconnects
+    // The browser SDK sends multiple batches per session — if enrichment is
+    // already running for this workflowId, that's expected and not an error.
+    if (err instanceof Error && err.name === "WorkflowExecutionAlreadyStartedError") {
+      return;
+    }
+    // Any other error likely means a broken connection — clear cache so next call reconnects
     _clientPromise = null;
     throw err;
   }
