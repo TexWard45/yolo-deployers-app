@@ -1,6 +1,5 @@
-import type { Node } from "web-tree-sitter";
 import type { CodexChunkType } from "@shared/types";
-import type { LanguageDefinition, NodeMapping, ParsedChunk } from "./types.js";
+import type { LanguageDefinition, Node, NodeMapping, ParsedChunk } from "./types.js";
 import { computeHash } from "./chunk-splitter.js";
 
 // ── Chunk extraction ─────────────────────────────────────────────────

@@ -29,11 +29,9 @@ interface SearchResultItem {
   language: string;
   chunkType: string;
   symbolName: string | null;
-  repository: {
-    id: string;
-    displayName: string;
-    sourceType: string;
-  };
+  repoId: string;
+  displayName: string;
+  sourceType: string;
   score: number;
   matchChannel: string;
 }
@@ -99,7 +97,7 @@ export function CodexSearchClient({ workspaceId, workspaceSlug }: CodexSearchCli
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon-sm" render={<Link href={`/workspace/${workspaceSlug}/codex`} />}>
+        <Button variant="ghost" size="icon-sm" nativeButton={false} render={<Link href={`/workspace/${workspaceSlug}/codex`} />}>
           <ArrowLeft className="size-4" />
         </Button>
         <h2 className="text-2xl font-bold tracking-tight">Code Search</h2>

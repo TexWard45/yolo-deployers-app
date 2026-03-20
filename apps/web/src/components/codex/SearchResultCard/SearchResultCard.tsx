@@ -17,11 +17,9 @@ interface SearchResultCardProps {
     language: string;
     chunkType: string;
     symbolName: string | null;
-    repository: {
-      id: string;
-      displayName: string;
-      sourceType: string;
-    };
+    repoId: string;
+    displayName: string;
+    sourceType: string;
     score: number;
     matchChannel: string;
   };
@@ -54,7 +52,7 @@ export function SearchResultCard({ result, workspaceSlug }: SearchResultCardProp
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <FileCode className="size-3" />
-                {result.repository.displayName}
+                {result.displayName}
               </span>
               <span className="flex items-center gap-1">
                 <Hash className="size-3" />

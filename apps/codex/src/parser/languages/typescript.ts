@@ -1,5 +1,4 @@
-import type { Node } from "web-tree-sitter";
-import type { LanguageDefinition, NodeMapping } from "../types.js";
+import type { LanguageDefinition, Node, NodeMapping } from "../types.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

@@ -7,3 +7,4 @@ dist
 *.tsbuildinfo
 packages/types/src/prisma-generated/
 packages/types/src/prisma-generated/**
+data/

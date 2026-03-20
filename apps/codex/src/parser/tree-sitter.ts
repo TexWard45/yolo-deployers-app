@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { Parser, Language } from "web-tree-sitter";
+import Parser from "web-tree-sitter";
+type Language = Parser.Language;
 import type { ParsedChunk } from "./types.js";
 import { getLanguageDefinition, getGrammarName } from "./languages/index.js";
 import { extractChunksFromTree } from "./metadata.js";
@@ -51,6 +52,8 @@ export async function loadLanguageGrammar(
   const searchPaths = [
     // WASM files directory (project-level)
     resolve(process.cwd(), "grammars", wasmFileName),
+    // tree-sitter-wasms bundle (monorepo root)
+    resolveWasmPath("tree-sitter-wasms", `out/${wasmFileName}`),
     // node_modules of the language package
     resolveWasmPath(`tree-sitter-${grammarName}`, wasmFileName),
     // Monorepo root node_modules
@@ -73,7 +76,7 @@ export async function loadLanguageGrammar(
 
   for (const path of searchPaths) {
     if (existsSync(path)) {
-      const lang = await Language.load(path);
+      const lang = await Parser.Language.load(path);
       loadedLanguages.set(grammarName, lang);
       return lang;
     }
@@ -107,7 +110,7 @@ export async function parseFile(
     return [];
   }
 
-  const grammar = await loadLanguageGrammar(language);
+  const grammar = await loadLanguageGrammar(langDef.name);
   const parser = new Parser();
   parser.setLanguage(grammar);
 

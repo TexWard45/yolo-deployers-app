@@ -4,16 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/worker.ts",
+    "dev": "tsx --env-file=../../.env src/worker.ts",
     "dev:doppler": "doppler run -- tsx src/worker.ts",
     "build": "tsc --build",
     "build:doppler": "doppler run -- tsc --build",
-    "start": "tsx src/worker.ts",
+    "start": "tsx --env-file=../../.env src/worker.ts",
     "start:doppler": "doppler run -- tsx src/worker.ts",
     "type-check": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "test": "echo \"No tests configured yet\"",
-    "workflow:start": "tsx src/client.ts",
+    "workflow:start": "tsx --env-file=../../.env src/client.ts",
     "workflow:start:doppler": "doppler run -- tsx src/client.ts"
   },
   "dependencies": {
@@ -25,11 +25,12 @@
     "@temporalio/workflow": "^1.11.5",
     "openai": "^4.77.0",
     "simple-git": "^3.27.0",
-    "web-tree-sitter": "^0.26.7"
+    "web-tree-sitter": "^0.24.7"
   },
   "devDependencies": {
     "@shared/tsconfig": "*",
     "@types/node": "^22",
+    "tree-sitter-wasms": "^0.1.13",
     "tsx": "^4.20.6",
     "typescript": "^5.7"
   }

@@ -47,6 +47,7 @@ export default async function ChunkViewerPage({ params }: ChunkViewerPageProps) 
         <Button
           variant="ghost"
           size="icon-sm"
+          nativeButton={false}
           render={<Link href={`/workspace/${repoSlug}/codex/repository/${repoId}`} />}
         >
           <ArrowLeft className="size-4" />

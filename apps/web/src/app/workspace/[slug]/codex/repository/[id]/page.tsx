@@ -68,7 +68,7 @@ export default async function RepositoryDetailPage({ params }: RepositoryDetailP
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon-sm" render={<Link href={`/workspace/${slug}/codex`} />}>
+        <Button variant="ghost" size="icon-sm" nativeButton={false} render={<Link href={`/workspace/${slug}/codex`} />}>
           <ArrowLeft className="size-4" />
         </Button>
         <div className="flex-1">

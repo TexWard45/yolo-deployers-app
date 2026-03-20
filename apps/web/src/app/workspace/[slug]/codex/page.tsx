@@ -65,11 +65,11 @@ export default async function CodexDashboardPage({ params }: CodexDashboardPageP
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" render={<Link href={`/workspace/${slug}/codex/search`} />}>
+          <Button variant="outline" nativeButton={false} render={<Link href={`/workspace/${slug}/codex/search`} />}>
             <Search className="mr-2 size-4" />
             Search
           </Button>
-          <Button render={<Link href={`/workspace/${slug}/codex/repository/new`} />}>
+          <Button nativeButton={false} render={<Link href={`/workspace/${slug}/codex/repository/new`} />}>
             <Plus className="mr-2 size-4" />
             Add Repository
           </Button>
@@ -101,6 +101,7 @@ export default async function CodexDashboardPage({ params }: CodexDashboardPageP
               </p>
               <Button
                 variant="outline"
+                nativeButton={false}
                 render={<Link href={`/workspace/${slug}/codex/repository/new`} />}
               >
                 <Plus className="mr-2 size-4" />

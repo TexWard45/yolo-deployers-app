@@ -1,5 +1,7 @@
 import type { CodexChunkType } from "@shared/types";
-import type { Node } from "web-tree-sitter";
+import type Parser from "web-tree-sitter";
+
+export type Node = Parser.SyntaxNode;
 
 // ── Parsed output from AST analysis ─────────────────────────────────
 

@@ -88,7 +88,7 @@ export function NewRepositoryForm({ workspaceId, workspaceSlug }: NewRepositoryF
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon-sm" render={<Link href={`/workspace/${workspaceSlug}/codex`} />}>
+        <Button variant="ghost" size="icon-sm" nativeButton={false} render={<Link href={`/workspace/${workspaceSlug}/codex`} />}>
           <ArrowLeft className="size-4" />
         </Button>
         <h2 className="text-2xl font-bold tracking-tight">Add Repository</h2>
