@@ -9,7 +9,6 @@ import {
 } from "@shared/types";
 import { createTRPCRouter, protectedProcedure } from "../init";
 import {
-  HIGH_CONFIDENCE_THRESHOLD,
   buildThreadSummary,
   decideDeterministicThreadMatch,
   shouldEnqueueResolutionWorkflow,
@@ -292,7 +291,7 @@ export const intakeRouter = createTRPCRouter({
           matching: {
             strategy: resolvedStrategy,
             confidence: Number(resolvedConfidence.toFixed(3)),
-            requiresReview: deterministicDecision.confidence < HIGH_CONFIDENCE_THRESHOLD,
+            requiresReview: deterministicDecision.requiresReview,
             issueFingerprint: resolvedFingerprint,
             enqueueAsyncResolution,
           },

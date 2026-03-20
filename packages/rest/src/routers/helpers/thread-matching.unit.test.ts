@@ -87,6 +87,31 @@ test("deterministic match uses similarity candidate with review flag when medium
   assert.equal(decision.requiresReview, decision.confidence < HIGH_CONFIDENCE_THRESHOLD);
 });
 
+test("deterministic new_thread decision does not require review", () => {
+  const decision = decideDeterministicThreadMatch({
+    externalThreadId: null,
+    inReplyToExternalMessageId: null,
+    threadGroupingHint: null,
+    messageBody: "totally unrelated billing invoice dispute",
+    existingThreadByExternalId: null,
+    threadIdByReplyChain: null,
+    candidates: [
+      {
+        id: "thread-1",
+        externalThreadId: "ext-1",
+        issueFingerprint: "webhook retries timeout failures production ongoing",
+        summary: null,
+        lastMessageAt: new Date(),
+        lastInboundAt: new Date(),
+      },
+    ],
+  });
+
+  assert.equal(decision.strategy, "new_thread");
+  assert.equal(decision.threadId, null);
+  assert.equal(decision.requiresReview, false);
+});
+
 test("buildThreadSummary appends bounded context", () => {
   const summary = buildThreadSummary("Webhook errors reported", "Customer confirmed issue still ongoing");
   assert.ok(summary.includes("Webhook errors reported"));

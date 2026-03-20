@@ -1,3 +1,5 @@
+import type { LlmThreadMatchInput, LlmThreadMatchResult } from "@shared/types";
+
 export const HIGH_CONFIDENCE_THRESHOLD = 0.85;
 export const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
@@ -196,24 +198,6 @@ export function shouldEnqueueResolutionWorkflow(
   }
 
   return false;
-}
-
-export interface LlmMatchCandidate {
-  id: string;
-  issueFingerprint: string | null;
-  summary: string | null;
-}
-
-export interface LlmThreadMatchInput {
-  incomingMessage: string;
-  threadGroupingHint?: string | null;
-  candidates: LlmMatchCandidate[];
-}
-
-export interface LlmThreadMatchResult {
-  matchedThreadId: string | null;
-  confidence: number;
-  reason: string;
 }
 
 /**
