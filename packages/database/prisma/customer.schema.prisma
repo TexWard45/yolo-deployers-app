@@ -1,0 +1,23 @@
+enum CustomerSource {
+  DISCORD
+  MANUAL
+  API
+}
+
+model Customer {
+  id                 String         @id @default(cuid())
+  workspaceId        String
+  workspace          Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  source             CustomerSource
+  externalCustomerId String
+  displayName        String
+  avatarUrl          String?
+  email              String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  threads SupportThread[]
+
+  @@unique([workspaceId, source, externalCustomerId])
+  @@index([workspaceId, createdAt])
+}

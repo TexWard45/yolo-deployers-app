@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
         customerProfileId: identity.customerProfileId,
         primaryChannelType: "IN_APP",
         externalThreadId: payload.sessionId,
-        status: { in: ["OPEN", "PENDING"] },
+        status: { notIn: ["CLOSED"] },
       },
     });
 
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
           workspaceId: payload.workspaceId,
           customerProfileId: identity.customerProfileId,
           primaryChannelType: "IN_APP",
-          status: "OPEN",
+          status: "NEW",
           externalThreadId: payload.sessionId,
           subject: payload.message.body.slice(0, 100),
           lastMessageAt: now,
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
         data: {
           lastMessageAt: now,
           lastInboundAt: now,
-          status: "OPEN",
+          status: "NEW",
         },
       });
     }

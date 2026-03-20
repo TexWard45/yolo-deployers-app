@@ -95,7 +95,7 @@ export function startDiscordBot(botToken: string): void {
             workspaceId: connection.workspaceId,
             customerProfileId: identity.customerProfileId,
             externalThreadId: threadId,
-            status: { in: ["OPEN", "PENDING"] },
+            status: { notIn: ["CLOSED"] },
           },
         })
       : null;
@@ -106,7 +106,7 @@ export function startDiscordBot(botToken: string): void {
           workspaceId: connection.workspaceId,
           customerProfileId: identity.customerProfileId,
           primaryChannelType: "DISCORD",
-          status: { in: ["OPEN", "PENDING"] },
+          status: { notIn: ["CLOSED"] },
         },
         orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
       });
@@ -120,7 +120,7 @@ export function startDiscordBot(botToken: string): void {
           workspaceId: connection.workspaceId,
           customerProfileId: identity.customerProfileId,
           primaryChannelType: "DISCORD",
-          status: "OPEN",
+          status: "NEW",
           subject: message.content.slice(0, 100),
           externalThreadId: threadId,
           lastMessageAt: now,
@@ -130,7 +130,7 @@ export function startDiscordBot(botToken: string): void {
     } else {
       conversation = await prisma.conversation.update({
         where: { id: conversation.id },
-        data: { lastMessageAt: now, lastInboundAt: now, status: "OPEN" },
+        data: { lastMessageAt: now, lastInboundAt: now, status: "WAITING_REVIEW" },
       });
     }
 

@@ -1,148 +1,82 @@
-import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { createTRPCRouter, publicProcedure } from "../init";
-import {
-  ListMessagesByConversationSchema,
-  SendConversationReplySchema,
-} from "@shared/types";
+import { CreateOutgoingDraftSchema, ListThreadMessagesSchema } from "@shared/types";
+import { createTRPCRouter, protectedProcedure } from "../init";
+
+async function assertThreadMember(params: {
+  prisma: {
+    supportThread: { findUnique: Function };
+    workspaceMember: { findUnique: Function };
+  };
+  threadId: string;
+  userId: string;
+}) {
+  const thread = await params.prisma.supportThread.findUnique({
+    where: { id: params.threadId },
+    select: { id: true, workspaceId: true },
+  });
+
+  if (!thread) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
+  }
+
+  const member = await params.prisma.workspaceMember.findUnique({
+    where: {
+      userId_workspaceId: {
+        userId: params.userId,
+        workspaceId: thread.workspaceId,
+      },
+    },
+  });
+
+  if (!member) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
+  }
+
+  return thread;
+}
 
 export const messageRouter = createTRPCRouter({
-  /** List messages for a conversation */
-  listByConversation: publicProcedure
-    .input(ListMessagesByConversationSchema)
+  listByThread: protectedProcedure
+    .input(ListThreadMessagesSchema)
     .query(async ({ ctx, input }) => {
-      const member = await ctx.prisma.workspaceMember.findUnique({
-        where: {
-          userId_workspaceId: {
-            userId: input.userId,
-            workspaceId: input.workspaceId,
-          },
-        },
+      const userId = ctx.sessionUserId!;
+
+      await assertThreadMember({
+        prisma: ctx.prisma,
+        threadId: input.threadId,
+        userId,
       });
 
-      if (!member) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
-      }
-
-      const conversation = await ctx.prisma.conversation.findFirst({
-        where: { id: input.conversationId, workspaceId: input.workspaceId },
+      return ctx.prisma.threadMessage.findMany({
+        where: { threadId: input.threadId },
+        orderBy: { createdAt: "asc" },
       });
-
-      if (!conversation) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
-      }
-
-      const messages = await ctx.prisma.conversationMessage.findMany({
-        where: { conversationId: input.conversationId },
-        orderBy: { sentAt: "asc" },
-        take: input.limit + 1,
-        ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
-      });
-
-      let nextCursor: string | undefined;
-      if (messages.length > input.limit) {
-        const next = messages.pop();
-        nextCursor = next?.id;
-      }
-
-      return { messages, nextCursor };
     }),
 
-  /** Send a reply to a conversation (creates outbound message, triggers delivery workflow) */
-  sendReply: publicProcedure
-    .input(SendConversationReplySchema)
+  createOutgoingDraft: protectedProcedure
+    .input(CreateOutgoingDraftSchema)
     .mutation(async ({ ctx, input }) => {
-      const member = await ctx.prisma.workspaceMember.findUnique({
-        where: {
-          userId_workspaceId: {
-            userId: input.userId,
-            workspaceId: input.workspaceId,
-          },
-        },
+      const userId = ctx.sessionUserId!;
+
+      const thread = await assertThreadMember({
+        prisma: ctx.prisma,
+        threadId: input.threadId,
+        userId,
       });
 
-      if (!member) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
-      }
-
-      const conversation = await ctx.prisma.conversation.findFirst({
-        where: { id: input.conversationId, workspaceId: input.workspaceId },
-      });
-
-      if (!conversation) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
-      }
-
-      const now = new Date();
-
-      const message = await ctx.prisma.conversationMessage.create({
+      const message = await ctx.prisma.threadMessage.create({
         data: {
-          conversationId: input.conversationId,
+          threadId: input.threadId,
           direction: "OUTBOUND",
-          senderKind: "AGENT",
           body: input.body,
-          sentAt: now,
-          deliveryStatus: "pending",
         },
       });
 
-      // Update conversation timestamps
-      await ctx.prisma.conversation.update({
-        where: { id: input.conversationId },
-        data: {
-          lastMessageAt: now,
-          lastOutboundAt: now,
-          status: "PENDING",
-        },
+      await ctx.prisma.supportThread.update({
+        where: { id: thread.id },
+        data: { lastMessageAt: message.createdAt },
       });
-
-      // TODO: Trigger deliver-support-reply workflow via Temporal
-      // This will be wired up when the queue integration is complete
 
       return message;
-    }),
-
-  /** Resend a failed outbound message */
-  resendFailed: publicProcedure
-    .input(z.object({
-      messageId: z.string(),
-      workspaceId: z.string(),
-      userId: z.string(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const member = await ctx.prisma.workspaceMember.findUnique({
-        where: {
-          userId_workspaceId: {
-            userId: input.userId,
-            workspaceId: input.workspaceId,
-          },
-        },
-      });
-
-      if (!member) {
-        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
-      }
-
-      const message = await ctx.prisma.conversationMessage.findUnique({
-        where: { id: input.messageId },
-        include: { conversation: true },
-      });
-
-      if (!message || message.conversation.workspaceId !== input.workspaceId) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Message not found" });
-      }
-
-      if (message.deliveryStatus !== "failed") {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Message is not in failed state" });
-      }
-
-      await ctx.prisma.conversationMessage.update({
-        where: { id: input.messageId },
-        data: { deliveryStatus: "pending" },
-      });
-
-      // TODO: Trigger deliver-support-reply workflow via Temporal
-
-      return { success: true };
     }),
 });

@@ -1,4 +1,5 @@
 import { createEnv } from "@t3-oss/env-core";
+import { z } from "zod";
 import {
   NodeEnvSchema,
   DiscordBotTokenSchema,
@@ -16,7 +17,10 @@ export const webEnv = createEnv({
     DISCORD_WEBHOOK_SECRET: DiscordWebhookSecretSchema.optional(),
     IN_APP_CHAT_SIGNING_SECRET: InAppChatSigningSecretSchema.optional(),
     SUPPORT_SECRET_ENCRYPTION_KEY: SupportSecretEncryptionKeySchema.optional(),
+    // Only consumed server-side (e.g. SSR/API routes)
+    DATABASE_URL: z.string().url().optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,
+  skipValidation: process.env.CI === "true",
 });

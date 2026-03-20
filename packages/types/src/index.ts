@@ -1,10 +1,16 @@
-// Prisma model types (User, Post, etc.)
+// Prisma model types
 export type {
   User,
   Post,
   Workspace,
   WorkspaceMember,
   WorkspaceRole,
+  Customer,
+  SupportThread,
+  ThreadMessage,
+  ThreadStatus,
+  MessageDirection,
+  CustomerSource,
   ChannelConnection,
   CustomerProfile,
   CustomerChannelIdentity,
@@ -13,8 +19,6 @@ export type {
   ReplyDraft,
   WorkspaceAgentConfig,
   ChannelType,
-  ConversationStatus,
-  MessageDirection,
   SenderKind,
   DraftStatus,
 } from "./prisma-generated/client";

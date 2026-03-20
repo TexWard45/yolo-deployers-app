@@ -72,7 +72,7 @@ export async function ingestSupportMessage(input: IngestMessageInput): Promise<{
           workspaceId: channelConnection.workspaceId,
           customerProfileId: identity.customerProfileId,
           externalThreadId: input.externalThreadId,
-          status: { in: ["OPEN", "PENDING"] },
+          status: { notIn: ["CLOSED"] },
         },
       })
     : null;
@@ -83,7 +83,7 @@ export async function ingestSupportMessage(input: IngestMessageInput): Promise<{
         workspaceId: channelConnection.workspaceId,
         customerProfileId: identity.customerProfileId,
         primaryChannelType: channelConnection.type,
-        status: { in: ["OPEN", "PENDING"] },
+        status: { notIn: ["CLOSED"] },
       },
       orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
     });
@@ -98,7 +98,7 @@ export async function ingestSupportMessage(input: IngestMessageInput): Promise<{
         workspaceId: channelConnection.workspaceId,
         customerProfileId: identity.customerProfileId,
         primaryChannelType: channelConnection.type,
-        status: "OPEN",
+        status: "NEW",
         subject: input.body.slice(0, 100),
         externalThreadId: input.externalThreadId,
         lastMessageAt: now,
@@ -109,7 +109,7 @@ export async function ingestSupportMessage(input: IngestMessageInput): Promise<{
   } else {
     conversation = await prisma.conversation.update({
       where: { id: conversation.id },
-      data: { lastMessageAt: now, lastInboundAt: now, status: "OPEN" },
+      data: { lastMessageAt: now, lastInboundAt: now, status: "WAITING_REVIEW" },
     });
   }
 

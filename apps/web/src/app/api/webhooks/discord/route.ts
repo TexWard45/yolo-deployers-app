@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
         workspaceId: channelConnection.workspaceId,
         customerProfileId: identity.customerProfileId,
         externalThreadId: payload.channel_id,
-        status: { in: ["OPEN", "PENDING"] },
+        status: { notIn: ["CLOSED"] },
       },
     });
 
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
         where: {
           workspaceId: channelConnection.workspaceId,
           customerProfileId: identity.customerProfileId,
-          status: { in: ["OPEN", "PENDING"] },
+          status: { notIn: ["CLOSED"] },
           primaryChannelType: "DISCORD",
         },
         orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
@@ -138,7 +138,7 @@ export async function POST(request: NextRequest) {
           workspaceId: channelConnection.workspaceId,
           customerProfileId: identity.customerProfileId,
           primaryChannelType: "DISCORD",
-          status: "OPEN",
+          status: "NEW",
           subject: payload.content.slice(0, 100),
           lastMessageAt: now,
           lastInboundAt: now,
@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
         data: {
           lastMessageAt: now,
           lastInboundAt: now,
-          status: "OPEN",
+          status: "NEW",
         },
       });
     }

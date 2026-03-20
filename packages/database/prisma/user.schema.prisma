@@ -11,6 +11,7 @@ model User {
   posts      Post[]
   workspaces WorkspaceMember[]
 
-  assignedConversations Conversation[]
-  replyDrafts           ReplyDraft[]
+  assignedConversations  Conversation[]
+  replyDrafts            ReplyDraft[]
+  assignedSupportThreads SupportThread[] @relation("AssignedSupportThreads")
 }

@@ -5,8 +5,10 @@ import { postRouter } from "./routers/post";
 import { workspaceRouter } from "./routers/workspace";
 import { channelConnectionRouter } from "./routers/channel-connection";
 import { conversationRouter } from "./routers/conversation";
-import { messageRouter } from "./routers/message";
 import { agentRouter } from "./routers/agent";
+import { threadRouter } from "./routers/thread";
+import { messageRouter } from "./routers/message";
+import { intakeRouter } from "./routers/intake";
 
 export const appRouter = createTRPCRouter({
   auth: authRouter,
@@ -15,8 +17,10 @@ export const appRouter = createTRPCRouter({
   workspace: workspaceRouter,
   channelConnection: channelConnectionRouter,
   conversation: conversationRouter,
-  message: messageRouter,
   agent: agentRouter,
+  thread: threadRouter,
+  message: messageRouter,
+  intake: intakeRouter,
 });
 
 export type AppRouter = typeof appRouter;

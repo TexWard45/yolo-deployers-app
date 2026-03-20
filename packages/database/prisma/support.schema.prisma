@@ -5,18 +5,6 @@ enum ChannelType {
   IN_APP
 }
 
-enum ConversationStatus {
-  OPEN
-  PENDING
-  RESOLVED
-  SPAM
-}
-
-enum MessageDirection {
-  INBOUND
-  OUTBOUND
-}
-
 enum SenderKind {
   CUSTOMER
   AGENT
@@ -85,7 +73,7 @@ model CustomerChannelIdentity {
 model Conversation {
   id                 String             @id @default(cuid())
   primaryChannelType ChannelType
-  status             ConversationStatus @default(OPEN)
+  status             ThreadStatus       @default(NEW)
   subject            String?
   externalThreadId   String?
   lastMessageAt      DateTime?
