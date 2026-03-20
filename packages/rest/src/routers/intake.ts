@@ -12,9 +12,10 @@ import {
   HIGH_CONFIDENCE_THRESHOLD,
   buildThreadSummary,
   decideDeterministicThreadMatch,
-  llmFallbackThreadMatch,
+  shouldEnqueueResolutionWorkflow,
   type ThreadMatchCandidate,
 } from "./helpers/thread-matching";
+import { dispatchResolveInboxThreadWorkflow } from "../temporal";
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -117,7 +118,7 @@ export const intakeRouter = createTRPCRouter({
         userId,
       });
 
-      return ctx.prisma.$transaction(async (tx) => {
+      const result = await ctx.prisma.$transaction(async (tx) => {
         const messageBody = input.messageBody.trim();
         const now = new Date();
 
@@ -159,7 +160,17 @@ export const intakeRouter = createTRPCRouter({
             : null;
 
         if (existingMessage) {
-          return { customer, thread: existingMessage.thread, message: existingMessage };
+          return {
+            customer,
+            thread: existingMessage.thread,
+            message: existingMessage,
+            matching: {
+              enqueueAsyncResolution: false,
+              confidence: 1,
+              strategy: "external_thread_id" as const,
+              issueFingerprint: existingMessage.messageFingerprint ?? "",
+            },
+          };
         }
 
         const existingThreadByExternalId =
@@ -233,23 +244,14 @@ export const intakeRouter = createTRPCRouter({
           candidates: candidateThreads as ThreadMatchCandidate[],
         });
 
-        const llmDecision =
-          deterministicDecision.threadId === null || deterministicDecision.confidence < HIGH_CONFIDENCE_THRESHOLD
-            ? await llmFallbackThreadMatch({
-                incomingMessage: messageBody,
-                threadGroupingHint: input.threadGroupingHint,
-                candidates: candidateThreads.map((candidate) => ({
-                  id: candidate.id,
-                  issueFingerprint: candidate.issueFingerprint,
-                  summary: candidate.summary,
-                })),
-              })
-            : null;
-
-        const resolvedThreadId = llmDecision?.matchedThreadId ?? deterministicDecision.threadId;
-        const resolvedConfidence = llmDecision?.confidence ?? deterministicDecision.confidence;
-        const resolvedStrategy = llmDecision ? "llm_fallback" : deterministicDecision.strategy;
+        const resolvedThreadId = deterministicDecision.threadId;
+        const resolvedConfidence = deterministicDecision.confidence;
+        const resolvedStrategy = deterministicDecision.strategy;
         const resolvedFingerprint = deterministicDecision.issueFingerprint;
+        const enqueueAsyncResolution = shouldEnqueueResolutionWorkflow(
+          deterministicDecision,
+          candidateThreads.length,
+        );
 
         const threadTitle = input.title ?? messageBody.slice(0, 80);
         const resolvedExternalThreadId =
@@ -273,26 +275,26 @@ export const intakeRouter = createTRPCRouter({
             data: {
               workspaceId: input.workspaceId,
               customerId: customer.id,
-              source: input.source,
-              externalThreadId: resolvedExternalThreadId,
-              title: threadTitle,
-              status: "WAITING_REVIEW",
+            source: input.source,
+            externalThreadId: resolvedExternalThreadId,
+            title: threadTitle,
+            status: "WAITING_REVIEW",
               lastMessageAt: now,
               lastInboundAt: now,
-              issueFingerprint: resolvedFingerprint,
-              summary: buildThreadSummary(null, messageBody),
-              summaryUpdatedAt: now,
-            },
-          }));
+            issueFingerprint: resolvedFingerprint,
+            summary: buildThreadSummary(null, messageBody),
+            summaryUpdatedAt: now,
+          },
+        }));
 
         const metadata: Record<string, unknown> = {
           ...(input.metadata ?? {}),
           matching: {
             strategy: resolvedStrategy,
             confidence: Number(resolvedConfidence.toFixed(3)),
-            requiresReview:
-              llmDecision === null && deterministicDecision.confidence < HIGH_CONFIDENCE_THRESHOLD,
+            requiresReview: deterministicDecision.confidence < HIGH_CONFIDENCE_THRESHOLD,
             issueFingerprint: resolvedFingerprint,
+            enqueueAsyncResolution,
           },
         };
 
@@ -323,8 +325,35 @@ export const intakeRouter = createTRPCRouter({
           },
         });
 
-        return { customer, thread: updatedThread, message };
+        return {
+          customer,
+          thread: updatedThread,
+          message,
+          matching: {
+            enqueueAsyncResolution,
+            confidence: resolvedConfidence,
+            strategy: resolvedStrategy,
+            issueFingerprint: resolvedFingerprint,
+          },
+        };
       });
+
+      if (result.matching.enqueueAsyncResolution) {
+        void dispatchResolveInboxThreadWorkflow({
+          workspaceId: input.workspaceId,
+          source: input.source,
+          customerId: result.customer.id,
+          threadId: result.thread.id,
+          messageId: result.message.id,
+          messageBody: result.message.body,
+          issueFingerprint: result.matching.issueFingerprint,
+        }).catch((error: unknown) => {
+          // Ingestion must not fail because of background resolution scheduling.
+          console.error("[intake] Failed to dispatch resolveInboxThreadWorkflow", error);
+        });
+      }
+
+      return result;
     }),
 
   touchThreadStatusFromIngestion: protectedProcedure

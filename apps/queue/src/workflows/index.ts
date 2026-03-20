@@ -4,3 +4,4 @@ export { ingestSupportMessageWorkflow } from "./ingest-support-message.workflow.
 export { generateReplyDraftWorkflow } from "./generate-reply-draft.workflow.js";
 export { deliverSupportReplyWorkflow } from "./deliver-support-reply.workflow.js";
 export { sessionEnrichmentWorkflow } from "./session-enrichment.workflow.js";
+export { resolveInboxThreadWorkflow } from "./resolve-inbox-thread.workflow.js";

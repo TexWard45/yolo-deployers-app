@@ -286,14 +286,32 @@ Date: 2026-03-21
 - Controls cost/latency because LLM is not called on every message.
 - Keeps Temporal workflows deterministic and resilient.
 
-**Temporal shape**
+**Temporal shape (implemented in this branch)**
 
-- Workflow: `ingestSupportMessageWorkflow` orchestrates sequence.
-- Activities:
-  - `deterministicThreadMatchActivity`
-  - `llmThreadMatchActivity` (conditional)
-  - `persistThreadMessageActivity`
-  - `refreshThreadSummaryActivity`
+- Synchronous intake path (`intake.ingestExternalMessage`):
+  - Runs deterministic matching in-process:
+    - `externalThreadId` -> `inReplyToExternalMessageId` -> fingerprint similarity.
+  - Persists thread/message immediately (ingestion success is not blocked by background work).
+- Asynchronous resolution path:
+  - Dispatches `resolveInboxThreadWorkflow` only for ambiguous outcomes.
+  - Workflow calls:
+    - `getInboxThreadResolutionCandidates`
+    - `llmThreadMatchActivity` (currently heuristic placeholder activity boundary)
+    - `applyInboxThreadResolution` (only when confidence is above auto-apply threshold)
+
+**When to run workflow vs regular matching**
+
+- Regular matching only (no workflow):
+  - `externalThreadId` match found.
+  - `inReplyToExternalMessageId` chain match found.
+  - Fingerprint confidence `>= 0.85`.
+- Run `resolveInboxThreadWorkflow` (background Temporal):
+  - Fingerprint path selected and confidence `< 0.85`.
+  - OR no deterministic match (`new_thread`) but candidate threads exist for same customer.
+- Do not block ingestion:
+  - Message write succeeds first.
+  - Workflow is dispatched asynchronously after commit.
+  - Dispatch failure is logged and does not fail intake response.
 
 **Guardrails**
 
@@ -310,16 +328,30 @@ Date: 2026-03-21
 
 ### Execution task list (recommended order)
 
-- [ ] Task 1: Add decision constants and thresholds (`0.85`, `0.60`) in shared config for inbox matching.
-- [ ] Task 2: Implement deterministic matcher helper (`externalThreadId` -> reply-chain -> similarity) with confidence output.
-- [ ] Task 3: Add Temporal activity `llmThreadMatchActivity` with typed input/output contract in `@shared/types`.
-- [ ] Task 4: Update ingest workflow orchestration to call LLM activity only when deterministic confidence is low.
-- [ ] Task 5: Add resilient fallback path (LLM timeout/error => deterministic path) and idempotency enforcement.
-- [ ] Task 6: Persist match decision metadata on message/thread (`matcherType`, `confidence`, `reviewRequired`).
+- [x] Task 1: Add decision constants and thresholds (`0.85`, `0.60`) in shared config for inbox matching.
+- [x] Task 2: Implement deterministic matcher helper (`externalThreadId` -> reply-chain -> similarity) with confidence output.
+- [x] Task 3: Add Temporal activity `llmThreadMatchActivity` with typed input/output contract in `@shared/types`.
+- [x] Task 4: Update ingest workflow orchestration to call LLM activity only when deterministic confidence is low.
+- [x] Task 5: Add resilient fallback path (LLM timeout/error => deterministic path) and idempotency enforcement.
+- [x] Task 6: Persist match decision metadata on message/thread (`matcherType`, `confidence`, `reviewRequired`).
 - [ ] Task 7: Update thread detail read path to expose grouped segment payload for `Thread N` UI blocks.
-- [ ] Task 8: Update UI composer to support “Reply to Thread N” target and persist `inReplyToExternalMessageId`.
+- [x] Task 8: Update UI composer to support “Reply to Thread N” target and persist `inReplyToExternalMessageId`.
 - [ ] Task 9: Add observability counters/logs for precision, re-links, over-split, and LLM usage rate.
 - [ ] Task 10: Run controlled rollout (deterministic-only first, then enable LLM fallback behind feature flag).
+
+### Current implementation status (2026-03-21)
+
+- Completed:
+  - Deterministic resolver + confidence scoring + enqueue policy.
+  - Async Temporal resolution workflow for low-confidence / ambiguous matches.
+  - Idempotent inbound ingestion guard by external message id context.
+  - Thread/message continuity fields (`inReplyToExternalMessageId`, fingerprints, summaries, inbound/outbound timestamps).
+  - Linked segment UI blocks with `Thread N` and pinned reply target behavior.
+  - Unit + e2e tests for matcher policy and segment grouping behavior.
+- Remaining:
+  - Move segment computation to backend read contract (currently computed in UI helper).
+  - Add production-grade observability metrics/counters for precision and re-link tracking.
+  - Roll out true provider-backed LLM matcher activity behind a feature flag.
 
 ## 3. Task Checklist
 

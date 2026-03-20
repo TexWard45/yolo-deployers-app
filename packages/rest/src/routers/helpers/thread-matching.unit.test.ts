@@ -7,6 +7,7 @@ import {
   buildThreadSummary,
   decideDeterministicThreadMatch,
   jaccardSimilarity,
+  shouldEnqueueResolutionWorkflow,
 } from "./thread-matching";
 
 test("buildIssueFingerprint strips noise and keeps stable tokens", () => {
@@ -90,4 +91,48 @@ test("buildThreadSummary appends bounded context", () => {
   const summary = buildThreadSummary("Webhook errors reported", "Customer confirmed issue still ongoing");
   assert.ok(summary.includes("Webhook errors reported"));
   assert.ok(summary.includes("Customer confirmed"));
+});
+
+test("workflow enqueue policy: only ambiguous deterministic outcomes", () => {
+  assert.equal(
+    shouldEnqueueResolutionWorkflow(
+      {
+        threadId: "thread-1",
+        confidence: 0.95,
+        strategy: "external_thread_id",
+        issueFingerprint: "webhook issue",
+        requiresReview: false,
+      },
+      5,
+    ),
+    false,
+  );
+
+  assert.equal(
+    shouldEnqueueResolutionWorkflow(
+      {
+        threadId: "thread-1",
+        confidence: 0.7,
+        strategy: "fingerprint",
+        issueFingerprint: "webhook issue",
+        requiresReview: true,
+      },
+      2,
+    ),
+    true,
+  );
+
+  assert.equal(
+    shouldEnqueueResolutionWorkflow(
+      {
+        threadId: null,
+        confidence: 0.4,
+        strategy: "new_thread",
+        issueFingerprint: "billing issue",
+        requiresReview: false,
+      },
+      3,
+    ),
+    true,
+  );
 });

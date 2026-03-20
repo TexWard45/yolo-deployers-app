@@ -181,6 +181,23 @@ export function decideDeterministicThreadMatch(input: DeterministicMatchInput): 
   };
 }
 
+export function shouldEnqueueResolutionWorkflow(
+  decision: MatchDecision,
+  candidateCount: number,
+): boolean {
+  if (candidateCount <= 0) return false;
+
+  if (decision.strategy === "fingerprint") {
+    return decision.requiresReview;
+  }
+
+  if (decision.strategy === "new_thread") {
+    return true;
+  }
+
+  return false;
+}
+
 export interface LlmMatchCandidate {
   id: string;
   issueFingerprint: string | null;

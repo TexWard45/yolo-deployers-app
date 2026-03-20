@@ -338,3 +338,29 @@ export const LlmThreadMatchResultSchema = z.object({
 });
 
 export type LlmThreadMatchResult = z.infer<typeof LlmThreadMatchResultSchema>;
+
+// ── Inbox Thread Resolution Workflow ──────────────────────────────
+export const ResolveInboxThreadWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  source: CustomerSourceSchema,
+  customerId: z.string(),
+  threadId: z.string(),
+  messageId: z.string(),
+  messageBody: z.string().min(1),
+  issueFingerprint: z.string().min(1),
+});
+
+export type ResolveInboxThreadWorkflowInput = z.infer<
+  typeof ResolveInboxThreadWorkflowInputSchema
+>;
+
+export const ResolveInboxThreadWorkflowResultSchema = z.object({
+  applied: z.boolean(),
+  matchedThreadId: z.string().nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+  reason: z.string(),
+});
+
+export type ResolveInboxThreadWorkflowResult = z.infer<
+  typeof ResolveInboxThreadWorkflowResultSchema
+>;
