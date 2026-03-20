@@ -1,4 +1,11 @@
-import { Client, GatewayIntentBits, Events } from "discord.js";
+import {
+  Client,
+  ChannelType,
+  GatewayIntentBits,
+  Events,
+  type TextChannel,
+  type Message,
+} from "discord.js";
 import { prisma } from "@shared/database";
 import type { DiscordChannelConfig, IngestSupportMessageInput } from "@shared/types";
 import { DiscordChannelConfigSchema } from "@shared/types";
@@ -18,7 +25,53 @@ let connectionCache: CachedConnection[] = [];
 let cacheLastRefreshed = 0;
 const CACHE_TTL_MS = 60_000;
 
-async function refreshConnectionCache(): Promise<void> {
+/**
+ * For connections with outdated/missing configJson, auto-discover text
+ * channels in the guild and update the DB record with channelIds.
+ */
+async function autoDiscoverChannels(
+  discordClient: Client,
+  connectionId: string,
+  guildId: string,
+): Promise<DiscordChannelConfig | null> {
+  const guild = discordClient.guilds.cache.get(guildId)
+    ?? await discordClient.guilds.fetch(guildId).catch(() => null);
+
+  if (!guild) {
+    console.warn(`[discord-bot] Guild ${guildId} not accessible — skipping auto-discover`);
+    return null;
+  }
+
+  const channels = await guild.channels.fetch();
+  const textChannelIds = channels
+    .filter((ch): ch is TextChannel =>
+      ch !== null && ch.type === ChannelType.GuildText,
+    )
+    .map((ch) => ch.id);
+
+  if (textChannelIds.length === 0) {
+    console.warn(`[discord-bot] No text channels found in guild ${guild.name}`);
+    return null;
+  }
+
+  const config: DiscordChannelConfig = {
+    channelIds: textChannelIds,
+    listenToThreads: true,
+  };
+
+  await prisma.channelConnection.update({
+    where: { id: connectionId },
+    data: { configJson: config as Record<string, unknown> as never },
+  });
+
+  console.log(
+    `[discord-bot] Auto-discovered ${textChannelIds.length} channels in guild "${guild.name}" for connection ${connectionId}`,
+  );
+
+  return config;
+}
+
+async function refreshConnectionCache(discordClient?: Client): Promise<void> {
   const now = Date.now();
   if (now - cacheLastRefreshed < CACHE_TTL_MS && connectionCache.length > 0) return;
 
@@ -26,19 +79,30 @@ async function refreshConnectionCache(): Promise<void> {
     where: { type: "DISCORD", status: "active" },
   });
 
-  connectionCache = connections
-    .map((c) => {
-      const parsed = DiscordChannelConfigSchema.safeParse(c.configJson);
-      if (!parsed.success) return null;
-      return {
+  const result: CachedConnection[] = [];
+
+  for (const c of connections) {
+    let parsed = DiscordChannelConfigSchema.safeParse(c.configJson);
+
+    // Auto-discover if configJson is missing/invalid and we have a Discord client
+    if (!parsed.success && discordClient && c.externalAccountId) {
+      const discovered = await autoDiscoverChannels(discordClient, c.id, c.externalAccountId);
+      if (discovered) {
+        parsed = DiscordChannelConfigSchema.safeParse(discovered);
+      }
+    }
+
+    if (parsed.success) {
+      result.push({
         id: c.id,
         externalAccountId: c.externalAccountId,
         workspaceId: c.workspaceId,
         config: parsed.data,
-      };
-    })
-    .filter((c): c is CachedConnection => c !== null);
+      });
+    }
+  }
 
+  connectionCache = result;
   cacheLastRefreshed = now;
   console.log(`[discord-bot] Refreshed connection cache: ${connectionCache.length} active connections`);
 }
@@ -49,9 +113,7 @@ function findMatchingConnection(
   parentChannelId: string | null,
 ): CachedConnection | undefined {
   return connectionCache.find((conn) => {
-    // Connection must match the guild
     if (conn.externalAccountId !== guildId) return false;
-    // Channel or parent channel must be in the configured list
     return (
       conn.config.channelIds.includes(channelId) ||
       (parentChannelId !== null && conn.config.channelIds.includes(parentChannelId))
@@ -59,32 +121,13 @@ function findMatchingConnection(
   });
 }
 
-// ── Workflow handle cache (one long-running workflow per connection) ─
-const workflowHandles = new Map<string, boolean>();
+// ── Workflow management ──────────────────────────────────────────
 
-async function ensureWorkflowRunning(connectionId: string): Promise<void> {
-  if (workflowHandles.has(connectionId)) return;
-
-  const temporal = await getTemporalClient();
-  const workflowId = `discord-ingest-${connectionId}`;
-
-  try {
-    const handle = temporal.workflow.getHandle(workflowId);
-    await handle.describe();
-    // Workflow already running
-    workflowHandles.set(connectionId, true);
-  } catch {
-    // Workflow not found — start it
-    await temporal.workflow.start(workflowRegistry.ingestSupportMessage, {
-      args: [connectionId, 0],
-      taskQueue: temporalConfig.taskQueue,
-      workflowId,
-    });
-    workflowHandles.set(connectionId, true);
-    console.log(`[discord-bot] Started ingest workflow for connection ${connectionId}`);
-  }
-}
-
+/**
+ * Send a message to the ingest workflow using signalWithStart.
+ * This atomically starts the workflow if it doesn't exist, or signals
+ * it if it's already running — no race conditions, no duplicate workflows.
+ */
 async function signalWorkflow(
   connectionId: string,
   input: IngestSupportMessageInput,
@@ -92,10 +135,118 @@ async function signalWorkflow(
   const temporal = await getTemporalClient();
   const workflowId = `discord-ingest-${connectionId}`;
 
-  await ensureWorkflowRunning(connectionId);
+  await temporal.workflow.signalWithStart(workflowRegistry.ingestSupportMessage, {
+    workflowId,
+    taskQueue: temporalConfig.taskQueue,
+    args: [connectionId, 0],
+    signal: "inboundMessage",
+    signalArgs: [input],
+  });
+}
 
-  const handle = temporal.workflow.getHandle(workflowId);
-  await handle.signal("inboundMessage", input);
+/**
+ * Ensure the long-running workflow is started for a connection.
+ * Uses signalWithStart with a no-op signal approach: we send a dummy
+ * message that the workflow will process harmlessly via idempotency.
+ */
+async function ensureWorkflowRunning(connectionId: string): Promise<void> {
+  const temporal = await getTemporalClient();
+  const workflowId = `discord-ingest-${connectionId}`;
+
+  try {
+    const handle = temporal.workflow.getHandle(workflowId);
+    const desc = await handle.describe();
+    if (desc.status.name === "RUNNING") {
+      console.log(`[discord-bot] Workflow ${workflowId} already running`);
+      return;
+    }
+  } catch {
+    // Workflow doesn't exist yet
+  }
+
+  // Start the workflow (no initial signal needed — backfill will signal it)
+  await temporal.workflow.start(workflowRegistry.ingestSupportMessage, {
+    workflowId,
+    taskQueue: temporalConfig.taskQueue,
+    args: [connectionId, 0],
+  });
+  console.log(`[discord-bot] Started ingest workflow ${workflowId}`);
+}
+
+// ── Backfill: fetch recent messages on startup ────────────────────
+const BACKFILL_LIMIT = 100;
+
+function discordMessageToInput(
+  connectionId: string,
+  message: Message,
+): IngestSupportMessageInput {
+  return {
+    channelConnectionId: connectionId,
+    externalMessageId: message.id,
+    externalUserId: message.author.id,
+    username: message.author.username,
+    displayName: message.author.globalName ?? message.author.username,
+    body: message.content,
+    timestamp: message.createdAt.toISOString(),
+    rawPayload: {
+      authorId: message.author.id,
+      username: message.author.username,
+      channelId: message.channelId,
+      guildId: message.guildId,
+    },
+    externalThreadId: message.channel.isThread() ? message.channelId : null,
+  };
+}
+
+async function backfillChannel(
+  discordClient: Client,
+  conn: CachedConnection,
+  channelId: string,
+): Promise<number> {
+  const channel = await discordClient.channels.fetch(channelId).catch(() => null);
+  if (!channel || !channel.isTextBased() || !("messages" in channel)) return 0;
+
+  const messages = await channel.messages.fetch({ limit: BACKFILL_LIMIT });
+  const sorted = [...messages.values()]
+    .filter((m) => !m.author.bot)
+    .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  let ingested = 0;
+
+  for (const msg of sorted) {
+    // Skip if already in DB (idempotency)
+    const existing = await prisma.conversationMessage.findFirst({
+      where: {
+        channelConnectionId: conn.id,
+        externalMessageId: msg.id,
+      },
+    });
+    if (existing) continue;
+
+    const input = discordMessageToInput(conn.id, msg);
+    await signalWorkflow(conn.id, input);
+    ingested++;
+  }
+
+  return ingested;
+}
+
+async function backfillConnection(
+  discordClient: Client,
+  conn: CachedConnection,
+): Promise<void> {
+  let total = 0;
+
+  for (const channelId of conn.config.channelIds) {
+    const count = await backfillChannel(discordClient, conn, channelId);
+    total += count;
+  }
+
+  if (total > 0) {
+    console.log(`[discord-bot] Backfilled ${total} messages for connection ${conn.id}`);
+  } else {
+    console.log(`[discord-bot] No new messages to backfill for connection ${conn.id}`);
+  }
 }
 
 // ── Discord bot ───────────────────────────────────────────────────
@@ -110,7 +261,25 @@ export function startDiscordBot(botToken: string): void {
 
   client.once(Events.ClientReady, async (c) => {
     console.log(`[discord-bot] Logged in as ${c.user.tag}`);
-    await refreshConnectionCache();
+
+    // Refresh cache with auto-discover (passes Discord client for guild access)
+    await refreshConnectionCache(client);
+
+    // Auto-start workflows + backfill for every active connection
+    for (const conn of connectionCache) {
+      try {
+        await ensureWorkflowRunning(conn.id);
+        await backfillConnection(client, conn);
+      } catch (err) {
+        console.error(`[discord-bot] Startup failed for connection ${conn.id}:`, err);
+      }
+    }
+
+    if (connectionCache.length > 0) {
+      console.log(`[discord-bot] Startup complete: ${connectionCache.length} connections active`);
+    } else {
+      console.warn("[discord-bot] No active Discord connections found — no workflows started");
+    }
   });
 
   client.on(Events.MessageCreate, async (message) => {
@@ -128,26 +297,7 @@ export function startDiscordBot(botToken: string): void {
       const connection = findMatchingConnection(guildId, channelId, parentChannelId);
       if (!connection) return;
 
-      const isThread = message.channel.isThread();
-      const externalThreadId = isThread ? channelId : null;
-
-      const input: IngestSupportMessageInput = {
-        channelConnectionId: connection.id,
-        externalMessageId: message.id,
-        externalUserId: message.author.id,
-        username: message.author.username,
-        displayName: message.author.globalName ?? message.author.username,
-        body: message.content,
-        timestamp: message.createdAt.toISOString(),
-        rawPayload: {
-          authorId: message.author.id,
-          username: message.author.username,
-          channelId: message.channelId,
-          guildId: message.guildId,
-        },
-        externalThreadId,
-      };
-
+      const input = discordMessageToInput(connection.id, message);
       await signalWorkflow(connection.id, input);
 
       const channelName = "name" in message.channel ? (message.channel.name ?? channelId) : channelId;
