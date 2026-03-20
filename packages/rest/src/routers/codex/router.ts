@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { Prisma } from "@shared/types/prisma";
+import OpenAI from "openai";
 import { createTRPCRouter, publicProcedure } from "../../init";
 import {
   CreateCodexRepositorySchema,
@@ -20,27 +21,22 @@ function generateWebhookSecret(): string {
   return randomBytes(32).toString("hex");
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────
+// ── OpenAI client (module-level singleton) ────────────────────────────
 
-async function createEmbedQueryFn(): Promise<EmbedQueryFn> {
-  const { default: OpenAI } = await import("openai");
+const openaiClient = new OpenAI({
+  apiKey: process.env["CODEX_EMBEDDING_API_KEY"],
+});
+const embeddingModel = process.env["CODEX_EMBEDDING_MODEL"] ?? "text-embedding-3-small";
+const embeddingDimensions = Number(process.env["CODEX_EMBEDDING_DIMENSIONS"] ?? "1536");
 
-  const client = new OpenAI({
-    apiKey: process.env["CODEX_EMBEDDING_API_KEY"],
+const embedQuery: EmbedQueryFn = async (text: string): Promise<number[]> => {
+  const response = await openaiClient.embeddings.create({
+    model: embeddingModel,
+    input: text,
+    dimensions: embeddingDimensions,
   });
-
-  const model = process.env["CODEX_EMBEDDING_MODEL"] ?? "text-embedding-3-small";
-  const dimensions = Number(process.env["CODEX_EMBEDDING_DIMENSIONS"] ?? "1536");
-
-  return async (text: string): Promise<number[]> => {
-    const response = await client.embeddings.create({
-      model,
-      input: text,
-      dimensions,
-    });
-    return response.data[0]!.embedding;
-  };
-}
+  return response.data[0]!.embedding;
+};
 
 async function startSyncWorkflow(repositoryId: string): Promise<string> {
   const { Client, Connection } = await import("@temporalio/client");
@@ -312,8 +308,7 @@ export const codexRouter = createTRPCRouter({
 
   search: publicProcedure
     .input(CodexSearchSchema)
-    .query(async ({ ctx, input }) => {
-      const embedQuery = await createEmbedQueryFn();
+    .query(({ ctx, input }) => {
       return hybridSearch(ctx.prisma, input, embedQuery);
     }),
 

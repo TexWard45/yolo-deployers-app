@@ -156,34 +156,19 @@ export async function semanticSearch(
 
 // ── Keyword Search (Full-Text) ───────────────────────────────────────
 
-function queryToTsquery(query: string): string {
-  const words = query
-    .trim()
-    .split(/\s+/)
-    .filter((w) => w.length > 0)
-    .map((w) => w.replace(/[^a-zA-Z0-9_]/g, ""))
-    .filter((w) => w.length > 0);
-
-  if (words.length === 0) return "";
-  return words.join(" & ");
-}
-
 export async function keywordSearch(
   prisma: PrismaClient,
   input: CodexSearchInput,
   topK: number,
 ): Promise<ChannelResult[]> {
-  const tsquery = queryToTsquery(input.query);
-  if (!tsquery) return [];
-
   const filters = buildFilterFragment(input);
 
   const query = Prisma.sql`
     SELECT
       ${SELECT_COLUMNS},
-      ts_rank(c."searchVector", to_tsquery('english', ${tsquery})) as rank
+      ts_rank(c."searchVector", websearch_to_tsquery('english', ${input.query})) as rank
     ${FROM_JOINS}
-    WHERE c."searchVector" @@ to_tsquery('english', ${tsquery})
+    WHERE c."searchVector" @@ websearch_to_tsquery('english', ${input.query})
       AND r."workspaceId" = ${input.workspaceId}
       ${filters}
     ORDER BY rank DESC
