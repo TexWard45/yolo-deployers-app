@@ -68,13 +68,21 @@ export function ThreadList({ threads }: ThreadListProps) {
     const thread = localThreads.find((t) => t.id === threadId);
     if (!thread || thread.status === targetStatus) return;
 
+    const previousStatus = thread.status;
+
     // Optimistic: move the card immediately
     setLocalThreads((prev) =>
       prev.map((t) => (t.id === threadId ? { ...t, status: targetStatus } : t))
     );
 
-    // Persist in background
-    updateThreadStatusAction({ threadId, status: targetStatus });
+    // Persist in background, revert on failure
+    updateThreadStatusAction({ threadId, status: targetStatus }).then((result) => {
+      if (!result.success) {
+        setLocalThreads((prev) =>
+          prev.map((t) => (t.id === threadId ? { ...t, status: previousStatus } : t))
+        );
+      }
+    });
   }
 
   const grouped = useMemo(() => {
