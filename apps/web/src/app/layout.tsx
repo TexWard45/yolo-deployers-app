@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Providers } from "@/trpc/provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { TelemetryProvider } from "@shared/telemetry/react";
 import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import "@/app/globals.css";
@@ -21,7 +22,9 @@ export default function RootLayout({
     <html lang="en" className={cn("font-sans", geist.variable)}>
       <body>
         <Providers>
-          <TooltipProvider>{children}</TooltipProvider>
+          <TelemetryProvider endpoint="/api/rest">
+            <TooltipProvider>{children}</TooltipProvider>
+          </TelemetryProvider>
         </Providers>
       </body>
     </html>
