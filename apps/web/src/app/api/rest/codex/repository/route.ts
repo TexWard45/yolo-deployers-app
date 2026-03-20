@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
 
-export async function GET(req: Request) {
+export async function GET(req: Request): Promise<NextResponse> {
   const { searchParams } = new URL(req.url);
   const workspaceId = searchParams.get("workspaceId");
 
@@ -15,7 +15,7 @@ export async function GET(req: Request) {
   return NextResponse.json(repositories);
 }
 
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<NextResponse> {
   try {
     const trpc = createCaller(createTRPCContext());
     const body = await req.json();

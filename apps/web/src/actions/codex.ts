@@ -2,9 +2,13 @@
 
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
-import type { CreateCodexRepositoryInput } from "@shared/types";
+import type { CreateCodexRepositoryInput, CodexRepository } from "@shared/types";
 
-export async function createCodexRepository(data: CreateCodexRepositoryInput) {
+type ActionResult<T> = { success: true; repository: T } | { success: false; error: string };
+
+export async function createCodexRepository(
+  data: CreateCodexRepositoryInput,
+): Promise<ActionResult<CodexRepository>> {
   try {
     const trpc = createCaller(createTRPCContext());
     const repo = await trpc.codex.repository.create(data);

@@ -6,7 +6,7 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(_req: Request, { params }: RouteParams) {
+export async function GET(_req: Request, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { id } = await params;
     const trpc = createCaller(createTRPCContext());
@@ -20,7 +20,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
   }
 }
 
-export async function PUT(req: Request, { params }: RouteParams) {
+export async function PUT(req: Request, { params }: RouteParams): Promise<NextResponse> {
   try {
     const { id } = await params;
     const trpc = createCaller(createTRPCContext());
