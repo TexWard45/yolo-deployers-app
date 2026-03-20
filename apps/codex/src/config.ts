@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { codexEnv } from "@shared/env/codex";
 
 export const temporalConfig = {
@@ -7,7 +8,7 @@ export const temporalConfig = {
 };
 
 export const codexConfig = {
-  cloneBasePath: codexEnv.CODEX_CLONE_BASE_PATH,
+  cloneBasePath: resolve(codexEnv.CODEX_CLONE_BASE_PATH),
   embedding: {
     apiKey: codexEnv.CODEX_EMBEDDING_API_KEY,
     model: codexEnv.CODEX_EMBEDDING_MODEL,

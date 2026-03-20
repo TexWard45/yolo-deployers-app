@@ -1,4 +1,4 @@
-import { readdir } from "node:fs/promises";
+import { access, readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
 
 export interface ListFilesInput {
@@ -12,6 +12,12 @@ export interface ListFilesInput {
 export async function listRepositoryFiles(
   input: ListFilesInput,
 ): Promise<string[]> {
+  await access(input.localPath).catch(() => {
+    throw new Error(
+      `Clone directory not found at "${input.localPath}". The clone activity may have failed or used a different path. Check CODEX_CLONE_BASE_PATH is an absolute path.`,
+    );
+  });
+
   const files: string[] = [];
   await walkDir(input.localPath, input.localPath, files);
   return files;

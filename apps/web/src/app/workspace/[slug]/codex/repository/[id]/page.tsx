@@ -81,7 +81,7 @@ export default async function RepositoryDetailPage({ params }: RepositoryDetailP
             </p>
           )}
         </div>
-        <SyncActions repositoryId={repository.id} syncStatus={repository.syncStatus} />
+        <SyncActions repositoryId={repository.id} syncStatus={repository.syncStatus} workspaceSlug={slug} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

@@ -9,9 +9,10 @@ import { syncCodexRepository, deleteCodexRepository } from "@/actions/codex";
 interface SyncActionsProps {
   repositoryId: string;
   syncStatus: string;
+  workspaceSlug: string;
 }
 
-export function SyncActions({ repositoryId, syncStatus }: SyncActionsProps) {
+export function SyncActions({ repositoryId, syncStatus, workspaceSlug }: SyncActionsProps) {
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -38,8 +39,7 @@ export function SyncActions({ repositoryId, syncStatus }: SyncActionsProps) {
       setDeleting(false);
       return;
     }
-    router.back();
-    router.refresh();
+    window.location.href = `/workspace/${workspaceSlug}/codex`;
   }
 
   return (

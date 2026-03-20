@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import { simpleGit, type SimpleGit } from "simple-git";
 import type { CloneResult, PullResult } from "./types.js";
 
@@ -19,6 +21,9 @@ export abstract class GitAdapter {
     targetPath: string;
   }): Promise<CloneResult> {
     const git = this.createGit();
+
+    // Ensure the parent directory exists before cloning
+    await mkdir(dirname(opts.targetPath), { recursive: true });
 
     await git.clone(opts.remoteUrl, opts.targetPath, [
       "--branch",

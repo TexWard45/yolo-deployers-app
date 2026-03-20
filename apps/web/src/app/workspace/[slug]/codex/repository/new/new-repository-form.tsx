@@ -81,8 +81,7 @@ export function NewRepositoryForm({ workspaceId, workspaceSlug }: NewRepositoryF
       return;
     }
 
-    router.push(`/workspace/${workspaceSlug}/codex`);
-    router.refresh();
+    window.location.href = `/workspace/${workspaceSlug}/codex`;
   }
 
   return (

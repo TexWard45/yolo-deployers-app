@@ -59,9 +59,44 @@ export async function createSyncLog(
       chunksUpdated: input.chunksUpdated,
       chunksDeleted: input.chunksDeleted,
       embeddingsGen: input.embeddingsGenerated ?? 0,
-      completedAt: new Date(),
+      completedAt: input.status === "SYNCING" ? null : new Date(),
       errorMessage: input.errorMessage,
     },
   });
   return log.id;
+}
+
+export interface UpdateSyncLogInput {
+  syncLogId: string;
+  status?: CodexSyncStatus;
+  commitAfter?: string | null;
+  filesChanged?: number;
+  chunksCreated?: number;
+  chunksUpdated?: number;
+  chunksDeleted?: number;
+  embeddingsGenerated?: number;
+  errorMessage?: string | null;
+}
+
+/**
+ * Update an existing sync log with progress or final metrics.
+ */
+export async function updateSyncLog(
+  input: UpdateSyncLogInput,
+): Promise<void> {
+  const isTerminal = input.status === "COMPLETED" || input.status === "FAILED";
+  await prisma.codexSyncLog.update({
+    where: { id: input.syncLogId },
+    data: {
+      ...(input.status != null && { status: input.status }),
+      ...(input.commitAfter !== undefined && { commitAfter: input.commitAfter }),
+      ...(input.filesChanged != null && { filesChanged: input.filesChanged }),
+      ...(input.chunksCreated != null && { chunksCreated: input.chunksCreated }),
+      ...(input.chunksUpdated != null && { chunksUpdated: input.chunksUpdated }),
+      ...(input.chunksDeleted != null && { chunksDeleted: input.chunksDeleted }),
+      ...(input.embeddingsGenerated != null && { embeddingsGen: input.embeddingsGenerated }),
+      ...(input.errorMessage !== undefined && { errorMessage: input.errorMessage }),
+      ...(isTerminal && { completedAt: new Date() }),
+    },
+  });
 }
