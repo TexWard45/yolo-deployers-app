@@ -1,5 +1,22 @@
 // Prisma model types (User, Post, etc.)
-export type { User, Post, Workspace, WorkspaceMember, WorkspaceRole } from "./prisma-generated/client";
+export type {
+  User,
+  Post,
+  Workspace,
+  WorkspaceMember,
+  WorkspaceRole,
+  CodexRepository,
+  CodexSyncLog,
+  CodexFile,
+  CodexChunk,
+  CodexSymbolRef,
+  CodexSourceType,
+  CodexSyncMode,
+  CodexSyncStatus,
+  CodexChunkType,
+  CodexEmbeddingStatus,
+  CodexSymbolRefKind,
+} from "./prisma-generated/client";
 
 // Prisma generated input/output types and enums
 export type * from "./prisma-generated/models";
