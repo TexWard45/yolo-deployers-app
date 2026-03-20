@@ -9,6 +9,7 @@ import {
   Shield,
   ChevronUp,
   LogOut,
+  Code,
   Play,
 } from "lucide-react";
 
@@ -48,6 +49,12 @@ interface AppSidebarProps {
     username: string;
     name: string | null;
     isSystemAdmin: boolean;
+    workspaces?: Array<{
+      id: string;
+      name: string;
+      slug: string;
+      role: string;
+    }>;
   } | null;
 }
 
@@ -100,6 +107,22 @@ export function AppSidebar({ user }: AppSidebarProps) {
             ))}
           </SidebarMenu>
         </SidebarGroup>
+
+        {user?.workspaces && user.workspaces.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Codex</SidebarGroupLabel>
+            <SidebarMenu>
+              {user.workspaces.map((ws) => (
+                <SidebarMenuItem key={ws.id}>
+                  <SidebarMenuButton render={<Link href={`/workspace/${ws.slug}/codex`} />}>
+                    <Code />
+                    <span>{ws.name}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        )}
 
         {user?.isSystemAdmin && (
           <SidebarGroup>
