@@ -13,7 +13,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.4",

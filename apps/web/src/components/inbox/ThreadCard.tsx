@@ -1,42 +1,73 @@
-import Link from "next/link";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
-import type { ThreadStatusValue } from "@/components/inbox/thread-status";
-
 interface ThreadCardProps {
   id: string;
   title: string | null;
   customerName: string;
-  status: ThreadStatusValue;
-  messageCount: number;
   updatedAt: Date;
+  assigneeName: string | null;
+  selected: boolean;
+  onClick: () => void;
+}
+
+function timeAgo(date: Date): string {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minutes ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hours ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days === 1 ? "1 day" : `${days} days`} ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks === 1 ? "1 week" : `${weeks} weeks`} ago`;
+}
+
+function getInitial(name: string): string {
+  return (name[0] ?? "?").toUpperCase();
 }
 
 export function ThreadCard({
-  id,
   title,
   customerName,
-  status,
-  messageCount,
   updatedAt,
+  assigneeName,
+  selected,
+  onClick,
 }: ThreadCardProps) {
   return (
-    <Card className="transition-colors hover:bg-muted/40">
-      <Link href={`/inbox/${id}`} className="block">
-        <CardHeader className="space-y-2">
-          <div className="flex items-center justify-between gap-3">
-            <CardTitle className="text-sm">
-              {title ?? `Thread with ${customerName}`}
-            </CardTitle>
-            <ThreadStatusBadge status={status} />
-          </div>
-          <p className="text-xs text-muted-foreground">{customerName}</p>
-        </CardHeader>
-        <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{messageCount} message{messageCount === 1 ? "" : "s"}</span>
-          <span>{updatedAt.toLocaleString()}</span>
-        </CardContent>
-      </Link>
-    </Card>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`block w-full rounded-lg border p-3 text-left transition-colors hover:bg-accent/40 ${
+        selected ? "border-primary bg-accent/30" : "bg-background"
+      }`}
+    >
+      {/* Customer row */}
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-primary/10 text-[10px] font-bold text-primary">
+          {getInitial(customerName)}
+        </span>
+        <span className="truncate text-xs font-semibold">{customerName}</span>
+      </div>
+
+      {/* Title */}
+      <p className="mt-1.5 text-sm leading-snug line-clamp-2">
+        {title ?? `Thread with ${customerName}`}
+      </p>
+
+      {/* Footer */}
+      <div className="mt-2.5 flex items-center text-[11px] text-muted-foreground">
+        {assigneeName ? (
+          <span
+            className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground"
+            title={assigneeName}
+          >
+            {getInitial(assigneeName)}
+          </span>
+        ) : null}
+        <span className="ml-1.5">
+          &bull; {timeAgo(updatedAt)}
+        </span>
+      </div>
+    </button>
   );
 }

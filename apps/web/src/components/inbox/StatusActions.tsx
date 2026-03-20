@@ -9,9 +9,10 @@ import { THREAD_STATUSES, type ThreadStatusValue } from "@/components/inbox/thre
 interface StatusActionsProps {
   threadId: string;
   currentStatus: ThreadStatusValue;
+  onStatusChange?: () => void;
 }
 
-export function StatusActions({ threadId, currentStatus }: StatusActionsProps) {
+export function StatusActions({ threadId, currentStatus, onStatusChange }: StatusActionsProps) {
   const router = useRouter();
   const [loadingStatus, setLoadingStatus] = useState<ThreadStatusValue | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +29,7 @@ export function StatusActions({ threadId, currentStatus }: StatusActionsProps) {
     }
 
     setLoadingStatus(null);
+    onStatusChange?.();
     router.refresh();
   }
 

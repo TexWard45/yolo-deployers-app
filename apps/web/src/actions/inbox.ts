@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { revalidatePath } from "next/cache";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
 import { getSession } from "@/actions/auth";
@@ -44,6 +45,18 @@ export async function createManualInboundMessage(data: {
   }
 }
 
+export async function getThreadDetail(threadId: string) {
+  const session = await getSession();
+  if (!session) return null;
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    return await trpc.thread.getById({ threadId });
+  } catch {
+    return null;
+  }
+}
+
 export async function updateThreadStatusAction(data: {
   threadId: string;
   status:
@@ -65,6 +78,7 @@ export async function updateThreadStatusAction(data: {
       threadId: data.threadId,
       status: data.status,
     });
+    revalidatePath("/inbox");
     return { success: true, thread: updated } as const;
   } catch (error) {
     if (error instanceof TRPCError) {
