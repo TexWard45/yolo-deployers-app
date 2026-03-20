@@ -2,19 +2,20 @@ import "server-only";
 import { Client, Connection } from "@temporalio/client";
 import { webEnv } from "@shared/env/web";
 
-let _client: Client | null = null;
+// Promise-based singleton: parallel callers share the same in-flight connection
+// promise instead of each creating their own Connection object.
+let _clientPromise: Promise<Client> | null = null;
 
-async function getClient(): Promise<Client> {
-  if (_client) return _client;
-  try {
-    const connection = await Connection.connect({ address: webEnv.TEMPORAL_ADDRESS });
-    _client = new Client({ connection, namespace: webEnv.TEMPORAL_NAMESPACE });
-    return _client;
-  } catch (err) {
-    // Don't cache a failed connection — next call will retry
-    _client = null;
-    throw err;
-  }
+function getClient(): Promise<Client> {
+  if (_clientPromise) return _clientPromise;
+  _clientPromise = Connection.connect({ address: webEnv.TEMPORAL_ADDRESS })
+    .then((connection) => new Client({ connection, namespace: webEnv.TEMPORAL_NAMESPACE }))
+    .catch((err: unknown) => {
+      // Clear the promise on failure so the next call retries
+      _clientPromise = null;
+      throw err;
+    });
+  return _clientPromise;
 }
 
 export async function dispatchSessionEnrichment(sessionId: string): Promise<void> {
@@ -27,7 +28,7 @@ export async function dispatchSessionEnrichment(sessionId: string): Promise<void
     });
   } catch (err) {
     // If workflow.start fails due to a broken connection, clear cache so next call reconnects
-    _client = null;
+    _clientPromise = null;
     throw err;
   }
 }

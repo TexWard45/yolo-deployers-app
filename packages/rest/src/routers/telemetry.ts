@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "../init";
 import type { Prisma } from "@shared/types/prisma";
 
@@ -22,13 +23,23 @@ export const telemetryRouter = createTRPCRouter({
   ingestEvents: publicProcedure
     .input(IngestInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const { sessionId, userId, userAgent, events } = input;
+      const { sessionId, userAgent, events } = input;
+
+      // If the request carries an authenticated session, enforce ownership:
+      // the caller may not claim events belong to a different user.
+      const resolvedUserId = ctx.sessionUserId ?? input.userId ?? null;
+      if (ctx.sessionUserId && input.userId && input.userId !== ctx.sessionUserId) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "userId in payload does not match authenticated session",
+        });
+      }
 
       await ctx.prisma.$transaction([
         ctx.prisma.session.upsert({
           where: { id: sessionId },
           update: {},
-          create: { id: sessionId, userId, userAgent },
+          create: { id: sessionId, userId: resolvedUserId, userAgent },
         }),
         ctx.prisma.replayEvent.createMany({
           data: events.map((event) => ({

@@ -1,24 +1,9 @@
 import { PrismaClient } from "@shared/types/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
-import dotenv from "dotenv";
-import path from "node:path";
-import fs from "node:fs";
 
-// Ensure .env is loaded from root if not present
-function loadEnv() {
-  let currentDir = process.cwd();
-  while (currentDir !== "/") {
-    const envPath = path.join(currentDir, ".env");
-    if (fs.existsSync(envPath)) {
-      dotenv.config({ path: envPath });
-      break;
-    }
-    currentDir = path.dirname(currentDir);
-  }
-}
-
-loadEnv();
-
+// In production, DATABASE_URL is injected by the runtime (Doppler, etc.).
+// In local dev, it comes from .env loaded by the app entry point (Next.js / tsx).
+// We do NOT traverse the filesystem here — that pattern is fragile in containers.
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };

@@ -1,15 +1,12 @@
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { cookies } from "next/headers";
 import { appRouter, createTRPCContext } from "@shared/rest";
 
-function extractSessionUserId(req: Request): string | null {
-  const cookieHeader = req.headers.get("cookie") ?? "";
-  const sessionCookie = cookieHeader
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith("session="));
-  if (!sessionCookie) return null;
+async function getSessionUserId(): Promise<string | null> {
   try {
-    const raw = decodeURIComponent(sessionCookie.slice("session=".length));
+    const cookieStore = await cookies();
+    const raw = cookieStore.get("session")?.value;
+    if (!raw) return null;
     const session = JSON.parse(raw) as { id?: string };
     return session.id ?? null;
   } catch {
@@ -22,7 +19,8 @@ const handler = (req: Request) =>
     endpoint: "/api/rest",
     req,
     router: appRouter,
-    createContext: ({ req }) => createTRPCContext({ sessionUserId: extractSessionUserId(req) }),
+    createContext: async () =>
+      createTRPCContext({ sessionUserId: await getSessionUserId() }),
   });
 
 export { handler as GET, handler as POST };
