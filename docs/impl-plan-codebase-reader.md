@@ -71,19 +71,21 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 3 — Temporal Workflows + Activities (Sync Pipeline) `[STATUS: NOT STARTED]`
+## Phase 3 — Temporal Workflows + Activities (Sync Pipeline) `[STATUS: COMPLETE]`
 
 **Goal:** Full sync pipeline: clone/pull → parse → upsert DB. Chunks created as `PENDING`. Depends on Phases 1+2.
 
 ### Tasks
 
-- [ ] Create `apps/codex/src/activities/clone.activity.ts` — Clone/pull via adapter
-- [ ] Create `apps/codex/src/activities/parse.activity.ts` — Parse file, diff chunks by content hash, upsert CodexFile + CodexChunk
-- [ ] Create `apps/codex/src/activities/cleanup.activity.ts` — Delete removed files (cascade)
-- [ ] Create `apps/codex/src/workflows/sync-repo.workflow.ts` — Orchestrate: pull → diff → cleanup → parse fan-out → embed → log
-- [ ] Create `apps/codex/src/workflows/registry.ts` — Register workflow names
-- [ ] Create `apps/codex/src/client.ts` — Test script to trigger workflows manually
-- [ ] Run verification: Trigger sync against a real repo, check CodexFile/CodexChunk rows in DB. Re-sync to verify incremental behavior.
+- [x] Create `apps/codex/src/activities/clone.activity.ts` — Clone/pull via adapter
+- [x] Create `apps/codex/src/activities/parse.activity.ts` — Parse file, diff chunks by content hash, upsert CodexFile + CodexChunk
+- [x] Create `apps/codex/src/activities/cleanup.activity.ts` — Delete removed files (cascade)
+- [x] Create `apps/codex/src/activities/list-files.activity.ts` — Recursively list files in cloned repo (skips .git, node_modules, etc.)
+- [x] Create `apps/codex/src/activities/sync-status.activity.ts` — Update repo sync status + create sync log entries
+- [x] Create `apps/codex/src/workflows/sync-repo.workflow.ts` — Orchestrate: pull → diff → cleanup → parse fan-out → log (embed deferred to Phase 4)
+- [x] Modify `apps/codex/src/workflows/registry.ts` — Already registered from Phase 1
+- [x] Create `apps/codex/src/client.ts` — Test script to trigger workflows manually with result display
+- [ ] Run verification: Trigger sync against a real repo, check CodexFile/CodexChunk rows in DB. Re-sync to verify incremental behavior. (blocked: requires running Temporal server + PostgreSQL)
 
 ### Key constraint: Workflows can't import `@shared/database` (Temporal sandboxing). All DB ops in activities only.
 
