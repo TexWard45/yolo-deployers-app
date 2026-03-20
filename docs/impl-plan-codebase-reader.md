@@ -144,20 +144,24 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 7 — Frontend Pages `[STATUS: NOT STARTED]`
+## Phase 7 — Frontend Pages `[STATUS: COMPLETE]`
 
 **Goal:** UI for repo management and code search.
 
 ### Tasks
 
-- [ ] Create `apps/web/src/app/workspace/[slug]/codex/page.tsx` — Dashboard (server component)
-- [ ] Create `apps/web/src/app/workspace/[slug]/codex/repository/new/page.tsx` — Add repo form (client)
-- [ ] Create `apps/web/src/app/workspace/[slug]/codex/repository/[id]/page.tsx` — Repo detail (server)
-- [ ] Create `apps/web/src/app/workspace/[slug]/codex/search/page.tsx` — Search interface (client)
-- [ ] Create `apps/web/src/app/workspace/[slug]/codex/chunk/[id]/page.tsx` — Chunk viewer (server)
-- [ ] Create `apps/web/src/components/codex/RepositoryCard/` — Repo card component
-- [ ] Create `apps/web/src/components/codex/SearchResultCard/` — Search result with syntax highlight
-- [ ] Modify workspace sidebar — Add "Codex" navigation link
+- [x] Create `apps/web/src/app/workspace/[slug]/codex/page.tsx` — Dashboard (server component)
+- [x] Create `apps/web/src/app/workspace/[slug]/codex/repository/new/page.tsx` — Add repo form (server wrapper + client form)
+- [x] Create `apps/web/src/app/workspace/[slug]/codex/repository/[id]/page.tsx` — Repo detail (server) + sync-actions.tsx (client)
+- [x] Create `apps/web/src/app/workspace/[slug]/codex/search/page.tsx` — Search interface (server wrapper + client)
+- [x] Create `apps/web/src/app/workspace/[slug]/codex/chunk/[id]/page.tsx` — Chunk viewer (server)
+- [x] Create `apps/web/src/components/codex/RepositoryCard/` — Repo card component
+- [x] Create `apps/web/src/components/codex/SearchResultCard/` — Search result with syntax highlight
+- [x] Modify workspace sidebar — Add "Codex" navigation link per workspace
+- [x] Create `apps/web/src/app/workspace/[slug]/layout.tsx` — Workspace-scoped layout with session/access check
+- [x] Create `apps/web/src/actions/codex.ts` — Server actions (createRepo, deleteRepo, syncRepo)
+
+### Verify: `npm run type-check` — Only pre-existing errors (missing Customer/SupportThread Prisma models). No new errors from Phase 7 code.
 
 ---
 
