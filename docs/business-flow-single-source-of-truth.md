@@ -16,19 +16,24 @@ This flow covers:
 
 ## Status Model
 
-Primary issue lifecycle statuses:
+Primary issue lifecycle statuses (branching, not strictly linear):
 
-1. `OPEN`
-2. `CHATBOT_COLLECTING_CONTEXT`
-3. `READY_FOR_SUMMARY`
-4. `READY_FOR_JIRA`
-5. `ESCALATED_REVIEW`
-6. `JIRA_CREATED`
-7. `READY_FOR_PR`
-8. `PR_DRAFT_CREATED`
-9. `IN_PROGRESS`
-10. `RESOLVED`
-11. `CLOSED`
+1. Entry
+   - `OPEN`
+2. Chatbot branch
+   - `CHATBOT_COLLECTING_CONTEXT`
+   - `READY_FOR_SUMMARY`
+3. Triage decision branch
+   - `READY_FOR_JIRA`
+   - `ESCALATED_REVIEW`
+4. Engineering branch
+   - `JIRA_CREATED`
+   - `READY_FOR_PR`
+   - `PR_DRAFT_CREATED`
+   - `IN_PROGRESS`
+5. Terminal states
+   - `RESOLVED`
+   - `CLOSED`
 
 ## Full ASCII Flow
 
@@ -67,13 +72,22 @@ Primary issue lifecycle statuses:
                                  |                             |
                                  | human review                | create Jira ticket
                                  | (approve/reject/route)      | store Jira artifact
-                                 +-------------+---------------+
-                                               |
-                                               v
-                                       [JIRA_CREATED]
-                                               |
-                                               | user clicks "Create Draft PR"
-                                               v
+          +----------------------+-------------+               |
+          |                                    |               |
+          | close as non-actionable            | approve route |
+          v                                    v               v
+      [CLOSED]                  [CHATBOT_COLLECTING_CONTEXT] [JIRA_CREATED]
+                                                    |
+                                                    | enough context + valid
+                                                    v
+                                              [READY_FOR_JIRA]
+                                                    |
+                                                    | create Jira ticket
+                                                    v
+                                              [JIRA_CREATED]
+                                                    |
+                                                    | user clicks "Create Draft PR"
+                                                    v
                                        [READY_FOR_PR]
                                                |
                                                | create branch + draft PR
@@ -172,9 +186,9 @@ Issue detail page must show:
 
 ## Ownership Boundaries
 
-1. Intake + state transitions: `@shared/rest` issue/automation routers
-2. AI analysis + closure generation: `apps/web/src/lib/ai/*`
-3. External integrations: `apps/web/src/lib/integrations/*`
+1. Intake + state transitions: `@shared/rest` issue/automation routers (planned modules to be created)
+2. AI analysis + closure generation: `apps/web/src/lib/ai/*` (planned path to be created)
+3. External integrations: `apps/web/src/lib/integrations/*` (planned path to be created)
 4. Canonical types/schemas: `@shared/types`
 5. Persistence: Prisma models under `packages/database/prisma/*.schema.prisma`
 
@@ -182,4 +196,3 @@ Issue detail page must show:
 
 - This document is the reference flow for implementation and reviews.
 - If implementation diverges from this flow, update this file in the same PR.
-- Related implementation planning doc: `docs/eng-spec-full-automation-jira-pr-flow.md`.
