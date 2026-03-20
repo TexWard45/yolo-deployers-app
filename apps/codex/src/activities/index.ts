@@ -4,3 +4,4 @@ export { parseFileActivity } from "./parse.activity.js";
 export { cleanupDeletedFiles } from "./cleanup.activity.js";
 export { listRepositoryFiles } from "./list-files.activity.js";
 export { updateSyncStatus, createSyncLog } from "./sync-status.activity.js";
+export { embedChunksActivity } from "./embed.activity.js";

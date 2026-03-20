@@ -91,19 +91,19 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 4 — Embedder `[STATUS: NOT STARTED]`
+## Phase 4 — Embedder `[STATUS: COMPLETE]`
 
 **Goal:** Embed PENDING chunks with contextual headers. Depends on Phase 3.
 
 ### Tasks
 
-- [ ] Create `apps/codex/src/embedder/context-header.ts` — Build structured prefix from AST metadata
-- [ ] Create `apps/codex/src/embedder/embedder.ts` — Batch embedding with retry/backoff (OpenAI SDK)
-- [ ] Create `apps/codex/src/embedder/diff.ts` — Find PENDING chunks, mark embedded
-- [ ] Create `apps/codex/src/embedder/tsvector.ts` — Raw SQL to update searchVector
-- [ ] Create `apps/codex/src/activities/embed.activity.ts` — Orchestrate: load pending → build headers → embed → write via raw SQL → update tsvector
-- [ ] Modify `apps/codex/src/workflows/sync-repo.workflow.ts` — Add embed step after parse fan-out
-- [ ] Run verification: After sync, chunks have non-null embeddings. Re-sync unchanged files → no re-embedding.
+- [x] Create `apps/codex/src/embedder/context-header.ts` — Build structured prefix from AST metadata
+- [x] Create `apps/codex/src/embedder/embedder.ts` — Batch embedding with retry/backoff (OpenAI SDK)
+- [x] Create `apps/codex/src/embedder/diff.ts` — Find PENDING chunks, mark embedded
+- [x] Create `apps/codex/src/embedder/tsvector.ts` — Raw SQL to update searchVector
+- [x] Create `apps/codex/src/activities/embed.activity.ts` — Orchestrate: load pending → build headers → embed → write via raw SQL → update tsvector
+- [x] Modify `apps/codex/src/workflows/sync-repo.workflow.ts` — Add embed step after parse fan-out
+- [ ] Run verification: After sync, chunks have non-null embeddings. Re-sync unchanged files → no re-embedding. (blocked: requires running Temporal server + PostgreSQL + OpenAI API key)
 
 ### All embedding/tsvector writes use `prisma.$executeRaw` with `::vector` cast.
 

@@ -48,6 +48,8 @@ async function main(): Promise<void> {
   console.log(`  Chunks created: ${result.chunksCreated}`);
   console.log(`  Chunks updated: ${result.chunksUpdated}`);
   console.log(`  Chunks deleted: ${result.chunksDeleted}`);
+  console.log(`  Embeddings generated: ${result.embeddingsGenerated}`);
+  console.log(`  Embeddings failed: ${result.embeddingsFailed}`);
   console.log(`  Sync log ID: ${result.syncLogId}`);
 }
 

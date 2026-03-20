@@ -11,6 +11,8 @@ export interface SyncRepoResult {
   chunksCreated: number;
   chunksUpdated: number;
   chunksDeleted: number;
+  embeddingsGenerated: number;
+  embeddingsFailed: number;
   syncLogId: string;
 }
 
@@ -47,12 +49,22 @@ const { parseFileActivity } = proxyActivities<typeof activities>({
   },
 });
 
+// Embedding — can take a while for large repos due to API rate limits
+const { embedChunksActivity } = proxyActivities<typeof activities>({
+  startToCloseTimeout: "30 minutes",
+  retry: {
+    maximumAttempts: 2,
+    initialInterval: "5 seconds",
+    backoffCoefficient: 2,
+  },
+});
+
 /**
- * Full sync pipeline: clone/pull → list files → cleanup → parse fan-out → log.
+ * Full sync pipeline: clone/pull → list files → cleanup → parse fan-out → embed → log.
  *
  * For initial clones: all files are parsed.
  * For incremental pulls: only changed files are parsed, deleted files are cleaned up.
- * Embedding of PENDING chunks is deferred to Phase 4.
+ * After parsing, all PENDING chunks are embedded via the OpenAI embedding API.
  */
 export async function syncRepoWorkflow(
   input: SyncRepoInput,
@@ -139,7 +151,10 @@ export async function syncRepoWorkflow(
       }
     }
 
-    // Step 5: Update repository status
+    // Step 5: Embed PENDING chunks
+    const embedResult = await embedChunksActivity({ repositoryId });
+
+    // Step 6: Update repository status
     await updateSyncStatus({
       repositoryId,
       status: "COMPLETED",
@@ -147,7 +162,7 @@ export async function syncRepoWorkflow(
       lastSyncError: null,
     });
 
-    // Step 6: Create sync log
+    // Step 7: Create sync log
     const syncLogId = await createSyncLog({
       repositoryId,
       status: "COMPLETED",
@@ -157,6 +172,7 @@ export async function syncRepoWorkflow(
       chunksCreated: totalChunksCreated,
       chunksUpdated: totalChunksUpdated,
       chunksDeleted: totalChunksDeleted,
+      embeddingsGenerated: embedResult.embeddingsGenerated,
     });
 
     return {
@@ -165,6 +181,8 @@ export async function syncRepoWorkflow(
       chunksCreated: totalChunksCreated,
       chunksUpdated: totalChunksUpdated,
       chunksDeleted: totalChunksDeleted,
+      embeddingsGenerated: embedResult.embeddingsGenerated,
+      embeddingsFailed: embedResult.embeddingsFailed,
       syncLogId,
     };
   } catch (error) {
