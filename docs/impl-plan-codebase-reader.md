@@ -49,22 +49,22 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 2 — Tree-sitter AST Parser `[STATUS: COMPLETE]`
+## Phase 2 — Tree-sitter AST Parser `[STATUS: NOT STARTED]`
 
 **Goal:** `parseFile(content, language) → ParsedChunk[]` with full metadata. Parallel with Phase 1.
 
 ### Tasks
 
-- [x] Create `apps/codex/src/parser/tree-sitter.ts` — WASM init + `parseFile()` entry point
-- [x] Create `apps/codex/src/parser/languages/typescript.ts` — TS/JS queries
-- [x] Create `apps/codex/src/parser/languages/python.ts`
-- [x] Create `apps/codex/src/parser/languages/go.ts`
-- [x] Create `apps/codex/src/parser/languages/java.ts`
-- [x] Create `apps/codex/src/parser/languages/rust.ts`
-- [x] Create `apps/codex/src/parser/languages/index.ts` — Language registry
-- [x] Create `apps/codex/src/parser/chunk-splitter.ts` — Split large functions into FRAGMENTs
-- [x] Create `apps/codex/src/parser/metadata.ts` — Extract params, return type, imports, exports, docstring
-- [x] Run verification: Unit tests against fixture source files for each language
+- [ ] Create `apps/codex/src/parser/tree-sitter.ts` — WASM init + `parseFile()` entry point
+- [ ] Create `apps/codex/src/parser/languages/typescript.ts` — TS/JS queries
+- [ ] Create `apps/codex/src/parser/languages/python.ts`
+- [ ] Create `apps/codex/src/parser/languages/go.ts`
+- [ ] Create `apps/codex/src/parser/languages/java.ts`
+- [ ] Create `apps/codex/src/parser/languages/rust.ts`
+- [ ] Create `apps/codex/src/parser/languages/index.ts` — Language registry
+- [ ] Create `apps/codex/src/parser/chunk-splitter.ts` — Split large functions into FRAGMENTs
+- [ ] Create `apps/codex/src/parser/metadata.ts` — Extract params, return type, imports, exports, docstring
+- [ ] Run verification: Unit tests against fixture source files for each language
 
 ### Risk: WASM grammar files need a copy/bundle strategy at build time.
 
