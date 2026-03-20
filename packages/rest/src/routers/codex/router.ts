@@ -21,20 +21,27 @@ function generateWebhookSecret(): string {
   return randomBytes(32).toString("hex");
 }
 
-// ── OpenAI client (module-level singleton) ────────────────────────────
+// ── OpenAI client (lazy singleton) ───────────────────────────────────
+// Deferred until first use so Next.js build doesn't throw when env vars
+// are absent, while still reusing the client (and its connection pool)
+// across all subsequent requests.
 
-const openaiClient = new OpenAI({
-  apiKey: process.env["CODEX_EMBEDDING_API_KEY"],
-});
-const embeddingModel = process.env["CODEX_EMBEDDING_MODEL"] ?? "text-embedding-3-small";
-const embeddingDimensions = Number(process.env["CODEX_EMBEDDING_DIMENSIONS"] ?? "1536");
+let _openaiClient: OpenAI | undefined;
+let _embeddingModel: string | undefined;
+let _embeddingDimensions: number | undefined;
+
+function getEmbedClient(): { client: OpenAI; model: string; dimensions: number } {
+  if (!_openaiClient) {
+    _openaiClient = new OpenAI({ apiKey: process.env["CODEX_EMBEDDING_API_KEY"] });
+    _embeddingModel = process.env["CODEX_EMBEDDING_MODEL"] ?? "text-embedding-3-small";
+    _embeddingDimensions = Number(process.env["CODEX_EMBEDDING_DIMENSIONS"] ?? "1536");
+  }
+  return { client: _openaiClient, model: _embeddingModel!, dimensions: _embeddingDimensions! };
+}
 
 const embedQuery: EmbedQueryFn = async (text: string): Promise<number[]> => {
-  const response = await openaiClient.embeddings.create({
-    model: embeddingModel,
-    input: text,
-    dimensions: embeddingDimensions,
-  });
+  const { client, model, dimensions } = getEmbedClient();
+  const response = await client.embeddings.create({ model, input: text, dimensions });
   return response.data[0]!.embedding;
 };
 
