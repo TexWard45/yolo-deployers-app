@@ -1,0 +1,35 @@
+{
+  "name": "@app/codex",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/worker.ts",
+    "dev:doppler": "doppler run -- tsx src/worker.ts",
+    "build": "tsc --build",
+    "build:doppler": "doppler run -- tsc --build",
+    "start": "tsx src/worker.ts",
+    "start:doppler": "doppler run -- tsx src/worker.ts",
+    "type-check": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "echo \"No tests configured yet\"",
+    "workflow:start": "tsx src/client.ts",
+    "workflow:start:doppler": "doppler run -- tsx src/client.ts"
+  },
+  "dependencies": {
+    "@shared/database": "*",
+    "@shared/env": "*",
+    "@shared/types": "*",
+    "@temporalio/client": "^1.11.5",
+    "@temporalio/worker": "^1.11.5",
+    "@temporalio/workflow": "^1.11.5",
+    "openai": "^4.77.0",
+    "simple-git": "^3.27.0"
+  },
+  "devDependencies": {
+    "@shared/tsconfig": "*",
+    "@types/node": "^22",
+    "tsx": "^4.20.6",
+    "typescript": "^5.7"
+  }
+}

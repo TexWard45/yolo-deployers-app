@@ -13,6 +13,8 @@
     "dev:web:doppler": "doppler run -- npm run dev:web",
     "dev:queue": "npm run dev --workspace @app/queue",
     "dev:queue:doppler": "doppler run -- npm run dev:queue",
+    "dev:codex": "npm run dev --workspace @app/codex",
+    "dev:codex:doppler": "doppler run -- npm run dev:codex",
     "build": "turbo build",
     "build:doppler": "doppler run -- npm run build",
     "type-check": "turbo type-check",

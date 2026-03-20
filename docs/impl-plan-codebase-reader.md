@@ -6,7 +6,7 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 0 — Schema, Types, Environment `[STATUS: IN PROGRESS]`
+## Phase 0 — Schema, Types, Environment `[STATUS: COMPLETE]`
 
 **Goal:** Data models, Zod schemas, env contracts. Verifiable via `db:generate` + `type-check`.
 
@@ -27,44 +27,44 @@ We're building a Codebase Reader service that ingests source code from multiple 
 
 ---
 
-## Phase 1 — Codex Worker Scaffold + Source Adapters `[STATUS: NOT STARTED]`
+## Phase 1 — Codex Worker Scaffold + Source Adapters `[STATUS: COMPLETE]`
 
 **Goal:** `apps/codex` Temporal worker connects to `codex-sync-queue`. GitHub + LocalGit adapters work.
 
 ### Tasks
 
-- [ ] Create `apps/codex/package.json` — @app/codex, deps: @temporalio/*, simple-git, openai, @shared/env, @shared/types, @shared/database
-- [ ] Create `apps/codex/tsconfig.json` — Extends `@shared/tsconfig/library.json`
-- [ ] Create `apps/codex/src/config.ts` — Load from `@shared/env/codex`
-- [ ] Create `apps/codex/src/worker.ts` — Follow `apps/queue/src/worker.ts` pattern exactly
-- [ ] Create `apps/codex/src/adapters/types.ts` — `ISourceAdapter` interface
-- [ ] Create `apps/codex/src/adapters/git.adapter.ts` — Shared base using `simple-git`
-- [ ] Create `apps/codex/src/adapters/github.adapter.ts` — PAT auth
-- [ ] Create `apps/codex/src/adapters/local-git.adapter.ts` — Points to existing path
-- [ ] Create `apps/codex/src/adapters/factory.ts` — `getAdapter(sourceType)`
-- [ ] Create stub files for GitLab, Bitbucket, Azure, Archive adapters (throw "not implemented")
-- [ ] Create placeholder `workflows/index.ts`, `workflows/registry.ts`, `activities/index.ts`
-- [ ] Modify root `package.json` — Add `dev:codex` script
+- [x] Create `apps/codex/package.json` — @app/codex, deps: @temporalio/*, simple-git, openai, @shared/env, @shared/types, @shared/database
+- [x] Create `apps/codex/tsconfig.json` — Extends `@shared/tsconfig/library.json`
+- [x] Create `apps/codex/src/config.ts` — Load from `@shared/env/codex`
+- [x] Create `apps/codex/src/worker.ts` — Follow `apps/queue/src/worker.ts` pattern exactly
+- [x] Create `apps/codex/src/adapters/types.ts` — `ISourceAdapter` interface
+- [x] Create `apps/codex/src/adapters/git.adapter.ts` — Shared base using `simple-git`
+- [x] Create `apps/codex/src/adapters/github.adapter.ts` — PAT auth
+- [x] Create `apps/codex/src/adapters/local-git.adapter.ts` — Points to existing path
+- [x] Create `apps/codex/src/adapters/factory.ts` — `getAdapter(sourceType)`
+- [x] Create stub files for GitLab, Bitbucket, Azure, Archive adapters (throw "not implemented")
+- [x] Create placeholder `workflows/index.ts`, `workflows/registry.ts`, `activities/index.ts`
+- [x] Modify root `package.json` — Add `dev:codex` script
 - [ ] Run verification: Worker starts, connects to Temporal, GitHub adapter clones a public repo
 
 ---
 
-## Phase 2 — Tree-sitter AST Parser `[STATUS: NOT STARTED]`
+## Phase 2 — Tree-sitter AST Parser `[STATUS: COMPLETE]`
 
 **Goal:** `parseFile(content, language) → ParsedChunk[]` with full metadata. Parallel with Phase 1.
 
 ### Tasks
 
-- [ ] Create `apps/codex/src/parser/tree-sitter.ts` — WASM init + `parseFile()` entry point
-- [ ] Create `apps/codex/src/parser/languages/typescript.ts` — TS/JS queries
-- [ ] Create `apps/codex/src/parser/languages/python.ts`
-- [ ] Create `apps/codex/src/parser/languages/go.ts`
-- [ ] Create `apps/codex/src/parser/languages/java.ts`
-- [ ] Create `apps/codex/src/parser/languages/rust.ts`
-- [ ] Create `apps/codex/src/parser/languages/index.ts` — Language registry
-- [ ] Create `apps/codex/src/parser/chunk-splitter.ts` — Split large functions into FRAGMENTs
-- [ ] Create `apps/codex/src/parser/metadata.ts` — Extract params, return type, imports, exports, docstring
-- [ ] Run verification: Unit tests against fixture source files for each language
+- [x] Create `apps/codex/src/parser/tree-sitter.ts` — WASM init + `parseFile()` entry point
+- [x] Create `apps/codex/src/parser/languages/typescript.ts` — TS/JS queries
+- [x] Create `apps/codex/src/parser/languages/python.ts`
+- [x] Create `apps/codex/src/parser/languages/go.ts`
+- [x] Create `apps/codex/src/parser/languages/java.ts`
+- [x] Create `apps/codex/src/parser/languages/rust.ts`
+- [x] Create `apps/codex/src/parser/languages/index.ts` — Language registry
+- [x] Create `apps/codex/src/parser/chunk-splitter.ts` — Split large functions into FRAGMENTs
+- [x] Create `apps/codex/src/parser/metadata.ts` — Extract params, return type, imports, exports, docstring
+- [x] Run verification: Unit tests against fixture source files for each language
 
 ### Risk: WASM grammar files need a copy/bundle strategy at build time.
 
