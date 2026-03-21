@@ -52,16 +52,16 @@ export function SignupForm() {
 
   return (
     <Card className="w-full max-w-sm">
-      <CardHeader>
-        <CardTitle className="text-2xl">Sign Up</CardTitle>
+      <CardHeader className="text-center">
+        <CardTitle className="gradient-text text-2xl tracking-tight">Create account</CardTitle>
         <CardDescription>
-          Create an account with a username and password.
+          Get started with your free account.
         </CardDescription>
       </CardHeader>
       <form onSubmit={onSubmit}>
         <CardContent className="space-y-4">
           {error && (
-            <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -88,11 +88,11 @@ export function SignupForm() {
         </CardContent>
         <CardFooter className="flex flex-col gap-3">
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Creating account..." : "Sign up"}
+            {loading ? "Creating account..." : "Create account"}
           </Button>
           <p className="text-sm text-muted-foreground">
             Already have an account?{" "}
-            <Link href="/login" className="text-primary underline">
+            <Link href="/login" className="text-primary hover:underline">
               Sign in
             </Link>
           </p>

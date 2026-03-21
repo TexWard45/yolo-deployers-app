@@ -66,7 +66,6 @@ export function AppSidebar({ user }: AppSidebarProps) {
   }
 
   function switchWorkspace(ws: Workspace) {
-    // Navigate to the same sub-page in the new workspace
     const subPage = pathname.match(/^\/workspace\/[^/]+\/(.+)/)?.[1] ?? "inbox";
     router.push(`/workspace/${ws.slug}/${subPage}`);
   }
@@ -81,15 +80,15 @@ export function AppSidebar({ user }: AppSidebarProps) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/" />}>
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <div className="gradient-bg flex aspect-square size-8 items-center justify-center rounded-lg text-white shadow-sm">
                 <LayoutDashboard className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">
-                  Template Project
+                <span className="truncate font-semibold tracking-tight">
+                  YOLO Deployers
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
-                  Dashboard
+                  AI Support Platform
                 </span>
               </div>
             </SidebarMenuButton>
@@ -98,7 +97,6 @@ export function AppSidebar({ user }: AppSidebarProps) {
       </SidebarHeader>
 
       <SidebarContent>
-        {/* Workspace switcher */}
         {activeWorkspace && workspaces.length > 0 ? (
           <SidebarGroup>
             <SidebarGroupLabel>Workspace</SidebarGroupLabel>
@@ -106,8 +104,8 @@ export function AppSidebar({ user }: AppSidebarProps) {
               <SidebarMenuItem>
                 <DropdownMenu>
                   <DropdownMenuTrigger render={<SidebarMenuButton size="lg" />}>
-                    <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-muted">
-                      <Building2 className="size-4" />
+                    <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary/10 border border-primary/20">
+                      <Building2 className="size-4 text-primary" />
                     </div>
                     <div className="grid flex-1 text-left text-sm leading-tight">
                       <span className="truncate font-semibold">
@@ -117,7 +115,7 @@ export function AppSidebar({ user }: AppSidebarProps) {
                         {activeWorkspace.role}
                       </span>
                     </div>
-                    <ChevronDown className="ml-auto size-4" />
+                    <ChevronDown className="ml-auto size-4 text-muted-foreground" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     side="bottom"
@@ -132,7 +130,7 @@ export function AppSidebar({ user }: AppSidebarProps) {
                         <Building2 className="mr-2 size-4" />
                         {ws.name}
                         {ws.slug === activeWorkspace.slug ? (
-                          <Check className="ml-auto size-4" />
+                          <Check className="ml-auto size-4 text-primary" />
                         ) : null}
                       </DropdownMenuItem>
                     ))}
@@ -143,7 +141,6 @@ export function AppSidebar({ user }: AppSidebarProps) {
           </SidebarGroup>
         ) : null}
 
-        {/* Workspace pages — shown for active workspace */}
         {activeWorkspace ? (
           <SidebarGroup>
             <SidebarMenu>

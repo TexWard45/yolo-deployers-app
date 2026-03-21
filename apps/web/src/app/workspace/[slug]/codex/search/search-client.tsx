@@ -100,7 +100,7 @@ export function CodexSearchClient({ workspaceId, workspaceSlug }: CodexSearchCli
         <Button variant="ghost" size="icon-sm" nativeButton={false} render={<Link href={`/workspace/${workspaceSlug}/codex`} />}>
           <ArrowLeft className="size-4" />
         </Button>
-        <h2 className="text-2xl font-bold tracking-tight">Code Search</h2>
+        <h2 className="gradient-text text-2xl font-bold tracking-tight">Code Search</h2>
       </div>
 
       <Card>
@@ -170,13 +170,13 @@ export function CodexSearchClient({ workspaceId, workspaceSlug }: CodexSearchCli
             </p>
             {results.timing && (
               <div className="flex gap-2">
-                <Badge variant="outline" className="text-xs">
+                <Badge variant="outline" className="text-xs tabular-nums">
                   Total: {results.timing.totalMs}ms
                 </Badge>
-                <Badge variant="outline" className="text-xs">
+                <Badge variant="outline" className="text-xs tabular-nums">
                   Semantic: {results.timing.semanticMs}ms
                 </Badge>
-                <Badge variant="outline" className="text-xs">
+                <Badge variant="outline" className="text-xs tabular-nums">
                   Keyword: {results.timing.keywordMs}ms
                 </Badge>
               </div>

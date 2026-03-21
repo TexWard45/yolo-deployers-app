@@ -72,7 +72,7 @@ export default async function RepositoryDetailPage({ params }: RepositoryDetailP
           <ArrowLeft className="size-4" />
         </Button>
         <div className="flex-1">
-          <h2 className="text-2xl font-bold tracking-tight">
+          <h2 className="gradient-text text-2xl font-bold tracking-tight">
             {repository.displayName}
           </h2>
           {repository.description && (
@@ -113,7 +113,7 @@ export default async function RepositoryDetailPage({ params }: RepositoryDetailP
           </CardHeader>
           <CardContent className="flex items-center gap-1">
             <FileCode className="size-4 text-muted-foreground" />
-            <span className="text-2xl font-bold">{repository._count.files}</span>
+            <span className="text-2xl font-bold tabular-nums">{repository._count.files}</span>
           </CardContent>
         </Card>
 

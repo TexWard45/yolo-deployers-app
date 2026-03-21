@@ -40,12 +40,12 @@ export function SearchResultCard({ result, workspaceSlug }: SearchResultCardProp
               {result.symbolName && (
                 <Link
                   href={`/workspace/${workspaceSlug}/codex/chunk/${result.id}`}
-                  className="font-mono text-sm font-semibold hover:underline"
+                  className="font-mono text-sm font-semibold text-primary hover:underline"
                 >
                   {result.symbolName}
                 </Link>
               )}
-              <Badge variant="outline" className="text-xs">
+              <Badge variant="info" className="text-xs">
                 {result.chunkType}
               </Badge>
             </div>
@@ -54,24 +54,24 @@ export function SearchResultCard({ result, workspaceSlug }: SearchResultCardProp
                 <FileCode className="size-3" />
                 {result.displayName}
               </span>
-              <span className="flex items-center gap-1">
+              <span className="flex items-center gap-1 font-mono">
                 <Hash className="size-3" />
                 {result.filePath}:{result.lineStart}-{result.lineEnd}
               </span>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1">
-            <Badge variant="secondary" className="text-xs">
+            <Badge variant="success" className="text-xs">
               {result.language}
             </Badge>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs tabular-nums text-muted-foreground">
               {(result.score * 100).toFixed(1)}%
             </span>
           </div>
         </div>
       </CardHeader>
       <CardContent>
-        <pre className="overflow-x-auto rounded-md bg-muted p-3 text-xs">
+        <pre className="overflow-x-auto rounded-lg bg-background border p-3 font-mono text-xs">
           <code>{preview}{truncated ? "\n..." : ""}</code>
         </pre>
         <div className="mt-2 flex items-center gap-1">

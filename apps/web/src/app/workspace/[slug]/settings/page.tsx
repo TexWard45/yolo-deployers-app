@@ -33,7 +33,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
   return (
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">AI Agent Settings</h1>
+        <h1 className="gradient-text text-2xl font-bold tracking-tight">AI Agent Settings</h1>
         <p className="text-sm text-muted-foreground">
           Configure how the AI agent handles customer support for this workspace.
         </p>
@@ -61,14 +61,14 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           maxClarifications: config.maxClarifications,
           tone: config.tone,
           systemPrompt: config.systemPrompt,
-          githubToken: config.githubToken,
-          githubDefaultOwner: config.githubDefaultOwner,
-          githubDefaultRepo: config.githubDefaultRepo,
-          githubBaseBranch: config.githubBaseBranch,
-          codexFixModel: config.codexFixModel,
-          codexReviewModel: config.codexReviewModel,
-          codexFixMaxIterations: config.codexFixMaxIterations,
-          codexRequiredCheckNames: config.codexRequiredCheckNames,
+          githubToken: (config as Record<string, unknown>).githubToken as string | null ?? null,
+          githubDefaultOwner: (config as Record<string, unknown>).githubDefaultOwner as string | null ?? null,
+          githubDefaultRepo: (config as Record<string, unknown>).githubDefaultRepo as string | null ?? null,
+          githubBaseBranch: (config as Record<string, unknown>).githubBaseBranch as string | null ?? null,
+          codexFixModel: (config as Record<string, unknown>).codexFixModel as string | null ?? null,
+          codexReviewModel: (config as Record<string, unknown>).codexReviewModel as string | null ?? null,
+          codexFixMaxIterations: (config as Record<string, unknown>).codexFixMaxIterations as number ?? 3,
+          codexRequiredCheckNames: (config as Record<string, unknown>).codexRequiredCheckNames as string[] ?? [],
           sentryOrgSlug: config.sentryOrgSlug,
           sentryProjectSlug: config.sentryProjectSlug,
           hasSentryToken: config.sentryAuthToken === "***",

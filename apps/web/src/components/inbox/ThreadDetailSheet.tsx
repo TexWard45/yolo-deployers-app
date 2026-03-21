@@ -301,9 +301,9 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                               <span
                                 className={`relative z-10 mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                                   isInbound
-                                    ? "bg-blue-100 text-blue-700"
+                                    ? "bg-primary/10 text-primary"
                                     : isOutbound
-                                      ? "bg-emerald-100 text-emerald-700"
+                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                       : "bg-muted text-muted-foreground"
                                 }`}
                               >
@@ -313,6 +313,8 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                     ? "T"
                                     : "S"}
                               </span>
+
+
 
                               <div className="flex-1">
                                 <div className="mb-0.5 flex items-center gap-2">
@@ -330,9 +332,9 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                 <div
                                   className={`rounded-lg border p-3 ${
                                     isInbound
-                                      ? "border-l-2 border-l-blue-500"
+                                      ? "border-l-2 border-l-primary"
                                       : isOutbound
-                                        ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
+                                        ? "border-l-2 border-l-emerald-500 bg-emerald-500/5"
                                         : "border-l-2 border-l-muted-foreground bg-muted/30"
                                   }`}
                                 >
@@ -401,7 +403,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* AI Draft suggestion */}
           {draft && draft.status === "GENERATED" ? (
-            <div className="shrink-0 border-t bg-violet-50/50 px-4 py-3 dark:bg-violet-950/10">
+            <div className="shrink-0 border-t bg-violet-500/5 px-4 py-3">
               <DraftChatBubble
                 draft={draft}
                 workspaceId={thread.workspaceId}
@@ -454,7 +456,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
         <div className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto p-4">
           {/* Status */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Status
             </h3>
             <ThreadStatusBadge status={thread.status} />
@@ -462,7 +464,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Customer Info */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Customer
             </h3>
             <div className="space-y-1 text-sm">
@@ -478,7 +480,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Assignee */}
           <div ref={assignDropdownRef}>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Assigned To
             </h3>
             <div className="relative">
@@ -573,7 +575,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Summary */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Summary
             </h3>
             <p className="text-sm text-muted-foreground">
@@ -591,7 +593,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Timestamps */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Details
             </h3>
             <div className="space-y-1 text-xs text-muted-foreground">

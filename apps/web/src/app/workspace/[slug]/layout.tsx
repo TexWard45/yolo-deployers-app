@@ -29,12 +29,14 @@ export default async function WorkspaceLayout({
     <SidebarProvider>
       <AppSidebar user={session} />
       <SidebarInset>
-        <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <span className="text-sm font-medium">{workspace.name}</span>
-        </header>
-        <main className="flex-1 p-6">{children}</main>
+        <div className="flex h-svh min-w-0 flex-col">
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background/60 backdrop-blur-md px-4">
+            <SidebarTrigger className="-ml-1" />
+            <Separator orientation="vertical" className="mr-2 h-4" />
+            <span className="text-sm font-semibold tracking-tight">{workspace.name}</span>
+          </header>
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden p-6">{children}</main>
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );

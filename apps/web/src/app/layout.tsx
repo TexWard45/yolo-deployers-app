@@ -2,15 +2,23 @@ import type { Metadata } from "next";
 import { Providers } from "@/trpc/provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TelemetryProvider } from "@shared/telemetry/react";
-import { Geist } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 import "@/app/globals.css";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-sans",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+});
 
 export const metadata: Metadata = {
-  title: "Template Project",
-  description: "Monorepo microservice app",
+  title: "YOLO Deployers",
+  description: "AI-powered support & code intelligence platform",
 };
 
 export default function RootLayout({
@@ -19,7 +27,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={cn("font-sans", geist.variable)}>
+    <html
+      lang="en"
+      className={cn("font-sans", inter.variable, jetbrainsMono.variable)}
+    >
       <body>
         <Providers>
           <TelemetryProvider endpoint="/api/rest">

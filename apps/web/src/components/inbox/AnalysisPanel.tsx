@@ -40,11 +40,11 @@ interface AnalysisPanelProps {
   refreshRef?: React.RefObject<(() => void) | null>;
 }
 
-const SEVERITY_STYLES: Record<string, string> = {
-  critical: "bg-red-100 text-red-800 hover:bg-red-100",
-  high: "bg-orange-100 text-orange-800 hover:bg-orange-100",
-  medium: "bg-yellow-100 text-yellow-800 hover:bg-yellow-100",
-  low: "bg-blue-100 text-blue-800 hover:bg-blue-100",
+const SEVERITY_VARIANT: Record<string, "magenta" | "amber" | "info" | "violet"> = {
+  critical: "magenta",
+  high: "amber",
+  medium: "info",
+  low: "violet",
 };
 
 export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refreshRef }: AnalysisPanelProps) {
@@ -103,7 +103,7 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
   if (loading && !analysis) {
     return (
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           AI Analysis
         </h3>
         <p className="text-xs text-muted-foreground">Loading...</p>
@@ -114,7 +114,7 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
   if (!analysis) {
     return (
       <div>
-        <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           AI Analysis
         </h3>
         {triggering ? (
@@ -148,7 +148,7 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase text-muted-foreground">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           AI Analysis
         </h3>
         <Button
@@ -173,17 +173,17 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
         {/* Classification badges */}
         <div className="flex flex-wrap gap-1.5">
           {analysis.severity ? (
-            <Badge className={SEVERITY_STYLES[analysis.severity] ?? "bg-gray-100 text-gray-800 hover:bg-gray-100"}>
+            <Badge variant={SEVERITY_VARIANT[analysis.severity] ?? "secondary"}>
               {analysis.severity}
             </Badge>
           ) : null}
           {analysis.issueCategory ? (
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="info">
               {analysis.issueCategory}
             </Badge>
           ) : null}
           {!analysis.sufficient ? (
-            <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">
+            <Badge variant="amber">
               Needs info
             </Badge>
           ) : null}
@@ -202,7 +202,7 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
         {/* RCA */}
         {analysis.rcaSummary ? (
           <div>
-            <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
               Root Cause
             </p>
             <p className="text-xs leading-relaxed text-muted-foreground">
@@ -276,17 +276,17 @@ export function DraftChatBubble({ draft, workspaceId, onDraftActioned }: DraftCh
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-700">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/15 text-[10px] font-bold text-violet-600 dark:text-violet-400">
           AI
         </span>
-        <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Draft Reply
         </p>
         <DraftTypeBadge draftType={draft.draftType} />
       </div>
 
       {/* Chat bubble */}
-      <div className="rounded-lg border border-l-2 border-l-violet-400 bg-violet-50/50 p-3 dark:bg-violet-950/20">
+      <div className="rounded-lg border border-l-2 border-l-violet-500 bg-violet-500/5 p-3">
         {editing ? (
           <textarea
             className="w-full resize-none rounded border bg-background px-2 py-1.5 text-xs leading-relaxed focus:outline-none focus:ring-1 focus:ring-ring"
@@ -361,7 +361,7 @@ function CodexFindingsSection({ findings }: { findings: unknown }) {
 
   return (
     <div>
-      <p className="mb-1 text-[10px] font-semibold uppercase text-muted-foreground">
+      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         Related Code
       </p>
       <div className="space-y-1">

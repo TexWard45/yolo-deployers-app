@@ -61,11 +61,11 @@ interface ThreadListProps {
 }
 
 const STATUS_COLOR: Record<ThreadStatusValue, string> = {
-  NEW: "text-blue-600",
-  WAITING_REVIEW: "text-amber-600",
-  WAITING_CUSTOMER: "text-violet-600",
-  ESCALATED: "text-red-600",
-  IN_PROGRESS: "text-emerald-600",
+  NEW: "text-primary",
+  WAITING_REVIEW: "text-amber-600 dark:text-amber-400",
+  WAITING_CUSTOMER: "text-violet-600 dark:text-violet-400",
+  ESCALATED: "text-rose-600 dark:text-rose-400",
+  IN_PROGRESS: "text-emerald-600 dark:text-emerald-400",
   CLOSED: "text-muted-foreground",
 };
 
@@ -186,9 +186,9 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
   const unassignedCount = localThreads.filter((t) => !t.assignedTo).length;
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Filter tabs + refresh toolbar */}
-      <div className="mb-3 flex items-center justify-between">
+      <div className="mb-3 flex shrink-0 items-center justify-between">
         <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1">
           {([
             { key: "all" as const, label: "All", count: localThreads.length },
@@ -200,7 +200,7 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
               type="button"
               className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                 threadFilter === tab.key
-                  ? "bg-background text-foreground shadow-sm"
+                  ? "bg-primary/10 text-primary shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
               onClick={() => setThreadFilter(tab.key)}
@@ -246,7 +246,7 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
         </Button>
       </div>
 
-      <div className="flex h-[calc(100vh-6rem)] overflow-x-auto pb-2">
+      <div className="flex min-h-0 flex-1 overflow-x-auto rounded-lg border pb-2">
         {THREAD_STATUSES.map((status) => {
           const items = grouped[status];
           const isDragOver = dragOverColumn === status;
@@ -254,7 +254,7 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
             <div
               key={status}
               className={`flex w-72 shrink-0 flex-col border-r last:border-r-0 transition-colors ${
-                isDragOver ? "bg-accent/30" : ""
+                isDragOver ? "bg-primary/5" : ""
               }`}
               onDragOver={handleDragOver}
               onDragEnter={() => setDragOverColumn(status)}
@@ -270,7 +270,7 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
                 <span className={`text-sm font-semibold ${STATUS_COLOR[status]}`}>
                   {THREAD_STATUS_LABEL[status]}
                 </span>
-                <span className="text-sm text-muted-foreground">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
                   {items.length}
                 </span>
               </div>
@@ -319,6 +319,6 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
         threadId={selectedId}
         onClose={() => selectThread(null)}
       />
-    </>
+    </div>
   );
 }
