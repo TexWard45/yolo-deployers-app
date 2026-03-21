@@ -44,7 +44,8 @@ test("deterministic match prefers external thread id", () => {
   assert.equal(decision.strategy, "external_thread_id");
 });
 
-test("deterministic match falls to new_thread when no match", () => {
+test("deterministic match falls to new_thread when outside recency window", () => {
+  const oldTime = new Date(Date.now() - 30 * 60 * 1000);
   const decision = decideDeterministicThreadMatch({
     externalThreadId: null,
     inReplyToExternalMessageId: null,
@@ -61,8 +62,8 @@ test("deterministic match falls to new_thread when no match", () => {
         externalThreadId: "ext-1",
         issueFingerprint: "webhook retries",
         summary: null,
-        lastMessageAt: new Date(),
-        lastInboundAt: new Date(Date.now() - 30 * 60 * 1000),
+        lastMessageAt: oldTime,
+        lastInboundAt: oldTime,
       },
     ],
   });
@@ -134,7 +135,7 @@ test("time-proximity: does NOT match when outside recency window", () => {
   assert.equal(decision.threadId, null);
 });
 
-test("time-proximity: does NOT match different customer's thread", () => {
+test("time-proximity: matches different customer's thread within window (workspace-wide)", () => {
   const decision = decideDeterministicThreadMatch({
     externalThreadId: null,
     inReplyToExternalMessageId: null,
@@ -157,7 +158,8 @@ test("time-proximity: does NOT match different customer's thread", () => {
     ],
   });
 
-  assert.equal(decision.strategy, "new_thread");
+  assert.equal(decision.threadId, "thread-1");
+  assert.equal(decision.strategy, "time_proximity");
 });
 
 test("time-proximity: picks most recent thread when multiple exist", () => {

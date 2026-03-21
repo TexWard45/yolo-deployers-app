@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
-import { dispatchSessionEnrichment } from "@/lib/temporal";
 
 // Safe fallback CORS origin — deferred to request time so the build step
 // doesn't throw when NEXT_PUBLIC_APP_URL is absent during `next build`.

@@ -17,7 +17,7 @@ import {
 } from "./helpers/thread-matching";
 import { dispatchThreadReviewWorkflow } from "../temporal";
 
-const DEFAULT_RECENCY_WINDOW_MINUTES = 10;
+const DEFAULT_RECENCY_WINDOW_SECONDS = 50;
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -175,7 +175,9 @@ async function performIngestion(
       select: { threadRecencyWindowMinutes: true },
     });
     const recencyWindowMs =
-      (agentConfig?.threadRecencyWindowMinutes ?? DEFAULT_RECENCY_WINDOW_MINUTES) * 60 * 1000;
+      (agentConfig?.threadRecencyWindowMinutes ?? 0) > 0
+        ? agentConfig!.threadRecencyWindowMinutes * 60 * 1000
+        : DEFAULT_RECENCY_WINDOW_SECONDS * 1000;
 
     const decision = decideDeterministicThreadMatch({
       externalThreadId: input.externalThreadId,

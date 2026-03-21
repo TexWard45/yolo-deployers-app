@@ -105,18 +105,19 @@ export function decideDeterministicThreadMatch(input: DeterministicMatchInput): 
     };
   }
 
-  // Time-proximity: same customer, recent activity, no explicit new thread boundary
+  // Time-proximity: any recent thread in the workspace, no explicit new thread boundary
+  // Groups messages from ANY user within the recency window into the most recent thread
   if (input.recencyWindowMs > 0 && !input.externalThreadId) {
     const now = Date.now();
     let recentCandidate: ThreadMatchCandidate | null = null;
     let recentTime = 0;
 
     for (const candidate of input.candidates) {
-      if (candidate.customerId !== input.customerId) continue;
-      const inboundTs = candidate.lastInboundAt?.getTime() ?? 0;
-      if (inboundTs > 0 && now - inboundTs <= input.recencyWindowMs && inboundTs > recentTime) {
+      // Use lastMessageAt (slides forward with each message) for recency check
+      const msgTs = candidate.lastMessageAt?.getTime() ?? candidate.lastInboundAt?.getTime() ?? 0;
+      if (msgTs > 0 && now - msgTs <= input.recencyWindowMs && msgTs > recentTime) {
         recentCandidate = candidate;
-        recentTime = inboundTs;
+        recentTime = msgTs;
       }
     }
 
