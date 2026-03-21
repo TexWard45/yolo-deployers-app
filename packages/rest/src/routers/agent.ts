@@ -6,7 +6,12 @@ import {
   GenerateReplyDraftSchema,
   ApproveDraftSchema,
   DismissDraftSchema,
+  GetLatestAnalysisInputSchema,
+  TriggerAnalysisInputSchema,
+  SaveAnalysisInputSchema,
 } from "@shared/types";
+import type { Prisma } from "@shared/types/prisma";
+import { dispatchAnalyzeThreadWorkflow } from "../temporal";
 
 export const agentRouter = createTRPCRouter({
   /** Get workspace AI agent config */
@@ -30,8 +35,11 @@ export const agentRouter = createTRPCRouter({
         where: { workspaceId: input.workspaceId },
       });
 
-      // Return default config if none exists
-      return config ?? {
+      // Return default config if none exists (redact sentryAuthToken)
+      if (config) {
+        return { ...config, sentryAuthToken: config.sentryAuthToken ? "***" : null };
+      }
+      return {
         id: null,
         workspaceId: input.workspaceId,
         enabled: false,
@@ -41,6 +49,14 @@ export const agentRouter = createTRPCRouter({
         autoDraftOnInbound: true,
         handoffRulesJson: null,
         model: null,
+        analysisEnabled: true,
+        maxClarifications: 2,
+        codexRepositoryIds: [] as string[],
+        sentryDsn: null,
+        sentryOrgSlug: null,
+        sentryProjectSlug: null,
+        sentryAuthToken: null,
+        threadRecencyWindowMinutes: 0,
         createdAt: null,
         updatedAt: null,
       };
@@ -204,5 +220,130 @@ export const agentRouter = createTRPCRouter({
         where: { id: input.draftId },
         data: { status: "DISMISSED" },
       });
+    }),
+
+  /** Get the latest analysis for a thread */
+  getLatestAnalysis: publicProcedure
+    .input(GetLatestAnalysisInputSchema)
+    .query(async ({ ctx, input }) => {
+      const member = await ctx.prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+          },
+        },
+      });
+
+      if (!member) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
+      }
+
+      const thread = await ctx.prisma.supportThread.findFirst({
+        where: { id: input.threadId, workspaceId: input.workspaceId },
+      });
+
+      if (!thread) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
+      }
+
+      return ctx.prisma.threadAnalysis.findFirst({
+        where: { threadId: input.threadId, workspaceId: input.workspaceId },
+        orderBy: { createdAt: "desc" },
+        include: {
+          drafts: {
+            where: { status: "GENERATED" },
+            take: 1,
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      });
+    }),
+
+  /** Manually trigger analysis pipeline for a thread */
+  triggerAnalysis: publicProcedure
+    .input(TriggerAnalysisInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const member = await ctx.prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+          },
+        },
+      });
+
+      if (!member) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
+      }
+
+      const thread = await ctx.prisma.supportThread.findFirst({
+        where: { id: input.threadId, workspaceId: input.workspaceId },
+      });
+
+      if (!thread) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
+      }
+
+      await dispatchAnalyzeThreadWorkflow({
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        source: thread.source,
+        triggeredByMessageId: "manual-trigger",
+      });
+
+      return { triggered: true };
+    }),
+
+  /** Save analysis + draft (called by queue worker via REST) */
+  saveAnalysis: publicProcedure
+    .input(SaveAnalysisInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const analysis = await ctx.prisma.threadAnalysis.create({
+        data: {
+          threadId: input.threadId,
+          workspaceId: input.workspaceId,
+          issueCategory: input.analysis.issueCategory,
+          severity: input.analysis.severity,
+          affectedComponent: input.analysis.affectedComponent,
+          summary: input.analysis.summary,
+          codexFindings: input.analysis.codexFindings as Prisma.InputJsonValue ?? undefined,
+          sentryFindings: input.analysis.sentryFindings as Prisma.InputJsonValue ?? undefined,
+          rcaSummary: input.analysis.rcaSummary,
+          sufficient: input.analysis.sufficient,
+          missingContext: input.analysis.missingContext,
+          model: input.analysis.model,
+          promptVersion: input.analysis.promptVersion,
+          totalTokens: input.analysis.totalTokens,
+          durationMs: input.analysis.durationMs,
+        },
+      });
+
+      const draft = await ctx.prisma.replyDraft.create({
+        data: {
+          threadId: input.threadId,
+          status: "GENERATED",
+          draftType: input.draft.draftType,
+          body: input.draft.body,
+          model: input.draft.model,
+          analysisId: analysis.id,
+          basedOnMessageId: input.draft.basedOnMessageId,
+        },
+      });
+
+      // Update thread with latest analysis + increment clarification count if needed
+      const updateData: Record<string, unknown> = {
+        lastAnalysisId: analysis.id,
+      };
+      if (input.draft.draftType === "CLARIFICATION") {
+        updateData.clarificationCount = { increment: 1 };
+      }
+
+      await ctx.prisma.supportThread.update({
+        where: { id: input.threadId },
+        data: updateData,
+      });
+
+      return { analysisId: analysis.id, draftId: draft.id };
     }),
 });

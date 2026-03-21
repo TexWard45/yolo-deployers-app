@@ -86,6 +86,44 @@ export async function sendReply(data: {
   }
 }
 
+export async function getThreadAnalysis(threadId: string, workspaceId: string) {
+  const session = await getSession();
+  if (!session) return null;
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    return await trpc.agent.getLatestAnalysis({
+      threadId,
+      workspaceId,
+      userId: session.id,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function triggerThreadAnalysis(threadId: string, workspaceId: string) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    await trpc.agent.triggerAnalysis({
+      threadId,
+      workspaceId,
+      userId: session.id,
+    });
+    return { success: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { success: false, error: error.message } as const;
+    }
+    return { success: false, error: "Something went wrong" } as const;
+  }
+}
+
 export async function updateThreadStatusAction(data: {
   threadId: string;
   status:

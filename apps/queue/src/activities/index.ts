@@ -5,3 +5,13 @@ export {
   llmReviewThreadActivity,
   applyThreadEjections,
 } from "./thread-review.activity.js";
+export {
+  getThreadAnalysisContext,
+  checkSufficiencyActivity,
+  searchCodebaseActivity,
+  fetchSentryErrorsActivity,
+  generateAnalysisActivity,
+  generateDraftReplyActivity,
+  saveAnalysisAndDraftActivity,
+  escalateThreadActivity,
+} from "./analyze-thread.activity.js";

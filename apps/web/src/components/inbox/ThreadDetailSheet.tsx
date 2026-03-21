@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
-import { renderMessageBody } from "@/components/inbox/render-message-body";
+import { renderMessageBody, type MentionsMap } from "@/components/inbox/render-message-body";
 import { getThreadDetail, sendReply } from "@/actions/inbox";
+import { AnalysisPanel } from "@/components/inbox/AnalysisPanel";
 import {
   getDefaultReplySegmentId,
   getReplyToExternalMessageId,
@@ -80,6 +81,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
         createdAt: new Date(message.createdAt),
         externalMessageId: message.externalMessageId,
         inReplyToExternalMessageId: message.inReplyToExternalMessageId,
+        metadata: message.metadata as Record<string, unknown> | null,
       })),
     );
   }, [thread]);
@@ -218,7 +220,10 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                 }`}
                               >
                                 <p className="whitespace-pre-wrap text-sm">
-                                  {renderMessageBody(msg.body)}
+                                  {renderMessageBody(
+                                    msg.body,
+                                    (msg.metadata as Record<string, unknown> | null)?.mentions as MentionsMap | undefined,
+                                  )}
                                 </p>
                               </div>
                             </div>

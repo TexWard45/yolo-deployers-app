@@ -31,12 +31,16 @@ model SupportThread {
   issueFingerprint String?
   summary          String?
   summaryUpdatedAt DateTime?
-  lastReviewedAt   DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  lastReviewedAt     DateTime?
+  clarificationCount Int            @default(0)
+  lastAnalysisId     String?        @unique
+  lastAnalysis       ThreadAnalysis? @relation("latestAnalysis", fields: [lastAnalysisId], references: [id])
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
-  messages ThreadMessage[]
-  drafts   ReplyDraft[]
+  messages  ThreadMessage[]
+  drafts    ReplyDraft[]
+  analyses  ThreadAnalysis[]
 
   @@unique([workspaceId, source, externalThreadId])
   @@index([workspaceId, status, updatedAt])
