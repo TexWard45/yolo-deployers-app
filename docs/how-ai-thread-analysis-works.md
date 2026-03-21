@@ -194,40 +194,94 @@ All settings are per-workspace on `WorkspaceAgentConfig`:
 
 ## Outbound Send Pipeline
 
-When a human approves a draft, the message is automatically sent to the customer's channel:
+When a human approves a draft, the message is sent directly to the customer's channel from the web app — no Temporal workflow needed.
 
 ```
-Human clicks "Approve" in UI
+Human clicks "Send" on draft in chat UI
     │
     ▼
-approveDraft (agent.ts)
-  ├── Draft status → APPROVED
-  └── Dispatch sendOutboundMessageWorkflow (Temporal)
-        │
-        ▼
-  1. Fetch draft body + thread routing data
-     - externalThreadId (= Discord thread/channel ID)
-     - channelId + guildId from inbound message rawPayload
-  2. If source is DISCORD:
-     → Discord REST API: POST /channels/{externalThreadId}/messages
-     → Bot sends to the EXACT Discord thread the customer wrote in
-  3. If source is API/MANUAL:
-     → No external send (message recorded in DB only)
-  4. Create OUTBOUND ThreadMessage in DB
-  5. Thread status → WAITING_CUSTOMER
-  6. Draft status → SENT
+approveDraft tRPC mutation (packages/rest/src/routers/agent.ts)
+    │
+    ├── 1. Validate draft status is GENERATED
+    │
+    ├── 2. Send to external channel (DISCORD)
+    │   │
+    │   ├── Thread has real Discord thread ID (externalThreadId is a snowflake)?
+    │   │   └── POST /channels/{externalThreadId}/messages
+    │   │       → Send directly into existing Discord thread
+    │   │
+    │   └── Thread has synthetic ID (externalThreadId starts with "synthetic-")?
+    │       ├── Read channelId from first inbound message metadata
+    │       ├── POST /channels/{channelId}/messages/{messageId}/threads
+    │       │   → Create Discord thread under customer's first message
+    │       ├── POST /channels/{newThreadId}/messages
+    │       │   → Send reply inside new thread
+    │       └── Update SupportThread.externalThreadId = newThreadId
+    │           (future replies go directly into same thread)
+    │
+    ├── 3. Create OUTBOUND ThreadMessage in DB
+    │
+    ├── 4. Update thread: status → WAITING_CUSTOMER, timestamps
+    │
+    └── 5. Draft status → SENT
 ```
 
 **How Discord routing works:**
-- When a customer messages in a Discord thread, the bot captures `message.channelId` as `externalThreadId`
-- The `externalThreadId` IS the Discord thread/channel snowflake ID
-- The outbound activity sends to `https://discord.com/api/v10/channels/{externalThreadId}/messages`
-- Uses `DISCORD_BOT_TOKEN` (same token the bot uses for listening)
+- `channelId` is stored on each inbound message's `metadata` (top-level, set by Discord bot during ingestion)
+- `externalThreadId` on `SupportThread` starts as `synthetic-{uuid}` (no Discord thread yet) or a real Discord snowflake (thread already exists)
+- When a synthetic thread gets its first outbound reply, the mutation creates a Discord thread under the customer's original message and updates `externalThreadId` to the real thread ID
+- Subsequent replies go directly into the existing Discord thread
+- Uses `DISCORD_BOT_TOKEN` env var (same token the bot uses for listening)
 
 **Files:**
-- `apps/queue/src/workflows/send-outbound-message.workflow.ts` — workflow orchestration
-- `apps/queue/src/activities/send-outbound-message.activity.ts` — Discord REST send + DB record
-- `packages/rest/src/temporal.ts` — `dispatchSendOutboundMessageWorkflow()`
+- `packages/rest/src/routers/agent.ts` — `approveDraft` mutation handles send + DB writes
+- `apps/web/src/actions/inbox.ts` — `approveDraftAction` server action (calls tRPC)
+- `apps/web/src/components/inbox/AnalysisPanel.tsx` — `DraftChatBubble` UI component
+
+## Draft Reply UI
+
+The AI draft reply is shown as a chat-style suggestion in the main conversation area, between the message list and the reply bar.
+
+```
+┌──────────────────────────────────────────┐
+│  Thread 1                      1 msgs    │
+│    D  Customer Name  5m ago              │
+│    │  "heyy i have error with..."        │
+│    │                                     │
+│    └── T  Team  just now                 │
+│        "Hi, thanks for reaching out..."  │
+├──────────────────────────────────────────┤
+│  AI  DRAFT REPLY  [Clarification]        │  ◄── DraftChatBubble
+│  ┌────────────────────────────────────┐  │      (violet-tinted strip)
+│  │ Hi, could you tell me which page  │  │
+│  │ you're seeing the error on?       │  │
+│  └────────────────────────────────────┘  │
+│  [Send]  [Edit]  [Delete]                │
+├──────────────────────────────────────────┤
+│  Reply to Thread 1                       │  ◄── Manual reply bar
+│  [Write a reply...              ] [Send] │
+└──────────────────────────────────────────┘
+```
+
+**How it works:**
+1. `AnalysisPanel` (sidebar) fetches the latest analysis via `getLatestAnalysis` tRPC query
+2. When analysis includes a draft with status `GENERATED`, it calls `onDraftAvailable(draft)` callback
+3. `ThreadDetailSheet` receives the draft and renders `DraftChatBubble` above the reply bar
+4. User actions on the draft:
+   - **Send** → calls `approveDraftAction` → sends to Discord + saves outbound message → refreshes thread
+   - **Edit** → toggles inline textarea for modifying draft body before sending
+   - **Delete** → calls `dismissDraftAction` → sets draft status to `DISMISSED`
+5. After send/delete, the bubble disappears and the thread messages refresh
+
+**Analysis sidebar** (right panel) still shows: classification badges, severity, summary, RCA, and Codex findings — but no longer shows the draft itself.
+
+## Thread Message Tree View
+
+Messages within each thread segment are displayed in a tree layout:
+
+- **Root message** (first in segment): full width, with a vertical connector line if replies exist
+- **Reply messages**: indented with `ml-8`, connected by vertical + horizontal branch lines
+- Tree lines are rendered with absolute-positioned `div` elements using `bg-border` color
 
 ## Sentry Integration (Phase 2 — Not Yet Implemented)
 
@@ -251,12 +305,12 @@ The plumbing is fully wired but `fetchSentryContext()` returns `[]`. When implem
 | `packages/rest/src/routers/helpers/thread-analysis.prompt.ts` | Analysis + RCA LLM prompt |
 | `packages/rest/src/routers/helpers/draft-reply.prompt.ts` | Draft reply LLM prompt |
 | `packages/rest/src/routers/helpers/sentry-client.ts` | Sentry API client (MVP stub) |
-| `packages/rest/src/routers/agent.ts` | tRPC: getLatestAnalysis, triggerAnalysis, saveAnalysis |
+| `packages/rest/src/routers/agent.ts` | tRPC: approveDraft (send), dismissDraft, getLatestAnalysis, triggerAnalysis, saveAnalysis |
 | `packages/rest/src/temporal.ts` | dispatchAnalyzeThreadWorkflow() |
 | `apps/queue/src/workflows/analyze-thread.workflow.ts` | Temporal workflow orchestration |
 | `apps/queue/src/activities/analyze-thread.activity.ts` | All 8 activity functions |
 | `apps/web/src/app/api/rest/analysis/save/route.ts` | REST endpoint for queue → web saves |
-| `apps/web/src/components/inbox/AnalysisPanel.tsx` | UI panel in thread detail sidebar |
-| `apps/queue/src/workflows/send-outbound-message.workflow.ts` | Outbound send workflow |
-| `apps/queue/src/activities/send-outbound-message.activity.ts` | Discord REST send + DB record |
+| `apps/web/src/actions/inbox.ts` | Server actions: approveDraftAction, dismissDraftAction |
+| `apps/web/src/components/inbox/AnalysisPanel.tsx` | AI Analysis sidebar + DraftChatBubble component |
+| `apps/web/src/components/inbox/ThreadDetailSheet.tsx` | Thread detail view with tree layout + draft suggestion area |
 | `packages/database/prisma/support.schema.prisma` | ThreadAnalysis model, DraftType enum |

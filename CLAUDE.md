@@ -193,18 +193,21 @@ After every inbound message, if the workspace has AI enabled (`WorkspaceAgentCon
 - **Sentry is per-workspace config** — credentials stored on `WorkspaceAgentConfig`, not global env vars.
 - **Human-in-the-loop** — all drafts require human approval via `approveDraft`/`dismissDraft`. No auto-send.
 - **Queue writes via REST** — `saveAnalysisAndDraftActivity` calls `POST /api/rest/analysis/save` (queue → web pattern).
+- **Outbound send is direct (no Temporal)** — `approveDraft` tRPC mutation sends to Discord + records outbound message in one call. Creates Discord threads under customer's first message for synthetic threads, sends into existing threads otherwise.
 
 **Files:**
 - `packages/rest/src/routers/helpers/sufficiency-check.prompt.ts` — sufficiency LLM prompt
 - `packages/rest/src/routers/helpers/thread-analysis.prompt.ts` — analysis + RCA LLM prompt
 - `packages/rest/src/routers/helpers/draft-reply.prompt.ts` — draft reply LLM prompt
 - `packages/rest/src/routers/helpers/sentry-client.ts` — Sentry API client (MVP stub)
-- `packages/rest/src/routers/agent.ts` — tRPC procedures: `getLatestAnalysis`, `triggerAnalysis`, `saveAnalysis`
+- `packages/rest/src/routers/agent.ts` — tRPC: `approveDraft` (send to Discord + DB), `dismissDraft`, `getLatestAnalysis`, `triggerAnalysis`, `saveAnalysis`
 - `packages/rest/src/temporal.ts` — `dispatchAnalyzeThreadWorkflow()`
 - `apps/queue/src/workflows/analyze-thread.workflow.ts` — Temporal workflow orchestration
 - `apps/queue/src/activities/analyze-thread.activity.ts` — 8 activity functions
 - `apps/web/src/app/api/rest/analysis/save/route.ts` — REST endpoint for queue saves
-- `apps/web/src/components/inbox/AnalysisPanel.tsx` — UI panel in thread detail sidebar
+- `apps/web/src/actions/inbox.ts` — server actions: `approveDraftAction`, `dismissDraftAction`
+- `apps/web/src/components/inbox/AnalysisPanel.tsx` — AI Analysis sidebar + DraftChatBubble component
+- `apps/web/src/components/inbox/ThreadDetailSheet.tsx` — thread detail with tree layout + draft suggestion area
 
 ### Environment Management
 
