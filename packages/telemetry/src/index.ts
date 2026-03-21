@@ -165,7 +165,11 @@ export class TelemetryClient {
           sequence: this._sequence++,
         });
 
-        if (this._config && this._buffer.length >= this._config.batchSize) {
+        // rrweb event type 2 = FullSnapshot (the critical initial DOM capture).
+        // Flush immediately so this massive event reaches the server ASAP
+        // and doesn't get lost in a full buffer or failed batch.
+        const isFullSnapshot = (event as any).type === 2;
+        if (isFullSnapshot || (this._config && this._buffer.length >= this._config.batchSize)) {
           void this._flush();
         }
       },
@@ -175,8 +179,6 @@ export class TelemetryClient {
       inlineStylesheet: true,
       collectFonts: true,
       inlineImages: true,
-      // Take a fresh full snapshot every 15s to capture lazy-loaded styles
-      checkoutEveryNms: 15_000,
     });
 
     this._stopFn = stop ?? null;
