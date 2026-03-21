@@ -82,12 +82,23 @@ export async function embedChunksActivity(
         `;
       }
 
-      // Update tsvector search column
-      const batchIds = batch.map((c) => c.id);
-      await updateSearchVectors(batchIds);
+      // Identify which chunks succeeded vs were skipped
+      const embeddedIds = new Set(results.map((r) => r.id));
+      const succeededIds = batch.filter((c) => embeddedIds.has(c.id)).map((c) => c.id);
+      const skippedIds = batch.filter((c) => !embeddedIds.has(c.id)).map((c) => c.id);
 
-      // Mark as EMBEDDED
-      await markChunksEmbedded(batchIds, codexConfig.embedding.model);
+      // Update tsvector search column for successful chunks
+      if (succeededIds.length > 0) {
+        await updateSearchVectors(succeededIds);
+        await markChunksEmbedded(succeededIds, codexConfig.embedding.model);
+      }
+
+      // Mark skipped chunks as FAILED so they can be investigated
+      if (skippedIds.length > 0) {
+        await markChunksFailed(skippedIds);
+        totalFailed += skippedIds.length;
+      }
+
       totalGenerated += results.length;
     } catch (error) {
       // Mark this batch as FAILED so they can be retried later

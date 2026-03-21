@@ -23,8 +23,8 @@ export interface EmbeddingResult {
 const MAX_BATCH_SIZE = 2048;
 const MAX_RETRIES = 3;
 const INITIAL_BACKOFF_MS = 1000;
-/** Conservative character limit — ~4 chars per token, 8192 token max */
-const MAX_INPUT_CHARS = 30000;
+/** Conservative character limit — code averages ~2.5-3 chars/token, 8192 token max */
+const MAX_INPUT_CHARS = 20000;
 
 /**
  * Generate embeddings for a batch of texts using OpenAI's embedding API.
@@ -78,16 +78,65 @@ async function embedBatch(
 ): Promise<EmbeddingResult[]> {
   const openai = getClient();
 
-  const response = await openai.embeddings.create({
-    model: codexConfig.embedding.model,
-    input: batch.map((r) => r.text.length > MAX_INPUT_CHARS ? r.text.slice(0, MAX_INPUT_CHARS) : r.text),
-    dimensions: codexConfig.embedding.dimensions,
-  });
+  const truncated = batch.map((r) =>
+    r.text.length > MAX_INPUT_CHARS ? r.text.slice(0, MAX_INPUT_CHARS) : r.text,
+  );
 
-  return response.data.map((item, index) => ({
-    id: batch[index]!.id,
-    embedding: item.embedding,
-  }));
+  try {
+    const response = await openai.embeddings.create({
+      model: codexConfig.embedding.model,
+      input: truncated,
+      dimensions: codexConfig.embedding.dimensions,
+    });
+
+    return response.data.map((item, index) => ({
+      id: batch[index]!.id,
+      embedding: item.embedding,
+    }));
+  } catch (error) {
+    // If a batch fails due to token limit, fall back to one-at-a-time embedding
+    // so one oversized item doesn't kill the entire batch
+    if (error instanceof OpenAI.APIError && error.status === 400) {
+      console.warn(
+        `Batch of ${batch.length} failed with 400, falling back to individual embedding`,
+      );
+      return embedIndividually(batch, truncated);
+    }
+    throw error;
+  }
+}
+
+async function embedIndividually(
+  batch: EmbeddingRequest[],
+  truncatedTexts: string[],
+): Promise<EmbeddingResult[]> {
+  const openai = getClient();
+  const results: EmbeddingResult[] = [];
+
+  for (let i = 0; i < batch.length; i++) {
+    try {
+      const response = await openai.embeddings.create({
+        model: codexConfig.embedding.model,
+        input: truncatedTexts[i]!,
+        dimensions: codexConfig.embedding.dimensions,
+      });
+      results.push({
+        id: batch[i]!.id,
+        embedding: response.data[0]!.embedding,
+      });
+    } catch (error) {
+      if (error instanceof OpenAI.APIError && error.status === 400) {
+        // This individual chunk is still too large — skip it
+        console.warn(
+          `Skipping chunk ${batch[i]!.id}: still exceeds token limit after truncation to ${truncatedTexts[i]!.length} chars`,
+        );
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  return results;
 }
 
 function isNonRetryableError(error: unknown): boolean {
