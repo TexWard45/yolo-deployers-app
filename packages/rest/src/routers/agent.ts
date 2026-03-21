@@ -889,9 +889,30 @@ export const agentRouter = createTRPCRouter({
             alreadyRunning: true,
           };
         }
+
+        // Terminal state — reset and re-run
+        await ctx.prisma.fixPrRun.update({
+          where: { id: existingRun.id },
+          data: {
+            status: "QUEUED",
+            currentStage: "QUEUED",
+            summary: null,
+            lastError: null,
+            maxIterations: config?.codexFixMaxIterations ?? 3,
+          },
+        });
+
+        await dispatchGenerateFixPRWorkflow({
+          runId: existingRun.id,
+          threadId: input.threadId,
+          workspaceId: input.workspaceId,
+          analysisId: input.analysisId,
+          triggeredByUserId: input.userId,
+        });
+
         return {
           runId: existingRun.id,
-          status: existingRun.status,
+          status: "QUEUED",
           alreadyRunning: false,
         };
       }

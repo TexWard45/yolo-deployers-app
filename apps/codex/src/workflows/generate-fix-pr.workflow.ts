@@ -107,6 +107,7 @@ export async function generateFixPRWorkflow(
         testPlan,
         priorFailures,
         model: context.models.fix,
+        codexFindings: context.codexFindings,
       });
 
       if (fixerOutput.changedFiles.length === 0) {
