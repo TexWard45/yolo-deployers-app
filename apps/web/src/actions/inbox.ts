@@ -86,17 +86,18 @@ export async function sendReply(data: {
   }
 }
 
-export async function getThreadAnalysis(threadId: string, workspaceId: string) {
+export async function getThreadAnalysis(threadId: string, workspaceId: string): Promise<Record<string, unknown> | null> {
   const session = await getSession();
   if (!session) return null;
 
   try {
     const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-    return await trpc.agent.getLatestAnalysis({
+    const result = await trpc.agent.getLatestAnalysis({
       threadId,
       workspaceId,
       userId: session.id,
     });
+    return result as Record<string, unknown> | null;
   } catch {
     return null;
   }
