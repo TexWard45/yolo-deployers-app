@@ -220,7 +220,11 @@ export async function getFixRunContext(
     resolvedRepoCount: codexRepositoryIds.length,
     workspaceId: input.workspaceId,
     hasWorkspaceConfig: Boolean(config?.codexRepositoryIds?.length),
-    hasGithubConfig: Boolean(config?.githubToken && config?.githubDefaultOwner && config?.githubDefaultRepo),
+    hasGithubConfig: Boolean(
+      (codexConfig.githubToken || config?.githubToken)
+      && config?.githubDefaultOwner
+      && config?.githubDefaultRepo,
+    ),
   });
 
   return {
@@ -238,7 +242,7 @@ export async function getFixRunContext(
     })),
     maxIterations: run.maxIterations,
     github: {
-      token: config?.githubToken ?? codexConfig.githubToken ?? null,
+      token: codexConfig.githubToken ?? config?.githubToken ?? null,
       owner: config?.githubDefaultOwner ?? null,
       repo: config?.githubDefaultRepo ?? null,
       baseBranch: config?.githubBaseBranch ?? "main",
@@ -726,7 +730,11 @@ export async function createFixPullRequest(
     result.stdout.trim(),
   );
 
-  await runGitCommand(workingDirectory, ["push", "--set-upstream", "origin", branchName]);
+  await runGitCommand(
+    workingDirectory,
+    ["push", "--set-upstream", "origin", branchName],
+    { env: buildGitPushEnv(params.githubToken) },
+  );
   const githubClient = createGitHubClient(params.githubToken);
   const pr = await createDraftPullRequest(githubClient, {
     owner: params.targetRepository.owner,
@@ -981,16 +989,34 @@ async function runCheckCommand(
 async function runGitCommand(
   workingDirectory: string,
   args: string[],
+  options?: {
+    env?: NodeJS.ProcessEnv;
+  },
 ): Promise<{ stdout: string; stderr: string }> {
   debugLog("runGitCommand", { workingDirectory, args });
   const result = await execFile("git", args, {
     cwd: workingDirectory,
     timeout: 10 * 60 * 1000,
+    env: options?.env,
   });
   return {
     stdout: result.stdout.toString(),
     stderr: result.stderr.toString(),
   };
+}
+
+function buildGitPushEnv(githubToken: string): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  const existingCountRaw = env.GIT_CONFIG_COUNT;
+  const existingCount = Number.parseInt(existingCountRaw ?? "0", 10);
+  const index = Number.isNaN(existingCount) ? 0 : existingCount;
+  const basicAuth = Buffer.from(`x-access-token:${githubToken}`).toString("base64");
+
+  env.GIT_CONFIG_COUNT = String(index + 1);
+  env[`GIT_CONFIG_KEY_${index}`] = "http.https://github.com/.extraheader";
+  env[`GIT_CONFIG_VALUE_${index}`] = `AUTHORIZATION: basic ${basicAuth}`;
+
+  return env;
 }
 
 function buildBranchName(runId: string, iteration: number): string {

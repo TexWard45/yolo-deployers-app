@@ -132,13 +132,13 @@ export async function generateFixPRWorkflow(
       });
       await saveFixRunProgress({
         runId: input.runId,
-        status: "WAITING_REVIEW",
-        currentStage: "WAITING_REVIEW",
+        status: "FAILED",
+        currentStage: "FAILED",
         lastError: "Unable to resolve a target repository for this fix run.",
       });
       return {
         runId: input.runId,
-        status: "WAITING_REVIEW",
+        status: "FAILED",
       };
     }
     debugLog("workflow target repository", {
@@ -194,6 +194,14 @@ export async function generateFixPRWorkflow(
     });
 
     let priorFailures: string[] = [];
+    let latestAppliedState: {
+      iteration: number;
+      summary: string;
+      patchPlan: string;
+      appliedFiles: string[];
+      headSha: string | null;
+      failureSummary: string | null;
+    } | null = null;
 
     for (let iteration = 1; iteration <= context.maxIterations; iteration += 1) {
       debugLog("workflow iteration start", {
@@ -230,12 +238,13 @@ export async function generateFixPRWorkflow(
 
       if (fixerOutput.changedFiles.length === 0) {
         const confidence = fixerOutput.confidence ?? 0;
+        const noChangeError = fixerOutput.riskNotes.join("; ")
+          || "Fixer produced no code changes to apply.";
         await saveFixRunProgress({
           runId: input.runId,
-          status: "WAITING_REVIEW",
-          currentStage: "WAITING_REVIEW",
+          currentStage: "ITERATING",
           summary: `${fixerOutput.summary} (confidence: ${Math.round(confidence * 100)}%)`,
-          lastError: fixerOutput.riskNotes.join("; "),
+          lastError: noChangeError,
           iteration: {
             iteration,
             status: "FAILED",
@@ -245,10 +254,8 @@ export async function generateFixPRWorkflow(
           },
         });
 
-        return {
-          runId: input.runId,
-          status: "WAITING_REVIEW",
-        };
+        priorFailures = [noChangeError];
+        continue;
       }
 
       const applied = await applyWorkspacePatch({
@@ -277,6 +284,7 @@ export async function generateFixPRWorkflow(
       ]);
 
       const iterationStatus = reviewerOutput.approved && checksOutput.passed ? "PASSED" : "FAILED";
+      const iterationFailureSummary = buildFailureSummary(reviewerOutput, checksOutput);
       debugLog("workflow iteration result", {
         runId: input.runId,
         iteration,
@@ -287,10 +295,10 @@ export async function generateFixPRWorkflow(
 
       await saveFixRunProgress({
         runId: input.runId,
-        currentStage: iterationStatus === "PASSED" ? "PASSED" : "ITERATING",
+        currentStage: "ITERATING",
         headSha: applied.headSha,
         summary: fixerOutput.summary,
-        lastError: buildFailureSummary(reviewerOutput, checksOutput),
+        lastError: iterationFailureSummary,
         iteration: {
           iteration,
           status: iterationStatus,
@@ -301,6 +309,15 @@ export async function generateFixPRWorkflow(
           completed: true,
         },
       });
+
+      latestAppliedState = {
+        iteration,
+        summary: fixerOutput.summary,
+        patchPlan: fixerOutput.patchPlan,
+        appliedFiles: applied.appliedFiles,
+        headSha: applied.headSha,
+        failureSummary: iterationFailureSummary,
+      };
 
       if (reviewerOutput.approved && checksOutput.passed) {
         if (canCreatePullRequest && targetRepository && githubToken) {
@@ -351,13 +368,13 @@ export async function generateFixPRWorkflow(
               iteration,
               message,
             });
+            const prCreationError = `Automatic PR creation failed: ${message}`;
             await saveFixRunProgress({
               runId: input.runId,
-              status: "WAITING_REVIEW",
-              currentStage: "WAITING_REVIEW",
+              currentStage: "ITERATING",
               headSha: applied.headSha,
               summary: fixerOutput.summary,
-              lastError: `Automatic PR creation failed: ${message}`,
+              lastError: prCreationError,
               iteration: {
                 iteration,
                 status: "FAILED",
@@ -369,20 +386,20 @@ export async function generateFixPRWorkflow(
               },
             });
 
-            return {
-              runId: input.runId,
-              status: "WAITING_REVIEW",
-            };
+            priorFailures = [prCreationError];
+            continue;
           }
         }
 
+        const disabledPrMessage =
+          "Automatic PR creation is disabled or not configured for this workspace/repo.";
         await saveFixRunProgress({
           runId: input.runId,
-          status: "WAITING_REVIEW",
-          currentStage: "WAITING_REVIEW",
+          status: "FAILED",
+          currentStage: "FAILED",
           headSha: applied.headSha,
           summary: fixerOutput.summary,
-          lastError: "Automatic PR creation is disabled or not configured for this workspace/repo.",
+          lastError: disabledPrMessage,
           iteration: {
             iteration,
             status: "PASSED",
@@ -396,7 +413,7 @@ export async function generateFixPRWorkflow(
 
         return {
           runId: input.runId,
-          status: "WAITING_REVIEW",
+          status: "FAILED",
         };
       }
 
@@ -408,16 +425,75 @@ export async function generateFixPRWorkflow(
       });
     }
 
+    if (canCreatePullRequest && targetRepository && githubToken && latestAppliedState) {
+      const fallbackSummary = [
+        latestAppliedState.summary,
+        "",
+        `Auto-created after reaching max iterations (${context.maxIterations}) without a clean review/check pass.`,
+      ].join("\n");
+      const fallbackPatchPlan = [
+        latestAppliedState.patchPlan,
+        "",
+        `Fallback draft PR created from iteration ${latestAppliedState.iteration}.`,
+      ].join("\n");
+
+      try {
+        debugLog("workflow creating fallback PR after max iterations", {
+          runId: input.runId,
+          iteration: latestAppliedState.iteration,
+          changedFiles: latestAppliedState.appliedFiles,
+        });
+
+        const pr = await createFixPullRequest({
+          runId: input.runId,
+          summary: fallbackSummary,
+          patchPlan: fallbackPatchPlan,
+          changedFiles: latestAppliedState.appliedFiles,
+          targetRepository,
+          workingDirectory: targetRepository.localPath,
+          githubToken,
+          iteration: latestAppliedState.iteration,
+        });
+
+        await saveFixRunProgress({
+          runId: input.runId,
+          status: "WAITING_REVIEW",
+          currentStage: "WAITING_REVIEW",
+          headSha: pr.headSha,
+          branchName: pr.branchName,
+          prUrl: pr.prUrl,
+          prNumber: pr.prNumber,
+          summary: latestAppliedState.summary,
+          lastError:
+            latestAppliedState.failureSummary
+            || `Reached max iterations (${context.maxIterations}) before a clean pass; draft PR created for manual review.`,
+        });
+
+        return {
+          runId: input.runId,
+          status: "WAITING_REVIEW",
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        priorFailures = [
+          ...priorFailures,
+          `Fallback PR creation after max iterations failed: ${message}`,
+        ];
+      }
+    }
+
     await saveFixRunProgress({
       runId: input.runId,
-      status: "WAITING_REVIEW",
-      currentStage: "WAITING_REVIEW",
-      lastError: priorFailures.join("; "),
+      status: "FAILED",
+      currentStage: "FAILED",
+      lastError:
+        priorFailures.join("; ")
+        || `Reached max iterations (${context.maxIterations}) without creating a draft PR.`,
     });
 
     return {
       runId: input.runId,
-      status: "WAITING_REVIEW",
+      status: "FAILED",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
