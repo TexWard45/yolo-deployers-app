@@ -40,11 +40,6 @@ model SupportThread {
   linearIssueId  String? @unique
   linearIssueUrl String?
 
-  // Generic tracker integration
-  trackerIssueId         String?
-  trackerIssueIdentifier String?
-  trackerIssueUrl        String?
-  trackerConnectionId    String?
 
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
