@@ -175,7 +175,7 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
 
         <div>
           <Label className="text-sm">Tone</Label>
-          <p className="mb-1 text-xs text-muted-foreground">e.g. "friendly", "professional", "casual"</p>
+          <p className="mb-1 text-xs text-muted-foreground">e.g. &quot;friendly&quot;, &quot;professional&quot;, &quot;casual&quot;</p>
           <input
             type="text"
             value={tone}
