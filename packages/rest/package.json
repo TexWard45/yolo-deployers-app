@@ -12,12 +12,14 @@
   },
   "scripts": {
     "build": "tsc --build",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node --import tsx --test $(find src -type f \\( -name '*.test.ts' -o -name '*.e2e.test.ts' \\))"
   },
   "dependencies": {
     "@shared/database": "*",
+    "@shared/env": "*",
     "@shared/types": "*",
-    "@temporalio/client": "^1",
+    "@temporalio/client": "^1.11.5",
     "@trpc/server": "^11",
     "openai": "^4",
     "superjson": "^2",
@@ -25,6 +27,7 @@
   },
   "devDependencies": {
     "@shared/tsconfig": "*",
+    "tsx": "^4.20.6",
     "typescript": "^5.7"
   }
 }

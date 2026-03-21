@@ -4,3 +4,7 @@ export { createTRPCContext } from "./init";
 export { createTRPCRouter, publicProcedure, protectedProcedure } from "./init";
 export { codexRouter } from "./routers/codex";
 export type { CodexSearchResult, EmbedQueryFn } from "./routers/codex";
+export { llmThreadMatch } from "./routers/helpers/thread-match.prompt";
+export type { LlmThreadMatchOptions } from "./routers/helpers/thread-match.prompt";
+export { reviewThreadMessages } from "./routers/helpers/thread-review.prompt";
+export type { ThreadReviewInput, ThreadReviewOptions } from "./routers/helpers/thread-review.prompt";

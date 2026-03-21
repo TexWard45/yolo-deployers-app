@@ -50,6 +50,12 @@ apps/* → @shared/rest + @shared/database + @shared/types + @shared/env
 - `apps/web` and `apps/queue` must share the same type contracts from `@shared/types` so API payloads and workflow payloads stay consistent.
 - For any queue workflow/activity input shape that overlaps app/domain data, define or reuse the type in `packages/types` and import it into both apps.
 
+### Queue Rules
+
+- **No create/update/delete on queue.** All DB mutations (CRUD) must go through `apps/web` REST endpoints or tRPC procedures. The queue worker is for background compute and orchestration only (e.g. session enrichment, LLM thread matching).
+- When the queue needs to trigger a DB write, it must call a REST endpoint on `apps/web` (via `WEB_APP_URL` env var) instead of importing `@shared/database` directly in activities.
+- The Discord bot (runs inside `apps/queue`) ingests messages by calling `POST /api/rest/intake/ingest-from-channel` on the web app.
+
 ### Queue Structure
 
 - Keep workflow implementations in `apps/queue/src/workflows/`.
@@ -101,6 +107,56 @@ apps/codex/src/
 - `/codex/repository/[id]` — repo detail + sync actions
 - `/codex/search` — search interface
 - `/codex/chunk/[id]` — chunk viewer
+
+### Support Domain Data Model
+
+Single source of truth for all support/inbox data:
+
+```
+Customer (who — one per workspace + source + externalCustomerId)
+  └── SupportThread[] (one per issue)
+        ├── ThreadMessage[] (flat — visual sub-threads computed client-side)
+        └── ReplyDraft[] (AI drafts, FK to SupportThread)
+
+ChannelConnection (channel config: Discord, IN_APP)
+WorkspaceAgentConfig (AI agent settings per workspace)
+```
+
+- **`SupportThread`** = one issue container. Shown as a page at `/inbox/[threadId]`. One thread = one issue, regardless of how many users report it.
+- **`ThreadMessage`** = all messages (inbound + outbound) in flat list. Visual sub-thread grouping ("Thread 1", "Thread 2") is computed client-side by `groupMessagesIntoSegments()` using `inReplyToExternalMessageId` chains — no DB model for sub-threads.
+- **`Customer`** = identity via `(workspaceId, source, externalCustomerId)` unique constraint. No separate CustomerProfile or channel identity tables.
+- **`ReplyDraft`** = AI-generated reply draft, FK'd to `SupportThread` + optional `ThreadMessage`.
+- All ingestion paths (Discord bot, Discord webhook, in-app chat webhook) go through `performIngestion()` in the intake router, which upserts `Customer`, matches/creates `SupportThread`, and creates `ThreadMessage`.
+
+### Thread Matching Rules
+
+Thread matching determines which `SupportThread` an incoming message belongs to. The core rule: **same issue = same thread**, even across different users.
+
+**Matching waterfall** (in `packages/rest/src/routers/helpers/thread-matching.ts` + `performIngestion`):
+
+```
+1. External thread ID     → 0.99  (Discord thread ID, etc.)
+2. Reply chain            → 0.96  (inReplyToExternalMessageId lookup)
+3. Time-proximity         → 0.92  (same customer, within recency window)
+4. Jaccard fingerprint    → varies (keyword overlap on issueFingerprint)
+5. Inline LLM (GPT-4.1)  → varies (semantic match, 5s timeout)
+6. New thread             → fallback + async Temporal safety net
+```
+
+**Key design decisions:**
+- **Candidate query is workspace-wide** — `performIngestion` fetches ALL open threads for the workspace+source (not just the sender's threads). This is how different users reporting the same issue get grouped into one thread.
+- **Time-proximity is same-customer only** — rapid-fire messages from the same user within `threadRecencyWindowMinutes` (default 10, configurable on `WorkspaceAgentConfig`) auto-group. Cross-customer matching relies on Jaccard/LLM.
+- **Inline LLM fires BEFORE thread creation** — if deterministic matching fails but candidates exist, GPT-4.1 is called synchronously (5s timeout) to attempt semantic matching. Only if the LLM also fails/times out does a new thread get created.
+- **Async Temporal workflow is the safety net** — `resolveInboxThreadWorkflow` fires after ingestion for ambiguous cases. It can move messages between threads post-hoc. Do NOT remove this.
+
+**LLM prompt convention:** LLM prompts live in `*.prompt.ts` files (e.g. `thread-match.prompt.ts`). These files contain the system prompt, user message builder, and the API call. Use OpenAI SDK with `gpt-4.1` model. Keep prompts structured with decision frameworks, confidence scales, and few-shot examples.
+
+**Files:**
+- `packages/rest/src/routers/helpers/thread-matching.ts` — deterministic matching logic (pure functions, no I/O)
+- `packages/rest/src/routers/helpers/thread-match.prompt.ts` — LLM prompt + OpenAI call (shared by inline + queue)
+- `packages/rest/src/routers/intake.ts` — `performIngestion()` orchestrates the full flow
+- `apps/queue/src/activities/llm-thread-match.activity.ts` — Temporal activity wrapper (imports shared prompt)
+- `apps/queue/src/workflows/resolve-inbox-thread.workflow.ts` — async resolution workflow
 
 ### Environment Management
 
@@ -417,7 +473,31 @@ export function ThemeToggle() {
 - **Use `import type`** for type-only imports — keeps bundles clean
 - **Validate at the boundary** — use Zod schemas on API routes and form submissions, trust typed internals
 
-## Environment
+## LLM Prompt Files
 
-- `DATABASE_URL` — PostgreSQL connection string. Set in `packages/database/.env`
+LLM-powered features use `*.prompt.ts` files that contain the prompt, message builder, and API call in one file.
+
+**Convention:**
+- File name: `<feature>.prompt.ts` (e.g. `thread-match.prompt.ts`, `draft-reply.prompt.ts`)
+- Location: next to the feature that uses it (e.g. `packages/rest/src/routers/helpers/`)
+- Use OpenAI SDK (`openai` package, already in `@shared/rest`) with `gpt-4.1` model
+- Export a single async function + options interface
+- Structure the system prompt with: task description, decision framework, confidence scale, few-shot examples
+- Always include a timeout via `AbortController` (default 5s for inline, 25s for async)
+- Parse JSON response with `as` cast — keep it simple, the LLM is instructed to return strict JSON
+
+**Example structure:**
+```ts
+// feature-name.prompt.ts
+const SYSTEM_PROMPT = `...`;
+function buildUserMessage(input: Input): string { ... }
+export async function featureName(input: Input, options: Options): Promise<Result | null> { ... }
+```
+
+## Database Operations
+
+- `DATABASE_URL` — PostgreSQL connection string. Available in `apps/web/.env` for local dev.
 - `.env.example` at root for reference
+- `db:push` requires `DATABASE_URL` — run: `DATABASE_URL="..." npm run db:push`
+- Local dev DB uses pgvector extension — if DB is reset, re-create it: `psql -c "CREATE EXTENSION IF NOT EXISTS vector;"` before pushing schema
+- After schema changes, always run `npm run db:generate` first (regenerates Prisma types), then `npm run db:push` (syncs DB)

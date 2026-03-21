@@ -18,8 +18,6 @@ model Workspace {
   supportThreads     SupportThread[]
 
   channelConnections ChannelConnection[]
-  customerProfiles   CustomerProfile[]
-  conversations      Conversation[]
   agentConfig        WorkspaceAgentConfig?
 }
 

@@ -16,3 +16,4 @@ export const DiscordAppIdSchema = z.string().min(1);
 export const DiscordWebhookSecretSchema = z.string().min(1);
 export const InAppChatSigningSecretSchema = z.string().min(1);
 export const SupportSecretEncryptionKeySchema = z.string().min(1);
+export const WebAppUrlSchema = z.string().url().default("http://localhost:3000");

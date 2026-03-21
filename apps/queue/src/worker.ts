@@ -4,6 +4,7 @@ import { NativeConnection, Worker } from "@temporalio/worker";
 import * as activities from "./activities/index.js";
 import { temporalConfig } from "./config.js";
 import { startDiscordBot } from "./discord-bot.js";
+import { seedDiscordConnection } from "./seed-connection.js";
 
 function resolveWorkflowsPath(): string {
   const distPath = fileURLToPath(new URL("./workflows/index.js", import.meta.url));
@@ -15,6 +16,9 @@ function resolveWorkflowsPath(): string {
 }
 
 async function runWorker(): Promise<void> {
+  // Ensure Discord connection + workspace exist before starting
+  await seedDiscordConnection();
+
   const connection = await NativeConnection.connect({
     address: temporalConfig.address,
   });

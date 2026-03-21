@@ -19,6 +19,7 @@
   "dependencies": {
     "@shared/database": "*",
     "@shared/env": "*",
+    "@shared/rest": "*",
     "@shared/types": "*",
     "@temporalio/client": "^1.11.5",
     "@temporalio/worker": "^1.11.5",

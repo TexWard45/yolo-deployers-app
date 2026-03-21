@@ -22,7 +22,8 @@
     "test": "turbo test",
     "db:generate": "turbo db:generate",
     "db:push": "turbo db:push",
-    "db:migrate": "turbo db:migrate"
+    "db:migrate": "turbo db:migrate",
+    "db:seed": "npm run db:seed --workspace @shared/database --"
   },
   "devDependencies": {
     "turbo": "^2",

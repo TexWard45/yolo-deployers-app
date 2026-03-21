@@ -19,9 +19,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { buttonVariants } from "@/components/ui/button";
 import Link from "next/link";
-import { cn } from "@/lib/utils";
 import { CreateWorkspaceForm } from "@/components/admin/create-workspace-form";
 import { AddMemberForm } from "@/components/admin/add-member-form";
 
@@ -65,7 +63,7 @@ export default async function AdminPage() {
           <CardContent>
             <Link 
               href="/test-telemetry" 
-              className={cn(buttonVariants({ variant: "default" }), "w-full")}
+              className="inline-flex items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2 text-sm font-medium w-full"
             >
               Launch Test Page →
             </Link>
@@ -82,7 +80,7 @@ export default async function AdminPage() {
           <CardContent>
             <Link 
               href="/admin/replays" 
-              className={cn(buttonVariants({ variant: "outline" }), "w-full")}
+              className="inline-flex items-center justify-center rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2 text-sm font-medium w-full"
             >
               Open Replay Portal →
             </Link>

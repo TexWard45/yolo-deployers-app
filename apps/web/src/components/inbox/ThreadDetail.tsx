@@ -8,6 +8,7 @@ interface ThreadDetailProps {
   thread: {
     id: string;
     title: string | null;
+    summary: string | null;
     status: ThreadStatusValue;
     createdAt: Date;
     updatedAt: Date;
@@ -38,6 +39,9 @@ export function ThreadDetail({ thread }: ThreadDetailProps) {
             Customer: {thread.customer.displayName}
             {thread.customer.email ? ` (${thread.customer.email})` : ""}
           </p>
+          {thread.summary ? (
+            <p className="text-sm text-muted-foreground">Summary: {thread.summary}</p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             Source: {thread.customer.source} • Updated {new Date(thread.updatedAt).toLocaleString()}
           </p>

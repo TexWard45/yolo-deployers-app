@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@shared/database";
+import { createCaller, createTRPCContext } from "@shared/rest";
 import { z } from "zod";
 
 const DiscordWebhookPayloadSchema = z.object({
@@ -47,7 +48,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true, skipped: "bot_message" });
     }
 
-    // Find the channel connection by Discord channel/guild
+    // Find the channel connection by Discord guild
     const channelConnection = await prisma.channelConnection.findFirst({
       where: {
         type: "DISCORD",
@@ -63,116 +64,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check for idempotency — skip if message already ingested
-    const existing = await prisma.conversationMessage.findFirst({
-      where: {
-        channelConnectionId: channelConnection.id,
-        externalMessageId: payload.id,
+    // Ingest via the unified performIngestion path
+    const trpc = createCaller(createTRPCContext());
+    const result = await trpc.intake.ingestFromChannel({
+      channelConnectionId: channelConnection.id,
+      externalMessageId: payload.id,
+      externalUserId: payload.author.id,
+      username: payload.author.username,
+      displayName: payload.author.global_name ?? payload.author.username,
+      body: payload.content,
+      timestamp: payload.timestamp,
+      rawPayload: {
+        authorId: payload.author.id,
+        username: payload.author.username,
+        channelId: payload.channel_id,
+        guildId: payload.guild_id,
       },
+      externalThreadId: null,
+      inReplyToExternalMessageId: payload.message_reference?.message_id ?? null,
     });
 
-    if (existing) {
-      return NextResponse.json({ ok: true, skipped: "duplicate" });
-    }
-
-    // Upsert customer identity
-    let identity = await prisma.customerChannelIdentity.findUnique({
-      where: {
-        channelConnectionId_externalUserId: {
-          channelConnectionId: channelConnection.id,
-          externalUserId: payload.author.id,
-        },
-      },
-      include: { customerProfile: true },
-    });
-
-    if (!identity) {
-      const profile = await prisma.customerProfile.create({
-        data: {
-          workspaceId: channelConnection.workspaceId,
-          displayName: payload.author.global_name ?? payload.author.username,
-        },
-      });
-
-      identity = await prisma.customerChannelIdentity.create({
-        data: {
-          customerProfileId: profile.id,
-          channelConnectionId: channelConnection.id,
-          externalUserId: payload.author.id,
-          username: payload.author.username,
-          displayName: payload.author.global_name ?? payload.author.username,
-        },
-        include: { customerProfile: true },
-      });
-    }
-
-    // Find or create conversation
-    // If the message is inside a thread we already track, map it back
-    let conversation = await prisma.conversation.findFirst({
-      where: {
-        workspaceId: channelConnection.workspaceId,
-        customerProfileId: identity.customerProfileId,
-        externalThreadId: payload.channel_id,
-        status: { notIn: ["CLOSED"] },
-      },
-    });
-
-    if (!conversation) {
-      // Also check for an open conversation without a thread
-      conversation = await prisma.conversation.findFirst({
-        where: {
-          workspaceId: channelConnection.workspaceId,
-          customerProfileId: identity.customerProfileId,
-          status: { notIn: ["CLOSED"] },
-          primaryChannelType: "DISCORD",
-        },
-        orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
-      });
-    }
-
-    const now = new Date();
-
-    if (!conversation) {
-      conversation = await prisma.conversation.create({
-        data: {
-          workspaceId: channelConnection.workspaceId,
-          customerProfileId: identity.customerProfileId,
-          primaryChannelType: "DISCORD",
-          status: "NEW",
-          subject: payload.content.slice(0, 100),
-          lastMessageAt: now,
-          lastInboundAt: now,
-        },
-      });
-    } else {
-      conversation = await prisma.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          lastMessageAt: now,
-          lastInboundAt: now,
-          status: "NEW",
-        },
-      });
-    }
-
-    // Store the inbound message
-    await prisma.conversationMessage.create({
-      data: {
-        conversationId: conversation.id,
-        channelConnectionId: channelConnection.id,
-        direction: "INBOUND",
-        senderKind: "CUSTOMER",
-        externalMessageId: payload.id,
-        body: payload.content,
-        rawPayloadJson: JSON.parse(JSON.stringify(payload)),
-        sentAt: new Date(payload.timestamp),
-      },
-    });
-
-    // TODO: Optionally trigger AI draft generation workflow via Temporal
-    // if WorkspaceAgentConfig.autoDraftOnInbound is true
-
-    return NextResponse.json({ ok: true, conversationId: conversation.id });
+    return NextResponse.json({ ok: true, threadId: result.thread.id });
   } catch (error) {
     console.error("Discord webhook error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

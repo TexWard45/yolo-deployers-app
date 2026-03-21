@@ -17,12 +17,12 @@ export default async function DashboardPage() {
 
   // Gather posts across all workspaces the user belongs to
   const workspaceIds = session?.workspaces?.map((w) => w.id) ?? [];
-  const postCounts = await Promise.all(
+  const postResults = await Promise.all(
     workspaceIds.map((wId) =>
-      trpc.post.list({ workspaceId: wId, userId: session!.id })
+      trpc.post.list({ workspaceId: wId, userId: session!.id }).catch(() => [])
     )
   );
-  const allPosts = postCounts.flat();
+  const allPosts = postResults.flat();
 
   const stats = [
     {

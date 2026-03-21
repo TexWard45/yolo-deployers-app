@@ -26,14 +26,23 @@ model SupportThread {
   assignedToId     String?
   assignedTo       User?          @relation("AssignedSupportThreads", fields: [assignedToId], references: [id])
   lastMessageAt    DateTime?
+  lastInboundAt    DateTime?
+  lastOutboundAt   DateTime?
+  issueFingerprint String?
+  summary          String?
+  summaryUpdatedAt DateTime?
+  lastReviewedAt   DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
   messages ThreadMessage[]
+  drafts   ReplyDraft[]
 
   @@unique([workspaceId, source, externalThreadId])
   @@index([workspaceId, status, updatedAt])
   @@index([customerId, createdAt])
+  @@index([workspaceId, customerId, status, lastMessageAt])
+  @@index([workspaceId, customerId, issueFingerprint])
 }
 
 model ThreadMessage {
@@ -43,9 +52,16 @@ model ThreadMessage {
   direction         MessageDirection
   body              String
   externalMessageId String?
+  inReplyToExternalMessageId String?
+  messageFingerprint String?
+  senderExternalId  String?
   metadata          Json?
   createdAt         DateTime         @default(now())
 
+  basedOnDrafts ReplyDraft[]
+
   @@unique([threadId, externalMessageId])
   @@index([threadId, createdAt])
+  @@index([threadId, inReplyToExternalMessageId])
+  @@index([externalMessageId])
 }
