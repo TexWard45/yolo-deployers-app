@@ -157,64 +157,64 @@ async function main() {
   const dashboardSnapshot = {
     type: 0, // Document
     childNodes: [
-      { type: 1, name: "html", publicId: "", systemId: "", id: 1 },
+      { type: 1, name: "html", publicId: "", systemId: "", id: 2 },
       {
-        type: 2, tagName: "html", attributes: { lang: "en" }, id: 2,
+        type: 2, tagName: "html", attributes: { lang: "en" }, id: 3,
         childNodes: [
           {
-            type: 2, tagName: "head", attributes: {}, id: 3,
+            type: 2, tagName: "head", attributes: {}, id: 4,
             childNodes: [
-              { type: 2, tagName: "title", attributes: {}, id: 4,
-                childNodes: [{ type: 3, textContent: "Dashboard — Acme Corp", id: 5 }] },
+              { type: 2, tagName: "title", attributes: {}, id: 5,
+                childNodes: [{ type: 3, textContent: "Dashboard — Acme Corp", id: 6 }] },
             ],
           },
           {
             type: 2, tagName: "body",
             attributes: { style: "margin:0;font-family:system-ui,sans-serif;background:#f8fafc;color:#0f172a" },
-            id: 6,
+            id: 7,
             childNodes: [
               {
                 type: 2, tagName: "nav",
                 attributes: { style: "background:#1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between" },
-                id: 7,
+                id: 8,
                 childNodes: [
                   { type: 2, tagName: "span",
-                    attributes: { style: "color:#f1f5f9;font-weight:700;font-size:18px" }, id: 8,
-                    childNodes: [{ type: 3, textContent: "Acme Corp", id: 9 }] },
+                    attributes: { style: "color:#f1f5f9;font-weight:700;font-size:18px" }, id: 9,
+                    childNodes: [{ type: 3, textContent: "Acme Corp", id: 10 }] },
                   { type: 2, tagName: "span",
-                    attributes: { style: "color:#94a3b8;font-size:14px" }, id: 10,
-                    childNodes: [{ type: 3, textContent: "alice", id: 11 }] },
+                    attributes: { style: "color:#94a3b8;font-size:14px" }, id: 11,
+                    childNodes: [{ type: 3, textContent: "alice", id: 12 }] },
                 ],
               },
               {
                 type: 2, tagName: "main",
-                attributes: { style: "padding:32px 24px;max-width:860px;margin:0 auto" }, id: 12,
+                attributes: { style: "padding:32px 24px;max-width:860px;margin:0 auto" }, id: 13,
                 childNodes: [
                   {
                     type: 2, tagName: "div",
                     attributes: { style: "display:flex;align-items:center;justify-content:space-between;margin-bottom:24px" },
-                    id: 13,
+                    id: 14,
                     childNodes: [
                       { type: 2, tagName: "h1",
-                        attributes: { style: "font-size:24px;font-weight:700;margin:0" }, id: 14,
-                        childNodes: [{ type: 3, textContent: "Posts", id: 15 }] },
+                        attributes: { style: "font-size:24px;font-weight:700;margin:0" }, id: 15,
+                        childNodes: [{ type: 3, textContent: "Posts", id: 16 }] },
                       { type: 2, tagName: "button",
                         attributes: { "data-testid": "new-post-btn", style: "background:#3b82f6;color:#fff;border:none;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer" },
-                        id: 16,
-                        childNodes: [{ type: 3, textContent: "New Post", id: 17 }] },
+                        id: 17,
+                        childNodes: [{ type: 3, textContent: "New Post", id: 18 }] },
                     ],
                   },
                   {
                     type: 2, tagName: "div",
                     attributes: { style: "background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px" },
-                    id: 18,
+                    id: 19,
                     childNodes: [
                       { type: 2, tagName: "h2",
-                        attributes: { style: "font-size:18px;font-weight:600;margin:0 0 8px" }, id: 19,
-                        childNodes: [{ type: 3, textContent: "Welcome to Acme Corp", id: 20 }] },
+                        attributes: { style: "font-size:18px;font-weight:600;margin:0 0 8px" }, id: 20,
+                        childNodes: [{ type: 3, textContent: "Welcome to Acme Corp", id: 21 }] },
                       { type: 2, tagName: "p",
-                        attributes: { style: "color:#64748b;font-size:14px;margin:0" }, id: 21,
-                        childNodes: [{ type: 3, textContent: "This is our first post. Excited to get started!", id: 22 }] },
+                        attributes: { style: "color:#64748b;font-size:14px;margin:0" }, id: 22,
+                        childNodes: [{ type: 3, textContent: "This is our first post. Excited to get started!", id: 23 }] },
                     ],
                   },
                 ],
@@ -224,63 +224,63 @@ async function main() {
         ],
       },
     ],
-    id: 0,
+    id: 1,
   };
 
   // New Post form DOM (node IDs 30-55)
   const newPostSnapshot = {
     type: 0,
     childNodes: [
-      { type: 1, name: "html", publicId: "", systemId: "", id: 30 },
+      { type: 1, name: "html", publicId: "", systemId: "", id: 31 },
       {
-        type: 2, tagName: "html", attributes: { lang: "en" }, id: 31,
+        type: 2, tagName: "html", attributes: { lang: "en" }, id: 32,
         childNodes: [
-          { type: 2, tagName: "head", attributes: {}, id: 32,
-            childNodes: [{ type: 2, tagName: "title", attributes: {}, id: 33,
-              childNodes: [{ type: 3, textContent: "New Post — Acme Corp", id: 34 }] }] },
+          { type: 2, tagName: "head", attributes: {}, id: 33,
+            childNodes: [{ type: 2, tagName: "title", attributes: {}, id: 34,
+              childNodes: [{ type: 3, textContent: "New Post — Acme Corp", id: 35 }] }] },
           {
             type: 2, tagName: "body",
             attributes: { style: "margin:0;font-family:system-ui,sans-serif;background:#f8fafc" },
-            id: 35,
+            id: 36,
             childNodes: [
               { type: 2, tagName: "nav",
-                attributes: { style: "background:#1e293b;padding:16px 24px" }, id: 36,
+                attributes: { style: "background:#1e293b;padding:16px 24px" }, id: 37,
                 childNodes: [
-                  { type: 2, tagName: "span", attributes: { style: "color:#f1f5f9;font-weight:700;font-size:18px" }, id: 37,
-                    childNodes: [{ type: 3, textContent: "Acme Corp", id: 38 }] },
+                  { type: 2, tagName: "span", attributes: { style: "color:#f1f5f9;font-weight:700;font-size:18px" }, id: 38,
+                    childNodes: [{ type: 3, textContent: "Acme Corp", id: 39 }] },
                 ],
               },
               {
                 type: 2, tagName: "main",
-                attributes: { style: "padding:32px 24px;max-width:640px;margin:0 auto" }, id: 39,
+                attributes: { style: "padding:32px 24px;max-width:640px;margin:0 auto" }, id: 40,
                 childNodes: [
-                  { type: 2, tagName: "h1", attributes: { style: "font-size:24px;font-weight:700;margin:0 0 24px" }, id: 40,
-                    childNodes: [{ type: 3, textContent: "New Post", id: 41 }] },
+                  { type: 2, tagName: "h1", attributes: { style: "font-size:24px;font-weight:700;margin:0 0 24px" }, id: 41,
+                    childNodes: [{ type: 3, textContent: "New Post", id: 42 }] },
                   {
-                    type: 2, tagName: "form", attributes: {}, id: 42,
+                    type: 2, tagName: "form", attributes: {}, id: 43,
                     childNodes: [
-                      { type: 2, tagName: "div", attributes: { style: "margin-bottom:16px" }, id: 43,
+                      { type: 2, tagName: "div", attributes: { style: "margin-bottom:16px" }, id: 44,
                         childNodes: [
-                          { type: 2, tagName: "label", attributes: { style: "display:block;font-size:14px;font-weight:600;margin-bottom:6px" }, id: 44,
-                            childNodes: [{ type: 3, textContent: "Title", id: 45 }] },
+                          { type: 2, tagName: "label", attributes: { style: "display:block;font-size:14px;font-weight:600;margin-bottom:6px" }, id: 45,
+                            childNodes: [{ type: 3, textContent: "Title", id: 46 }] },
                           { type: 2, tagName: "input",
                             attributes: { type: "text", value: "Q2 Planning Notes", style: "width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;box-sizing:border-box" },
-                            id: 46, childNodes: [] },
+                            id: 47, childNodes: [] },
                         ],
                       },
-                      { type: 2, tagName: "div", attributes: { style: "margin-bottom:24px" }, id: 47,
+                      { type: 2, tagName: "div", attributes: { style: "margin-bottom:24px" }, id: 48,
                         childNodes: [
-                          { type: 2, tagName: "label", attributes: { style: "display:block;font-size:14px;font-weight:600;margin-bottom:6px" }, id: 48,
-                            childNodes: [{ type: 3, textContent: "Content", id: 49 }] },
+                          { type: 2, tagName: "label", attributes: { style: "display:block;font-size:14px;font-weight:600;margin-bottom:6px" }, id: 49,
+                            childNodes: [{ type: 3, textContent: "Content", id: 50 }] },
                           { type: 2, tagName: "textarea",
                             attributes: { style: "width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;height:160px;box-sizing:border-box", value: "" },
-                            id: 50, childNodes: [{ type: 3, textContent: "Planning session notes for Q2...", id: 51 }] },
+                            id: 51, childNodes: [{ type: 3, textContent: "Planning session notes for Q2...", id: 52 }] },
                         ],
                       },
                       { type: 2, tagName: "button",
                         attributes: { type: "submit", style: "background:#3b82f6;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer" },
-                        id: 52,
-                        childNodes: [{ type: 3, textContent: "Publish", id: 53 }] },
+                        id: 53,
+                        childNodes: [{ type: 3, textContent: "Publish", id: 54 }] },
                     ],
                   },
                 ],
@@ -290,7 +290,7 @@ async function main() {
         ],
       },
     ],
-    id: 29,
+    id: 30,
   };
 
   await prisma.replayEvent.createMany({
@@ -306,11 +306,11 @@ async function main() {
       // MouseMove: toward "New Post" button
       { sessionId: session1.id, type: "rrweb", sequence: 2, route: "/dashboard",
         timestamp: new Date(t1 + 1800),
-        payload: { type: 3, data: { source: 1, positions: [{ x: 180, y: 70, id: 16, timeOffset: -120 }, { x: 210, y: 82, id: 16, timeOffset: -60 }, { x: 240, y: 88, id: 16, timeOffset: 0 }] }, timestamp: t1 + 1800 } },
+        payload: { type: 3, data: { source: 1, positions: [{ x: 180, y: 70, id: 17, timeOffset: -120 }, { x: 210, y: 82, id: 16, timeOffset: -60 }, { x: 240, y: 88, id: 16, timeOffset: 0 }] }, timestamp: t1 + 1800 } },
       // Click: "New Post" button
       { sessionId: session1.id, type: "rrweb", sequence: 3, route: "/dashboard", traceId: traceId1,
         timestamp: new Date(t1 + 2000),
-        payload: { type: 3, data: { source: 2, type: 2, id: 16, x: 240, y: 88 }, timestamp: t1 + 2000 } },
+        payload: { type: 3, data: { source: 2, type: 2, id: 17, x: 240, y: 88 }, timestamp: t1 + 2000 } },
       // Meta: navigate to /posts/new
       { sessionId: session1.id, type: "rrweb", sequence: 4, route: "/posts/new",
         timestamp: new Date(t1 + 2200),
@@ -322,15 +322,15 @@ async function main() {
       // MouseMove: toward "Publish" button
       { sessionId: session1.id, type: "rrweb", sequence: 6, route: "/posts/new",
         timestamp: new Date(t1 + 8300),
-        payload: { type: 3, data: { source: 1, positions: [{ x: 260, y: 610, id: 52, timeOffset: -150 }, { x: 295, y: 632, id: 52, timeOffset: -60 }, { x: 320, y: 640, id: 52, timeOffset: 0 }] }, timestamp: t1 + 8300 } },
+        payload: { type: 3, data: { source: 1, positions: [{ x: 260, y: 610, id: 53, timeOffset: -150 }, { x: 295, y: 632, id: 52, timeOffset: -60 }, { x: 320, y: 640, id: 52, timeOffset: 0 }] }, timestamp: t1 + 8300 } },
       // Click: "Publish" button
       { sessionId: session1.id, type: "rrweb", sequence: 7, route: "/posts/new", traceId: traceId1,
         timestamp: new Date(t1 + 8500),
-        payload: { type: 3, data: { source: 2, type: 2, id: 52, x: 320, y: 640 }, timestamp: t1 + 8500 } },
+        payload: { type: 3, data: { source: 2, type: 2, id: 53, x: 320, y: 640 }, timestamp: t1 + 8500 } },
       // DOM mutation: button becomes "Publishing..."
       { sessionId: session1.id, type: "rrweb", sequence: 8, route: "/posts/new", traceId: traceId1,
         timestamp: new Date(t1 + 8520),
-        payload: { type: 3, data: { source: 0, texts: [{ id: 53, value: "Publishing..." }], attributes: [{ id: 52, attributes: { disabled: true, style: "background:#93c5fd;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;cursor:not-allowed" } }], removes: [], adds: [] }, timestamp: t1 + 8520 } },
+        payload: { type: 3, data: { source: 0, texts: [{ id: 54, value: "Publishing..." }], attributes: [{ id: 53, attributes: { disabled: true, style: "background:#93c5fd;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;cursor:not-allowed" } }], removes: [], adds: [] }, timestamp: t1 + 8520 } },
     ],
   });
 
@@ -341,53 +341,53 @@ async function main() {
   const workspacesSnapshot = {
     type: 0,
     childNodes: [
-      { type: 1, name: "html", publicId: "", systemId: "", id: 60 },
+      { type: 1, name: "html", publicId: "", systemId: "", id: 61 },
       {
-        type: 2, tagName: "html", attributes: { lang: "en" }, id: 61,
+        type: 2, tagName: "html", attributes: { lang: "en" }, id: 62,
         childNodes: [
-          { type: 2, tagName: "head", attributes: {}, id: 62,
-            childNodes: [{ type: 2, tagName: "title", attributes: {}, id: 63,
-              childNodes: [{ type: 3, textContent: "Workspaces", id: 64 }] }] },
+          { type: 2, tagName: "head", attributes: {}, id: 63,
+            childNodes: [{ type: 2, tagName: "title", attributes: {}, id: 64,
+              childNodes: [{ type: 3, textContent: "Workspaces", id: 65 }] }] },
           {
             type: 2, tagName: "body",
             attributes: { style: "margin:0;font-family:system-ui,sans-serif;background:#f8fafc" },
-            id: 65,
+            id: 66,
             childNodes: [
               { type: 2, tagName: "nav",
-                attributes: { style: "background:#1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between" }, id: 66,
+                attributes: { style: "background:#1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between" }, id: 67,
                 childNodes: [
-                  { type: 2, tagName: "span", attributes: { style: "color:#f1f5f9;font-weight:700;font-size:18px" }, id: 67,
-                    childNodes: [{ type: 3, textContent: "App", id: 68 }] },
-                  { type: 2, tagName: "span", attributes: { style: "color:#94a3b8;font-size:14px" }, id: 69,
-                    childNodes: [{ type: 3, textContent: "bob", id: 70 }] },
+                  { type: 2, tagName: "span", attributes: { style: "color:#f1f5f9;font-weight:700;font-size:18px" }, id: 68,
+                    childNodes: [{ type: 3, textContent: "App", id: 69 }] },
+                  { type: 2, tagName: "span", attributes: { style: "color:#94a3b8;font-size:14px" }, id: 70,
+                    childNodes: [{ type: 3, textContent: "bob", id: 71 }] },
                 ],
               },
               {
-                type: 2, tagName: "main", attributes: { style: "padding:32px 24px;max-width:860px;margin:0 auto" }, id: 71,
+                type: 2, tagName: "main", attributes: { style: "padding:32px 24px;max-width:860px;margin:0 auto" }, id: 72,
                 childNodes: [
-                  { type: 2, tagName: "h1", attributes: { style: "font-size:24px;font-weight:700;margin:0 0 24px" }, id: 72,
-                    childNodes: [{ type: 3, textContent: "Your Workspaces", id: 73 }] },
+                  { type: 2, tagName: "h1", attributes: { style: "font-size:24px;font-weight:700;margin:0 0 24px" }, id: 73,
+                    childNodes: [{ type: 3, textContent: "Your Workspaces", id: 74 }] },
                   {
-                    type: 2, tagName: "div", attributes: { style: "display:grid;grid-template-columns:repeat(2,1fr);gap:16px" }, id: 74,
+                    type: 2, tagName: "div", attributes: { style: "display:grid;grid-template-columns:repeat(2,1fr);gap:16px" }, id: 75,
                     childNodes: [
                       { type: 2, tagName: "div",
                         attributes: { class: "workspace-card", style: "background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;cursor:pointer;transition:box-shadow 0.2s" },
-                        id: 75,
+                        id: 76,
                         childNodes: [
-                          { type: 2, tagName: "h2", attributes: { style: "font-size:18px;font-weight:700;margin:0 0 8px;color:#0f172a" }, id: 76,
-                            childNodes: [{ type: 3, textContent: "Acme Corp", id: 77 }] },
-                          { type: 2, tagName: "p", attributes: { style: "color:#64748b;font-size:13px;margin:0" }, id: 78,
-                            childNodes: [{ type: 3, textContent: "5 members · 4 posts", id: 79 }] },
+                          { type: 2, tagName: "h2", attributes: { style: "font-size:18px;font-weight:700;margin:0 0 8px;color:#0f172a" }, id: 77,
+                            childNodes: [{ type: 3, textContent: "Acme Corp", id: 78 }] },
+                          { type: 2, tagName: "p", attributes: { style: "color:#64748b;font-size:13px;margin:0" }, id: 79,
+                            childNodes: [{ type: 3, textContent: "5 members · 4 posts", id: 80 }] },
                         ],
                       },
                       { type: 2, tagName: "div",
                         attributes: { class: "workspace-card", style: "background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;cursor:pointer" },
-                        id: 80,
+                        id: 81,
                         childNodes: [
-                          { type: 2, tagName: "h2", attributes: { style: "font-size:18px;font-weight:700;margin:0 0 8px;color:#0f172a" }, id: 81,
-                            childNodes: [{ type: 3, textContent: "DevTools Team", id: 82 }] },
-                          { type: 2, tagName: "p", attributes: { style: "color:#64748b;font-size:13px;margin:0" }, id: 83,
-                            childNodes: [{ type: 3, textContent: "2 members · 1 post", id: 84 }] },
+                          { type: 2, tagName: "h2", attributes: { style: "font-size:18px;font-weight:700;margin:0 0 8px;color:#0f172a" }, id: 82,
+                            childNodes: [{ type: 3, textContent: "DevTools Team", id: 83 }] },
+                          { type: 2, tagName: "p", attributes: { style: "color:#64748b;font-size:13px;margin:0" }, id: 84,
+                            childNodes: [{ type: 3, textContent: "2 members · 1 post", id: 85 }] },
                         ],
                       },
                     ],
@@ -399,7 +399,7 @@ async function main() {
         ],
       },
     ],
-    id: 59,
+    id: 60,
   };
 
   await prisma.replayEvent.createMany({
@@ -415,11 +415,11 @@ async function main() {
       // MouseMove: toward "Acme Corp" card
       { sessionId: session2.id, type: "rrweb", sequence: 2, route: "/workspaces",
         timestamp: new Date(t2 + 3000),
-        payload: { type: 3, data: { source: 1, positions: [{ x: 120, y: 190, id: 75, timeOffset: -150 }, { x: 155, y: 210, id: 75, timeOffset: -70 }, { x: 180, y: 220, id: 75, timeOffset: 0 }] }, timestamp: t2 + 3000 } },
+        payload: { type: 3, data: { source: 1, positions: [{ x: 120, y: 190, id: 76, timeOffset: -150 }, { x: 155, y: 210, id: 75, timeOffset: -70 }, { x: 180, y: 220, id: 75, timeOffset: 0 }] }, timestamp: t2 + 3000 } },
       // Click: "Acme Corp" workspace card
       { sessionId: session2.id, type: "rrweb", sequence: 3, route: "/workspaces", traceId: traceId2,
         timestamp: new Date(t2 + 3200),
-        payload: { type: 3, data: { source: 2, type: 2, id: 75, x: 180, y: 220 }, timestamp: t2 + 3200 } },
+        payload: { type: 3, data: { source: 2, type: 2, id: 76, x: 180, y: 220 }, timestamp: t2 + 3200 } },
       // DOM mutation: error banner appears
       { sessionId: session2.id, type: "rrweb", sequence: 4, route: "/workspaces", traceId: traceId2,
         timestamp: new Date(t2 + 3400),
@@ -429,7 +429,7 @@ async function main() {
           attributes: [],
           removes: [],
           adds: [{
-            parentId: 71, nextId: 72,
+            parentId: 72, nextId: 73,
             node: { type: 2, tagName: "div",
               attributes: { id: "error-banner", style: "background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;margin-bottom:24px;color:#dc2626;font-size:14px" },
               id: 90, childNodes: [{ type: 3, textContent: "⚠ Failed to load workspace data (500 Internal Server Error)", id: 91 }] },
