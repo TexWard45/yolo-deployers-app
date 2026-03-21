@@ -78,7 +78,7 @@ export const agentRouter = createTRPCRouter({
       });
     }),
 
-  /** Generate an AI draft reply for a conversation */
+  /** Generate an AI draft reply for a thread */
   generateDraft: publicProcedure
     .input(GenerateReplyDraftSchema)
     .mutation(async ({ ctx, input }) => {
@@ -95,29 +95,27 @@ export const agentRouter = createTRPCRouter({
         throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
       }
 
-      const conversation = await ctx.prisma.conversation.findFirst({
-        where: { id: input.conversationId, workspaceId: input.workspaceId },
+      const thread = await ctx.prisma.supportThread.findFirst({
+        where: { id: input.threadId, workspaceId: input.workspaceId },
         include: {
-          messages: { orderBy: { sentAt: "desc" }, take: 10 },
-          customerProfile: true,
+          messages: { orderBy: { createdAt: "desc" }, take: 10 },
+          customer: true,
         },
       });
 
-      if (!conversation) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Conversation not found" });
+      if (!thread) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
       }
 
-      const lastMessage = conversation.messages[0];
+      const lastMessage = thread.messages[0];
 
-      // Create a placeholder draft — the actual AI generation will be
-      // handled by the generate-reply-draft queue workflow
       const draft = await ctx.prisma.replyDraft.create({
         data: {
-          conversationId: input.conversationId,
+          threadId: input.threadId,
           basedOnMessageId: lastMessage?.id,
           createdByUserId: input.userId,
           status: "GENERATED",
-          body: "", // Will be populated by the workflow
+          body: "",
           model: null,
           promptVersion: null,
         },
@@ -125,9 +123,9 @@ export const agentRouter = createTRPCRouter({
 
       // TODO: Trigger generate-reply-draft workflow via Temporal
       // For now, generate a simple placeholder
-      const threadContext = conversation.messages
+      const threadContext = thread.messages
         .reverse()
-        .map((m) => `${m.senderKind}: ${m.body}`)
+        .map((m) => `${m.direction}: ${m.body}`)
         .join("\n");
 
       const draftBody = `[AI Draft] Based on the conversation:\n${threadContext}\n\nSuggested reply: Thank you for reaching out. I'd be happy to help with your question.`;
@@ -159,10 +157,10 @@ export const agentRouter = createTRPCRouter({
 
       const draft = await ctx.prisma.replyDraft.findUnique({
         where: { id: input.draftId },
-        include: { conversation: true },
+        include: { thread: true },
       });
 
-      if (!draft || draft.conversation.workspaceId !== input.workspaceId) {
+      if (!draft || draft.thread.workspaceId !== input.workspaceId) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Draft not found" });
       }
 
@@ -195,10 +193,10 @@ export const agentRouter = createTRPCRouter({
 
       const draft = await ctx.prisma.replyDraft.findUnique({
         where: { id: input.draftId },
-        include: { conversation: true },
+        include: { thread: true },
       });
 
-      if (!draft || draft.conversation.workspaceId !== input.workspaceId) {
+      if (!draft || draft.thread.workspaceId !== input.workspaceId) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Draft not found" });
       }
 

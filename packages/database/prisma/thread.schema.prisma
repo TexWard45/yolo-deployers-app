@@ -35,6 +35,7 @@ model SupportThread {
   updatedAt        DateTime       @updatedAt
 
   messages ThreadMessage[]
+  drafts   ReplyDraft[]
 
   @@unique([workspaceId, source, externalThreadId])
   @@index([workspaceId, status, updatedAt])
@@ -55,6 +56,8 @@ model ThreadMessage {
   senderExternalId  String?
   metadata          Json?
   createdAt         DateTime         @default(now())
+
+  basedOnDrafts ReplyDraft[]
 
   @@unique([threadId, externalMessageId])
   @@index([threadId, createdAt])

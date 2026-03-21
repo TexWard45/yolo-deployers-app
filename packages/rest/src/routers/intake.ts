@@ -395,6 +395,7 @@ export const intakeRouter = createTRPCRouter({
         messageBody: input.body,
         externalMessageId: input.externalMessageId,
         externalThreadId: input.externalThreadId ?? undefined,
+        inReplyToExternalMessageId: input.inReplyToExternalMessageId ?? undefined,
         metadata: input.rawPayload,
       });
     }),

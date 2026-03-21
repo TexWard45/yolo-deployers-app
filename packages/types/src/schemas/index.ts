@@ -177,69 +177,9 @@ export const UpdateChannelConnectionStatusSchema = z.object({
 
 export type UpdateChannelConnectionStatusInput = z.infer<typeof UpdateChannelConnectionStatusSchema>;
 
-// ── Conversation ───────────────────────────────────────────────────
-export const ListConversationsSchema = z.object({
-  workspaceId: z.string(),
-  userId: z.string(),
-  status: ThreadStatusSchema.optional(),
-  channelType: z.enum(["DISCORD", "IN_APP"]).optional(),
-  assignedToUserId: z.string().optional(),
-  cursor: z.string().optional(),
-  limit: z.number().min(1).max(100).default(25),
-});
-
-export type ListConversationsInput = z.infer<typeof ListConversationsSchema>;
-
-export const UpdateConversationStatusSchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  status: ThreadStatusSchema,
-});
-
-export type UpdateConversationStatusInput = z.infer<typeof UpdateConversationStatusSchema>;
-
-export const AssignConversationSchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  assignToUserId: z.string().nullable(),
-});
-
-export type AssignConversationInput = z.infer<typeof AssignConversationSchema>;
-
-export const MergeCustomerIdentitySchema = z.object({
-  workspaceId: z.string(),
-  userId: z.string(),
-  sourceCustomerProfileId: z.string(),
-  targetCustomerProfileId: z.string(),
-});
-
-export type MergeCustomerIdentityInput = z.infer<typeof MergeCustomerIdentitySchema>;
-
-// ── Message ────────────────────────────────────────────────────────
-export const ListMessagesByConversationSchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  cursor: z.string().optional(),
-  limit: z.number().min(1).max(100).default(50),
-});
-
-export type ListMessagesByConversationInput = z.infer<typeof ListMessagesByConversationSchema>;
-
-export const SendConversationReplySchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  body: z.string().min(1, "Reply body is required"),
-});
-
-export type SendConversationReplyInput = z.infer<typeof SendConversationReplySchema>;
-
 // ── AI Agent ───────────────────────────────────────────────────────
 export const GenerateReplyDraftSchema = z.object({
-  conversationId: z.string(),
+  threadId: z.string(),
   workspaceId: z.string(),
   userId: z.string(),
 });
@@ -295,6 +235,7 @@ export const IngestSupportMessageInputSchema = z.object({
   timestamp: z.string(),
   rawPayload: z.record(z.string(), z.unknown()),
   externalThreadId: z.string().nullable(),
+  inReplyToExternalMessageId: z.string().nullable().optional(),
 });
 
 export type IngestSupportMessageInput = z.infer<typeof IngestSupportMessageInputSchema>;

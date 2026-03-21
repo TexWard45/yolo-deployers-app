@@ -108,6 +108,26 @@ apps/codex/src/
 - `/codex/search` — search interface
 - `/codex/chunk/[id]` — chunk viewer
 
+### Support Domain Data Model
+
+Single source of truth for all support/inbox data:
+
+```
+Customer (who — one per workspace + source + externalCustomerId)
+  └── SupportThread[] (one per issue)
+        ├── ThreadMessage[] (flat — visual sub-threads computed client-side)
+        └── ReplyDraft[] (AI drafts, FK to SupportThread)
+
+ChannelConnection (channel config: Discord, IN_APP)
+WorkspaceAgentConfig (AI agent settings per workspace)
+```
+
+- **`SupportThread`** = one issue container. Shown as a page at `/inbox/[threadId]`.
+- **`ThreadMessage`** = all messages (inbound + outbound) in flat list. Visual sub-thread grouping ("Thread 1", "Thread 2") is computed client-side by `groupMessagesIntoSegments()` using `inReplyToExternalMessageId` chains — no DB model for sub-threads.
+- **`Customer`** = identity via `(workspaceId, source, externalCustomerId)` unique constraint. No separate CustomerProfile or channel identity tables.
+- **`ReplyDraft`** = AI-generated reply draft, FK'd to `SupportThread` + optional `ThreadMessage`.
+- All ingestion paths (Discord bot, Discord webhook, in-app chat webhook) go through `performIngestion()` in the intake router, which upserts `Customer`, matches/creates `SupportThread`, and creates `ThreadMessage`.
+
 ### Environment Management
 
 - Use `@shared/env` for environment access in `apps/web` and `apps/queue`; avoid direct `process.env` reads in app code.

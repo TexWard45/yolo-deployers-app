@@ -63,6 +63,11 @@ export const threadRouter = createTRPCRouter({
           customer: true,
           assignedTo: { omit: { password: true } },
           messages: { orderBy: { createdAt: "asc" } },
+          drafts: {
+            where: { status: "GENERATED" },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
         },
       });
 

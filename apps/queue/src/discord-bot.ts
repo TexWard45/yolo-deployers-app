@@ -162,6 +162,7 @@ function discordMessageToInput(
       guildId: message.guildId,
     },
     externalThreadId: message.channel.isThread() ? message.channelId : null,
+    inReplyToExternalMessageId: message.reference?.messageId ?? null,
   };
 }
 
@@ -182,10 +183,12 @@ async function backfillChannel(
 
   for (const msg of sorted) {
     // Skip if already in DB (idempotency)
-    const existing = await prisma.conversationMessage.findFirst({
+    const existing = await prisma.threadMessage.findFirst({
       where: {
-        channelConnectionId: conn.id,
         externalMessageId: msg.id,
+        thread: {
+          workspaceId: conn.workspaceId,
+        },
       },
     });
     if (existing) continue;
