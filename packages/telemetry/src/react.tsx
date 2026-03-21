@@ -45,7 +45,12 @@ export function TelemetryProvider({
       window.removeEventListener("unhandledrejection", onUnhandledRejection);
       Telemetry.stop();
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Empty deps array is intentional: Telemetry.init() is a one-time setup and
+  // must not re-run on config prop changes (init is not idempotent — call stop()
+  // first to re-configure). If dynamic reconfiguration is needed in the future,
+  // add a key prop to TelemetryProvider to force a full remount instead.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return <>{children}</>;
 }

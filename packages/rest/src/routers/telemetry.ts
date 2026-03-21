@@ -3,6 +3,16 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "../init";
 import type { Prisma } from "@shared/types/prisma";
 
+/** Safely extract the error message from an rrweb Custom Event payload. */
+function extractErrorMessage(payload: Record<string, unknown>): string {
+  const msg = (payload as any)?.data?.payload?.message;
+  return typeof msg === "string" && msg.length > 0 ? msg : "System Error";
+}
+
+/** Maximum number of session IDs resolved from identity lookup.
+ *  Prevents unbounded Prisma IN clauses for high-volume customers. */
+const IDENTITY_SESSION_CAP = 500;
+
 const ReplayEventSchema = z.object({
   type: z.string(),
   timestamp: z.coerce.date(),
@@ -35,12 +45,12 @@ export const telemetryRouter = createTRPCRouter({
         });
       }
 
-      // rrweb custom events are type 5 in the raw rrweb payload
+      // rrweb Custom Events have numeric type 5 in the raw payload.
+      const isRrwebCustomError = (payload: Record<string, unknown>) =>
+        (payload as any)?.type === 5 && (payload as any)?.data?.tag === "system_error";
+
       const errorEvents = events.filter(
-        (e) =>
-          e.type === "rrweb" &&
-          (e.payload as any)?.type === 5 &&
-          (e.payload as any)?.data?.tag === "system_error"
+        (e) => e.type === "rrweb" && isRrwebCustomError(e.payload)
       );
 
       await ctx.prisma.$transaction([
@@ -75,8 +85,7 @@ export const telemetryRouter = createTRPCRouter({
                 data: errorEvents.map((e) => ({
                   sessionId,
                   type: "ERROR",
-                  content:
-                    (e.payload as any)?.data?.payload?.message ?? "System Error",
+                  content: extractErrorMessage(e.payload),
                   metadata: e.payload as Prisma.InputJsonValue,
                   timestamp: e.timestamp,
                 })),
@@ -238,31 +247,34 @@ export const telemetryRouter = createTRPCRouter({
       if (customerEmail) identityConditions.push({ payload: { path: ["email"], string_contains: customerEmail } });
       if (customerPhone) identityConditions.push({ payload: { path: ["phone"], string_contains: customerPhone } });
 
+      // Cap at IDENTITY_SESSION_CAP to prevent unbounded Prisma IN clauses.
+      // Note: no workspace-level tenancy is available on ctx yet — this is a
+      // known limitation. Add ctx.workspaceId scoping here once the context
+      // exposes it.
       const identityEvents = await ctx.prisma.replayEvent.findMany({
         where: { type: "user.identify", OR: identityConditions },
         select: { sessionId: true },
         distinct: ["sessionId"],
+        take: IDENTITY_SESSION_CAP,
       });
 
-      // Also include any session where Session.userId directly matches (covers
-      // authenticated flows where userId is written to the column on creation).
+      // Also include sessions where Session.userId directly matches (authenticated flows).
       let sessionIdFilter: string[] = identityEvents.map((e) => e.sessionId);
       if (userId) {
         const directMatches = await ctx.prisma.session.findMany({
           where: { userId },
           select: { id: true },
+          take: IDENTITY_SESSION_CAP,
         });
-        const directIds = directMatches.map((s) => s.id);
-        // Merge, deduplicate
-        sessionIdFilter = [...new Set([...sessionIdFilter, ...directIds])];
+        sessionIdFilter = [...new Set([...sessionIdFilter, ...directMatches.map((s) => s.id)])];
       }
 
       if (sessionIdFilter.length === 0) return { found: false as const };
 
-      // ── Step 2: find the most recent ERROR timeline entry within the time window ──
-      // Filter on SessionTimeline.timestamp (the actual error moment), NOT on
-      // session.createdAt. A session starting before the window can still have an
-      // error inside it — filtering on createdAt would silently miss those.
+      // ── Steps 2+3 combined: find the target error timeline and its session in one query ──
+      // Filter on SessionTimeline.timestamp (the actual error moment), not session.createdAt,
+      // so sessions that started before the window but errored inside it are matched.
+      // Include the session + first ReplayEvent in the same round-trip to avoid a 3rd query.
       const errorTimeline = await ctx.prisma.sessionTimeline.findFirst({
         where: {
           sessionId: { in: sessionIdFilter },
@@ -270,43 +282,40 @@ export const telemetryRouter = createTRPCRouter({
           timestamp: { gte: startTime, lte: endTime },
         },
         orderBy: { timestamp: "desc" },
-        select: { sessionId: true, timestamp: true, content: true },
-      });
-
-      if (!errorTimeline) return { found: false as const };
-
-      // ── Step 3: load the session + first event for precise offset calculation ──
-      // We already know which error to seek to (errorTimeline from step 2).
-      // We only need the session for errorCount and the first ReplayEvent timestamp
-      // to anchor the offset. Do NOT re-query timelines with orderBy:asc — that
-      // would return the first error in the session, not the one we found.
-      const session = await ctx.prisma.session.findUnique({
-        where: { id: errorTimeline.sessionId },
         select: {
-          id: true,
-          errorCount: true,
-          createdAt: true,
-          events: {
-            orderBy: { sequence: "asc" },
-            take: 1,
-            select: { timestamp: true },
+          timestamp: true,
+          content: true,
+          session: {
+            select: {
+              id: true,
+              errorCount: true,
+              createdAt: true,
+              // First ReplayEvent anchors the rrweb-player 0:00 mark (client-side timestamp,
+              // not server ingestion time — used for sub-second offset calculation).
+              events: {
+                orderBy: { sequence: "asc" },
+                take: 1,
+                select: { timestamp: true },
+              },
+            },
           },
         },
       });
 
-      if (!session) return { found: false as const };
+      if (!errorTimeline?.session) return { found: false as const };
 
+      const { session } = errorTimeline;
       const firstEventTime =
         session.events[0]?.timestamp.getTime() ?? session.createdAt.getTime();
-      // Use the exact errorTimeline found in step 2 — not the first error in the session.
+      // Use the exact errorTimeline found above — not the first error in the session.
       const offsetMs = Math.max(0, errorTimeline.timestamp.getTime() - firstEventTime);
 
       return {
-        found: true as const,
-        sessionId: session.id,
+        found:        true as const,
+        sessionId:    session.id,
         offsetMs,
         errorContent: errorTimeline.content,
-        errorCount: session.errorCount,
+        errorCount:   session.errorCount,
       };
     }),
 });

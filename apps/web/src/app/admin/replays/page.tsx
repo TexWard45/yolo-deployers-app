@@ -28,12 +28,16 @@ export default function ReplaysPage() {
   const [investigatorEnabled, setInvestigatorEnabled] = useState(false);
   const [investigatorOffsetMs, setInvestigatorOffsetMs] = useState<number | undefined>(undefined);
 
+  // Only include date fields when the user has typed a value.
+  // Guards against new Date("") → Invalid Date, which would pass the Zod coerce
+  // silently and produce a wrong DB query. Empty string → field omitted → backend
+  // defaults to last 24h.
   const investigatorInput = {
-    ...(investigatorFields.userId ? { userId: investigatorFields.userId } : {}),
-    ...(investigatorFields.customerEmail ? { customerEmail: investigatorFields.customerEmail } : {}),
-    ...(investigatorFields.customerPhone ? { customerPhone: investigatorFields.customerPhone } : {}),
-    ...(investigatorFields.startDate ? { startTime: new Date(investigatorFields.startDate) } : {}),
-    ...(investigatorFields.endDate ? { endTime: new Date(investigatorFields.endDate) } : {}),
+    ...(investigatorFields.userId        ? { userId:        investigatorFields.userId }                    : {}),
+    ...(investigatorFields.customerEmail ? { customerEmail: investigatorFields.customerEmail }              : {}),
+    ...(investigatorFields.customerPhone ? { customerPhone: investigatorFields.customerPhone }              : {}),
+    ...(investigatorFields.startDate     ? { startTime:     new Date(investigatorFields.startDate) }        : {}),
+    ...(investigatorFields.endDate       ? { endTime:       new Date(investigatorFields.endDate) }          : {}),
   };
 
   const hasInvestigatorIdentity =

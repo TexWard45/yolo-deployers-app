@@ -1,5 +1,12 @@
 import { useState, useCallback } from "react";
+import type { Session, ReplayEvent, SessionTimeline } from "@shared/types";
 import { trpc } from "@/trpc/client";
+
+/** Session as returned by listSessions — includes the event count aggregate. */
+export type SessionListItem = Session & { _count: { events: number } };
+
+/** Replay data returned by getSessionReplay. */
+export type ReplayData = { session: Session | null; events: ReplayEvent[] };
 
 export type SessionFilters = {
   customerId: string;
@@ -17,16 +24,16 @@ export type ReplayExplorerReturn = {
   setFilter: (key: keyof SessionFilters, value: string) => void;
   setHasErrorFilter: (value: boolean) => void;
   clearFilters: () => void;
-  sessions: any[];
-  selectedSession: any | undefined;
+  sessions: SessionListItem[];
+  selectedSession: SessionListItem | undefined;
   sessionsLoading: boolean;
   page: number;
   totalPages: number;
   total: number;
   goToPage: (p: number) => void;
-  replayData: any | undefined;
+  replayData: ReplayData | undefined;
   replayLoading: boolean;
-  timelineData: any | undefined;
+  timelineData: SessionTimeline[] | undefined;
   errorTimestamps: number[];
 };
 
@@ -77,8 +84,8 @@ export function useReplayExplorer(): ReplayExplorerReturn {
 
   // Derive absolute error timestamps (ms) from the session timeline for the replay player
   const errorTimestamps: number[] = (timelineData ?? [])
-    .filter((t: any) => t.type === "ERROR")
-    .map((t: any) => new Date(t.timestamp).getTime());
+    .filter((t) => t.type === "ERROR")
+    .map((t) => new Date(t.timestamp).getTime());
 
   const setFilter = useCallback((key: keyof SessionFilters, value: string) => {
     setPage(1); // reset to page 1 on filter change
