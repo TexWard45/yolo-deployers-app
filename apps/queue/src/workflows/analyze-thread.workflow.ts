@@ -25,7 +25,7 @@ const { generateAnalysisActivity } = proxyActivities<typeof activities>({
   retry: { maximumAttempts: 2 },
 });
 
-const DEBOUNCE_SECONDS = 30;
+const DEBOUNCE_SECONDS = 60;
 
 /**
  * AI Thread Analysis & Auto-Response Pipeline.

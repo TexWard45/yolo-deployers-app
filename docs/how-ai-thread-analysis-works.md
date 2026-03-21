@@ -192,6 +192,57 @@ All settings are per-workspace on `WorkspaceAgentConfig`:
 3. `clarificationCount` (2) >= `maxClarifications` (2) → thread escalated to `ESCALATED` status
 4. Human support agent takes over
 
+## Outbound Send Pipeline
+
+When a human approves a draft, the message is automatically sent to the customer's channel:
+
+```
+Human clicks "Approve" in UI
+    │
+    ▼
+approveDraft (agent.ts)
+  ├── Draft status → APPROVED
+  └── Dispatch sendOutboundMessageWorkflow (Temporal)
+        │
+        ▼
+  1. Fetch draft body + thread routing data
+     - externalThreadId (= Discord thread/channel ID)
+     - channelId + guildId from inbound message rawPayload
+  2. If source is DISCORD:
+     → Discord REST API: POST /channels/{externalThreadId}/messages
+     → Bot sends to the EXACT Discord thread the customer wrote in
+  3. If source is API/MANUAL:
+     → No external send (message recorded in DB only)
+  4. Create OUTBOUND ThreadMessage in DB
+  5. Thread status → WAITING_CUSTOMER
+  6. Draft status → SENT
+```
+
+**How Discord routing works:**
+- When a customer messages in a Discord thread, the bot captures `message.channelId` as `externalThreadId`
+- The `externalThreadId` IS the Discord thread/channel snowflake ID
+- The outbound activity sends to `https://discord.com/api/v10/channels/{externalThreadId}/messages`
+- Uses `DISCORD_BOT_TOKEN` (same token the bot uses for listening)
+
+**Files:**
+- `apps/queue/src/workflows/send-outbound-message.workflow.ts` — workflow orchestration
+- `apps/queue/src/activities/send-outbound-message.activity.ts` — Discord REST send + DB record
+- `packages/rest/src/temporal.ts` — `dispatchSendOutboundMessageWorkflow()`
+
+## Sentry Integration (Phase 2 — Not Yet Implemented)
+
+The plumbing is fully wired but `fetchSentryContext()` returns `[]`. When implementing:
+
+1. Fill in `packages/rest/src/routers/helpers/sentry-client.ts`
+   - `extractErrorSignals()` already works (regex extraction of error msgs, Sentry URLs, stack traces, HTTP codes)
+   - Add: search Sentry issues via `GET /api/0/projects/{org}/{project}/issues/?query=...`
+   - Add: get latest event via `GET /api/0/issues/{issueId}/events/latest/`
+   - Extract: error type, message, stack trace frames, occurrence count
+2. The activity (`fetchSentryErrorsActivity`) is already called in parallel with Codex search (workflow step 4)
+3. Results flow into `generateAnalysisActivity` as `sentryFindings`
+4. The analysis LLM prompt (`thread-analysis.prompt.ts`) already formats Sentry data in `buildUserMessage()`
+5. Config (org, project, token) is per-workspace on `WorkspaceAgentConfig` — no global env vars
+
 ## Key Files
 
 | File | Purpose |
@@ -206,4 +257,6 @@ All settings are per-workspace on `WorkspaceAgentConfig`:
 | `apps/queue/src/activities/analyze-thread.activity.ts` | All 8 activity functions |
 | `apps/web/src/app/api/rest/analysis/save/route.ts` | REST endpoint for queue → web saves |
 | `apps/web/src/components/inbox/AnalysisPanel.tsx` | UI panel in thread detail sidebar |
+| `apps/queue/src/workflows/send-outbound-message.workflow.ts` | Outbound send workflow |
+| `apps/queue/src/activities/send-outbound-message.activity.ts` | Discord REST send + DB record |
 | `packages/database/prisma/support.schema.prisma` | ThreadAnalysis model, DraftType enum |

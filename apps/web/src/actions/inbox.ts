@@ -125,6 +125,56 @@ export async function triggerThreadAnalysis(threadId: string, workspaceId: strin
   }
 }
 
+export async function approveDraftAction(data: {
+  draftId: string;
+  workspaceId: string;
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    await trpc.agent.approveDraft({
+      draftId: data.draftId,
+      workspaceId: data.workspaceId,
+      userId: session.id,
+    });
+    return { success: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { success: false, error: error.message } as const;
+    }
+    return { success: false, error: "Something went wrong" } as const;
+  }
+}
+
+export async function dismissDraftAction(data: {
+  draftId: string;
+  workspaceId: string;
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    await trpc.agent.dismissDraft({
+      draftId: data.draftId,
+      workspaceId: data.workspaceId,
+      userId: session.id,
+    });
+    return { success: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { success: false, error: error.message } as const;
+    }
+    return { success: false, error: "Something went wrong" } as const;
+  }
+}
+
 export async function updateThreadStatusAction(data: {
   threadId: string;
   status:

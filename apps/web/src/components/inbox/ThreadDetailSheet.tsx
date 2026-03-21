@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
 import { renderMessageBody, type MentionsMap } from "@/components/inbox/render-message-body";
 import { getThreadDetail, sendReply } from "@/actions/inbox";
-import { AnalysisPanel } from "@/components/inbox/AnalysisPanel";
+import { AnalysisPanel, DraftChatBubble, type AnalysisDraft } from "@/components/inbox/AnalysisPanel";
 import {
   getDefaultReplySegmentId,
   getReplyToExternalMessageId,
@@ -54,6 +54,8 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [replyBody, setReplyBody] = useState("");
   const [sending, startSending] = useTransition();
   const [activeReplySegmentId, setActiveReplySegmentId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AnalysisDraft | null>(null);
+  const analysisRefreshRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const fetchThread = useCallback((id: string) => {
