@@ -10,6 +10,8 @@ import {
   approveDraftAction,
   dismissDraftAction,
 } from "@/actions/inbox";
+import { SentryFindings } from "@/components/inbox/SentryFindings";
+import { TriageSection } from "@/components/inbox/TriageSection";
 
 export interface AnalysisDraft {
   id: string;
@@ -27,6 +29,7 @@ interface Analysis {
   rcaSummary: string | null;
   sufficient: boolean;
   codexFindings: unknown;
+  sentryFindings: unknown;
   drafts: AnalysisDraft[];
 }
 
@@ -191,6 +194,20 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
         {/* Codex findings */}
         {analysis.codexFindings ? (
           <CodexFindingsSection findings={analysis.codexFindings} />
+        ) : null}
+
+        {/* Sentry findings */}
+        {analysis.sentryFindings ? (
+          <SentryFindings findings={analysis.sentryFindings} />
+        ) : null}
+
+        {/* Triage section */}
+        {analysis.sufficient ? (
+          <TriageSection
+            threadId={threadId}
+            workspaceId={workspaceId}
+            analysisId={analysis.id}
+          />
         ) : null}
       </div>
     </div>

@@ -222,6 +222,10 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
   sentryOrgSlug: z.string().optional(),
   sentryProjectSlug: z.string().optional(),
   sentryAuthToken: z.string().optional(),
+  // Linear integration
+  linearApiKey: z.string().optional(),
+  linearTeamId: z.string().optional(),
+  linearDefaultLabels: z.array(z.string()).optional(),
 });
 
 export type UpdateWorkspaceAgentConfigInput = z.infer<typeof UpdateWorkspaceAgentConfigSchema>;
@@ -435,3 +439,87 @@ export const GetLatestAnalysisInputSchema = z.object({
   userId: z.string(),
 });
 export type GetLatestAnalysisInput = z.infer<typeof GetLatestAnalysisInputSchema>;
+
+// ── Triage Pipeline ────────────────────────────────────────────────────
+
+export const TriageToLinearSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+  analysisId: z.string(),
+  overrides: z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    severity: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
+    labels: z.array(z.string()).optional(),
+  }).optional(),
+});
+export type TriageToLinearInput = z.infer<typeof TriageToLinearSchema>;
+
+export const GetTriageStatusSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type GetTriageStatusInput = z.infer<typeof GetTriageStatusSchema>;
+
+export const GenerateSpecSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+  linearIssueId: z.string().optional(),
+});
+export type GenerateSpecInput = z.infer<typeof GenerateSpecSchema>;
+
+// ── Triage Workflow (Temporal) ─────────────────────────────────────
+
+export const TriageThreadWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  analysisId: z.string(),
+  triggeredByUserId: z.string(),
+});
+export type TriageThreadWorkflowInput = z.infer<typeof TriageThreadWorkflowInputSchema>;
+
+export const TriageThreadWorkflowResultSchema = z.object({
+  linearIssueId: z.string().nullable(),
+  linearIssueUrl: z.string().nullable(),
+  specMarkdown: z.string().nullable(),
+  action: z.enum(["triaged", "spec_generated", "skipped", "failed"]),
+  reason: z.string().optional(),
+});
+export type TriageThreadWorkflowResult = z.infer<typeof TriageThreadWorkflowResultSchema>;
+
+// ── Support Pipeline Master Workflow (Temporal) ────────────────────
+
+export const SupportPipelineWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  source: CustomerSourceSchema,
+  triggeredByMessageId: z.string(),
+});
+export type SupportPipelineWorkflowInput = z.infer<typeof SupportPipelineWorkflowInputSchema>;
+
+export const SupportPipelinePhaseSchema = z.enum([
+  "gate_1_investigate",
+  "phase_1_context",
+  "phase_2_investigate",
+  "phase_3_analyze",
+  "gate_2_triage",
+  "phase_4_triage",
+  "gate_3_spec",
+  "phase_5_spec",
+  "done",
+]);
+export type SupportPipelinePhase = z.infer<typeof SupportPipelinePhaseSchema>;
+
+export const SupportPipelineWorkflowResultSchema = z.object({
+  phase: SupportPipelinePhaseSchema,
+  analysisId: z.string().nullable(),
+  draftId: z.string().nullable(),
+  linearIssueId: z.string().nullable(),
+  linearIssueUrl: z.string().nullable(),
+  specMarkdown: z.string().nullable(),
+  reason: z.string().optional(),
+});
+export type SupportPipelineWorkflowResult = z.infer<typeof SupportPipelineWorkflowResultSchema>;

@@ -1,4 +1,4 @@
-// ── Sentry API Client (MVP stub — returns empty results) ────────────
+// ── Sentry API Client ────────────────────────────────────────────────
 
 export interface SentryConfig {
   orgSlug: string;
@@ -53,34 +53,149 @@ export function extractErrorSignals(messageBodies: string[]): string[] {
   return [...signals];
 }
 
+// ── Sentry API helpers ──────────────────────────────────────────────
+
+const SENTRY_BASE = "https://sentry.io/api/0";
+
+interface SentryIssueResponse {
+  id: string;
+  title: string;
+  culprit: string;
+  count: string;
+  firstSeen: string;
+  lastSeen: string;
+  level: string;
+}
+
+interface SentryEventResponse {
+  entries?: Array<{
+    type: string;
+    data?: {
+      values?: Array<{
+        stacktrace?: {
+          frames?: Array<{
+            filename?: string;
+            function?: string;
+            lineNo?: number;
+            colNo?: number;
+            context?: Array<[number, string]>;
+          }>;
+        };
+      }>;
+    };
+  }>;
+}
+
+async function searchSentryIssues(
+  config: SentryConfig,
+  query: string,
+  signal: AbortSignal,
+): Promise<SentryIssueResponse[]> {
+  const url = `${SENTRY_BASE}/projects/${config.orgSlug}/${config.projectSlug}/issues/?query=${encodeURIComponent(query)}&sort=date&limit=5`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${config.authToken}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    console.warn(`[sentry] issues search failed (${response.status})`);
+    return [];
+  }
+
+  return (await response.json()) as SentryIssueResponse[];
+}
+
+async function getLatestEvent(
+  config: SentryConfig,
+  issueId: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const url = `${SENTRY_BASE}/issues/${issueId}/events/latest/`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: `Bearer ${config.authToken}` },
+    signal,
+  });
+
+  if (!response.ok) return null;
+
+  const event = (await response.json()) as SentryEventResponse;
+
+  // Extract stacktrace from exception entries
+  const exceptionEntry = event.entries?.find((e) => e.type === "exception");
+  if (!exceptionEntry?.data?.values) return null;
+
+  const frames = exceptionEntry.data.values
+    .flatMap((v) => v.stacktrace?.frames ?? [])
+    .filter((f) => f.filename && !f.filename.startsWith("node_modules"))
+    .slice(-5) // last 5 app frames
+    .map((f) => `  at ${f.function ?? "<anonymous>"} (${f.filename}:${f.lineNo ?? "?"}:${f.colNo ?? "?"})`)
+    .reverse()
+    .join("\n");
+
+  return frames || null;
+}
+
 /**
  * Fetch Sentry error context for thread messages.
- * MVP: returns empty array. Phase 2 will call the Sentry Web API.
+ * Searches for matching issues and retrieves stack traces.
  */
 export async function fetchSentryContext(
-  _config: SentryConfig,
-  _messageBodies: string[],
+  config: SentryConfig,
+  messageBodies: string[],
 ): Promise<SentryFinding[]> {
-  // TODO: Phase 2 — implement Sentry Web API integration
-  // The plumbing is fully wired — this function is called by fetchSentryErrorsActivity
-  // in apps/queue/src/activities/analyze-thread.activity.ts, which runs in parallel
-  // with Codex search during step 4 of the analyzeThreadWorkflow.
-  //
-  // To implement:
-  // 1. const signals = extractErrorSignals(messageBodies)  ← already works
-  // 2. For each signal, search Sentry:
-  //    GET https://sentry.io/api/0/projects/{config.orgSlug}/{config.projectSlug}/issues/
-  //    Headers: { Authorization: "Bearer ${config.authToken}" }
-  //    Query: ?query={signal}&sort=date&limit=5
-  // 3. For each matched issue, get latest event:
-  //    GET https://sentry.io/api/0/issues/{issueId}/events/latest/
-  // 4. Extract: error type, message, stack trace frames, occurrence count, first/last seen
-  // 5. Return as SentryFinding[]
-  //
-  // Results flow into the analysis LLM prompt (thread-analysis.prompt.ts)
-  // which already formats Sentry findings in its buildUserMessage().
-  //
-  // Config (orgSlug, projectSlug, authToken) comes from WorkspaceAgentConfig
-  // and is passed through the activity. No global env vars needed.
-  return [];
+  const signals = extractErrorSignals(messageBodies);
+  if (signals.length === 0) return [];
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    // Search using the first 3 signals (most specific first)
+    const searchQueries = signals.slice(0, 3);
+    const allIssues: SentryIssueResponse[] = [];
+    const seenIds = new Set<string>();
+
+    for (const query of searchQueries) {
+      const issues = await searchSentryIssues(config, query, controller.signal);
+      for (const issue of issues) {
+        if (!seenIds.has(issue.id)) {
+          seenIds.add(issue.id);
+          allIssues.push(issue);
+        }
+      }
+    }
+
+    // Limit to top 5 unique issues
+    const topIssues = allIssues.slice(0, 5);
+
+    // Fetch stack traces in parallel
+    const findings: SentryFinding[] = await Promise.all(
+      topIssues.map(async (issue) => {
+        const stackTrace = await getLatestEvent(config, issue.id, controller.signal).catch(() => null);
+        return {
+          issueId: issue.id,
+          title: issue.title,
+          culprit: issue.culprit || null,
+          count: parseInt(issue.count, 10) || 0,
+          firstSeen: issue.firstSeen,
+          lastSeen: issue.lastSeen,
+          level: issue.level,
+          stackTrace,
+        };
+      }),
+    );
+
+    return findings;
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      console.warn("[sentry] request timed out (10s)");
+    } else {
+      console.error("[sentry] fetch failed:", error);
+    }
+    return [];
+  } finally {
+    clearTimeout(timeout);
+  }
 }

@@ -35,12 +35,18 @@ model SupportThread {
   clarificationCount Int            @default(0)
   lastAnalysisId     String?        @unique
   lastAnalysis       ThreadAnalysis? @relation("latestAnalysis", fields: [lastAnalysisId], references: [id])
+
+  // Linear integration
+  linearIssueId  String? @unique
+  linearIssueUrl String?
+
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 
-  messages  ThreadMessage[]
-  drafts    ReplyDraft[]
-  analyses  ThreadAnalysis[]
+  messages      ThreadMessage[]
+  drafts        ReplyDraft[]
+  analyses      ThreadAnalysis[]
+  triageActions TriageAction[]
 
   @@unique([workspaceId, source, externalThreadId])
   @@index([workspaceId, status, updatedAt])
