@@ -9,6 +9,7 @@ import {
   LogOut,
   Code,
   Play,
+  Building2,
 } from "lucide-react";
 
 import {
@@ -30,7 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { logout } from "@/actions/auth";
 
 const navItems = [
@@ -56,6 +57,8 @@ interface AppSidebarProps {
 
 export function AppSidebar({ user }: AppSidebarProps) {
   const router = useRouter();
+  const pathname = usePathname();
+  const activeSlug = pathname.match(/^\/workspace\/([^/]+)/)?.[1] ?? null;
 
   async function handleLogout() {
     await logout();
@@ -105,19 +108,41 @@ export function AppSidebar({ user }: AppSidebarProps) {
         </SidebarGroup>
 
         {user?.workspaces && user.workspaces.length > 0 && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Codex</SidebarGroupLabel>
-            <SidebarMenu>
-              {user.workspaces.map((ws) => (
-                <SidebarMenuItem key={ws.id}>
-                  <SidebarMenuButton render={<Link href={`/workspace/${ws.slug}/codex`} />}>
-                    <Code />
-                    <span>{ws.name}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroup>
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel>Workspaces</SidebarGroupLabel>
+              <SidebarMenu>
+                {user.workspaces.map((ws) => {
+                  const isActive = activeSlug === ws.slug;
+                  return (
+                    <SidebarMenuItem key={ws.id}>
+                      <SidebarMenuButton
+                        isActive={isActive}
+                        render={<Link href={`/workspace/${ws.slug}/inbox`} />}
+                      >
+                        <Building2 />
+                        <span>{ws.name}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>Codex</SidebarGroupLabel>
+              <SidebarMenu>
+                {user.workspaces.map((ws) => (
+                  <SidebarMenuItem key={ws.id}>
+                    <SidebarMenuButton render={<Link href={`/workspace/${ws.slug}/codex`} />}>
+                      <Code />
+                      <span>{ws.name}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+          </>
         )}
 
         {user?.isSystemAdmin && (

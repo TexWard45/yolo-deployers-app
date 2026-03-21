@@ -1,13 +1,7 @@
-export const HIGH_CONFIDENCE_THRESHOLD = 0.85;
-export const LOW_CONFIDENCE_THRESHOLD = 0.6;
-
 export type MatchStrategy =
   | "external_thread_id"
   | "reply_chain"
   | "time_proximity"
-  | "fingerprint"
-  | "llm_inline"
-  | "llm_fallback"
   | "new_thread";
 
 export interface ThreadMatchCandidate {
@@ -37,42 +31,13 @@ export interface MatchDecision {
   confidence: number;
   strategy: MatchStrategy;
   issueFingerprint: string;
-  requiresReview: boolean;
 }
 
 const STOPWORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "are",
-  "as",
-  "at",
-  "be",
-  "by",
-  "for",
-  "from",
-  "have",
-  "hello",
-  "hey",
-  "hi",
-  "i",
-  "in",
-  "is",
-  "it",
-  "me",
-  "my",
-  "of",
-  "on",
-  "or",
-  "our",
-  "that",
-  "the",
-  "this",
-  "to",
-  "we",
-  "with",
-  "you",
-  "your",
+  "a", "an", "and", "are", "as", "at", "be", "by", "for", "from",
+  "have", "hello", "hey", "hi", "i", "in", "is", "it", "me", "my",
+  "of", "on", "or", "our", "that", "the", "this", "to", "we", "with",
+  "you", "your",
 ]);
 
 function tokenize(input: string): string[] {
@@ -82,10 +47,6 @@ function tokenize(input: string): string[] {
     .split(/\s+/)
     .map((token) => token.trim())
     .filter((token) => token.length >= 3 && !STOPWORDS.has(token));
-}
-
-export function normalizeText(input: string): string {
-  return tokenize(input).join(" ");
 }
 
 export function buildIssueFingerprint(input: string): string {
@@ -104,21 +65,6 @@ export function buildIssueFingerprint(input: string): string {
   return uniqueOrdered.join(" ");
 }
 
-export function jaccardSimilarity(a: string, b: string): number {
-  const setA = new Set(tokenize(a));
-  const setB = new Set(tokenize(b));
-
-  if (setA.size === 0 || setB.size === 0) return 0;
-
-  let intersection = 0;
-  for (const token of setA) {
-    if (setB.has(token)) intersection++;
-  }
-
-  const union = setA.size + setB.size - intersection;
-  return union === 0 ? 0 : intersection / union;
-}
-
 export function buildThreadSummary(previousSummary: string | null, incomingMessage: string): string {
   const cleanIncoming = incomingMessage.trim().replace(/\s+/g, " ");
   const boundedIncoming = cleanIncoming.slice(0, 180);
@@ -131,6 +77,11 @@ export function buildThreadSummary(previousSummary: string | null, incomingMessa
   return merged.length > 220 ? merged.slice(0, 220) : merged;
 }
 
+/**
+ * Deterministic thread matching — fast, no LLM.
+ * Strategies: external_thread_id → reply_chain → time_proximity → new_thread.
+ * Jaccard/LLM matching removed — handled by async review workflow instead.
+ */
 export function decideDeterministicThreadMatch(input: DeterministicMatchInput): MatchDecision {
   const issueFingerprint = buildIssueFingerprint(
     `${input.threadGroupingHint ?? ""} ${input.messageBody}`,
@@ -142,7 +93,6 @@ export function decideDeterministicThreadMatch(input: DeterministicMatchInput): 
       confidence: 0.99,
       strategy: "external_thread_id",
       issueFingerprint,
-      requiresReview: false,
     };
   }
 
@@ -152,7 +102,6 @@ export function decideDeterministicThreadMatch(input: DeterministicMatchInput): 
       confidence: 0.96,
       strategy: "reply_chain",
       issueFingerprint,
-      requiresReview: false,
     };
   }
 
@@ -177,55 +126,14 @@ export function decideDeterministicThreadMatch(input: DeterministicMatchInput): 
         confidence: 0.92,
         strategy: "time_proximity",
         issueFingerprint,
-        requiresReview: false,
       };
     }
   }
 
-  let bestCandidate: ThreadMatchCandidate | null = null;
-  let bestScore = 0;
-  for (const candidate of input.candidates) {
-    const sourceText = candidate.issueFingerprint ?? candidate.summary ?? "";
-    const score = jaccardSimilarity(issueFingerprint, sourceText);
-    if (score > bestScore) {
-      bestScore = score;
-      bestCandidate = candidate;
-    }
-  }
-
-  if (bestCandidate && bestScore >= LOW_CONFIDENCE_THRESHOLD) {
-    return {
-      threadId: bestCandidate.id,
-      confidence: bestScore,
-      strategy: "fingerprint",
-      issueFingerprint,
-      requiresReview: bestScore < HIGH_CONFIDENCE_THRESHOLD,
-    };
-  }
-
   return {
     threadId: null,
-    confidence: bestScore,
+    confidence: 0,
     strategy: "new_thread",
     issueFingerprint,
-    requiresReview: false,
   };
 }
-
-export function shouldEnqueueResolutionWorkflow(
-  decision: MatchDecision,
-  candidateCount: number,
-): boolean {
-  if (candidateCount <= 0) return false;
-
-  if (decision.strategy === "fingerprint") {
-    return decision.requiresReview;
-  }
-
-  if (decision.strategy === "new_thread") {
-    return true;
-  }
-
-  return false;
-}
-

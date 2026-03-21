@@ -1,6 +1,6 @@
 import { Client, Connection, WorkflowExecutionAlreadyStartedError } from "@temporalio/client";
 import { webEnv } from "@shared/env/web";
-import type { ResolveInboxThreadWorkflowInput } from "@shared/types";
+import type { ThreadReviewWorkflowInput } from "@shared/types";
 
 let _clientPromise: Promise<Client> | null = null;
 
@@ -17,16 +17,22 @@ async function getClient(): Promise<Client> {
   return _clientPromise;
 }
 
-export async function dispatchResolveInboxThreadWorkflow(
-  input: ResolveInboxThreadWorkflowInput,
+/**
+ * Dispatch the thread review workflow — one per thread.
+ * If a workflow is already running/waiting for this thread, skip.
+ * The existing workflow will review all messages when its timer expires
+ * (it fetches messages at review time, not at dispatch time).
+ */
+export async function dispatchThreadReviewWorkflow(
+  input: ThreadReviewWorkflowInput,
 ): Promise<void> {
   const client = await getClient();
 
   try {
-    await client.workflow.start("resolveInboxThreadWorkflow", {
+    await client.workflow.start("threadReviewWorkflow", {
       args: [input],
       taskQueue: webEnv.TEMPORAL_TASK_QUEUE,
-      workflowId: `inbox-thread-resolution-${input.workspaceId}-${input.messageId}`,
+      workflowId: `thread-review-${input.threadId}`,
     });
   } catch (error: unknown) {
     if (error instanceof WorkflowExecutionAlreadyStartedError) return;

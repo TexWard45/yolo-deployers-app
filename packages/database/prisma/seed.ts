@@ -56,33 +56,42 @@ async function main() {
     });
 
     // Create channel connections so ingestion works out of the box
-    const discordChannel = await prisma.channelConnection.upsert({
-      where: { id: `seed-discord-${workspace.id}` },
-      update: {},
+    const discordChannelId = `seed-discord-${cliUsername}`;
+    const inAppChannelId = `seed-inapp-${cliUsername}`;
+
+    await prisma.channelConnection.upsert({
+      where: { id: discordChannelId },
+      update: { workspaceId: workspace.id },
       create: {
-        id: `seed-discord-${workspace.id}`,
+        id: discordChannelId,
         workspaceId: workspace.id,
         type: "DISCORD",
-        name: "Default Discord",
+        name: `${cliUsername} Discord`,
         status: "active",
       },
     });
 
-    const inAppChannel = await prisma.channelConnection.upsert({
-      where: { id: `seed-inapp-${workspace.id}` },
-      update: {},
+    await prisma.channelConnection.upsert({
+      where: { id: inAppChannelId },
+      update: { workspaceId: workspace.id },
       create: {
-        id: `seed-inapp-${workspace.id}`,
+        id: inAppChannelId,
         workspaceId: workspace.id,
         type: "IN_APP",
-        name: "Default In-App",
+        name: `${cliUsername} In-App`,
         status: "active",
       },
     });
 
-    console.log(`User "${cliUsername}" ready (workspace: default)`);
-    console.log(`  Discord channel connection: ${discordChannel.id}`);
-    console.log(`  In-App channel connection:  ${inAppChannel.id}`);
+    console.log(`\nSeeded successfully!`);
+    console.log(`  Login:    ${cliUsername} / ${cliPassword}`);
+    console.log(`  Workspace: default`);
+    console.log(`  Discord channelConnectionId: ${discordChannelId}`);
+    console.log(`  In-App  channelConnectionId: ${inAppChannelId}`);
+    console.log(`\nIngest test:`);
+    console.log(`  curl -X POST http://localhost:3000/api/rest/intake/ingest-from-channel \\`);
+    console.log(`    -H "Content-Type: application/json" \\`);
+    console.log(`    -d '{"channelConnectionId":"${discordChannelId}","externalUserId":"cust-1","displayName":"Test User","body":"Hello, my app is crashing","externalMessageId":"msg-001"}'`);
     return;
   }
 

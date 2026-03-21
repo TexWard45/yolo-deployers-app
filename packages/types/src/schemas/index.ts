@@ -240,14 +240,11 @@ export const IngestSupportMessageInputSchema = z.object({
 
 export type IngestSupportMessageInput = z.infer<typeof IngestSupportMessageInputSchema>;
 
-// ── Thread Match Decision (deterministic + LLM fallback contract) ─
+// ── Thread Match Decision ─────────────────────────────────────────
 export const ThreadMatchStrategySchema = z.enum([
   "external_thread_id",
   "reply_chain",
   "time_proximity",
-  "fingerprint",
-  "llm_inline",
-  "llm_fallback",
   "new_thread",
 ]);
 
@@ -258,11 +255,44 @@ export const ThreadMatchDecisionSchema = z.object({
   confidence: z.number().min(0).max(1),
   strategy: ThreadMatchStrategySchema,
   issueFingerprint: z.string(),
-  requiresReview: z.boolean(),
 });
 
 export type ThreadMatchDecision = z.infer<typeof ThreadMatchDecisionSchema>;
 
+// ── Thread Review Workflow (group first, eject later) ─────────────
+export const ThreadReviewWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  source: CustomerSourceSchema,
+  threadId: z.string(),
+});
+
+export type ThreadReviewWorkflowInput = z.infer<typeof ThreadReviewWorkflowInputSchema>;
+
+export const ThreadReviewEjectionSchema = z.object({
+  messageId: z.string(),
+  reason: z.string(),
+  targetThreadId: z.string().nullable(),
+});
+
+export type ThreadReviewEjection = z.infer<typeof ThreadReviewEjectionSchema>;
+
+export const ThreadReviewResultSchema = z.object({
+  verdict: z.enum(["keep_all", "eject"]),
+  ejections: z.array(ThreadReviewEjectionSchema),
+});
+
+export type ThreadReviewResult = z.infer<typeof ThreadReviewResultSchema>;
+
+export const ThreadReviewWorkflowResultSchema = z.object({
+  reviewed: z.boolean(),
+  verdict: z.enum(["keep_all", "eject", "skipped"]),
+  ejectionsApplied: z.number(),
+  reason: z.string(),
+});
+
+export type ThreadReviewWorkflowResult = z.infer<typeof ThreadReviewWorkflowResultSchema>;
+
+// ── Legacy types kept for existing activity imports ───────────────
 export const LlmThreadMatchInputSchema = z.object({
   incomingMessage: z.string().min(1),
   threadGroupingHint: z.string().optional(),
@@ -285,7 +315,6 @@ export const LlmThreadMatchResultSchema = z.object({
 
 export type LlmThreadMatchResult = z.infer<typeof LlmThreadMatchResultSchema>;
 
-// ── Inbox Thread Resolution Workflow ──────────────────────────────
 export const ResolveInboxThreadWorkflowInputSchema = z.object({
   workspaceId: z.string(),
   source: CustomerSourceSchema,

@@ -1,79 +1,81 @@
-import { proxyActivities } from "@temporalio/workflow";
+import { proxyActivities, sleep } from "@temporalio/workflow";
 import type {
-  ResolveInboxThreadWorkflowInput,
-  ResolveInboxThreadWorkflowResult,
+  ThreadReviewWorkflowInput,
+  ThreadReviewWorkflowResult,
 } from "@shared/types";
 import type * as activities from "../activities/index.js";
 
 const {
-  llmThreadMatchActivity,
-  getInboxThreadResolutionCandidates,
-  applyInboxThreadResolution,
+  getThreadReviewData,
+  llmReviewThreadActivity,
+  applyThreadEjections,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: "30 seconds",
   retry: { maximumAttempts: 3 },
 });
 
-const AUTO_APPLY_THRESHOLD = 0.85;
+const QUIET_PERIOD_SECONDS = 120; // 2 minutes debounce
 
-export async function resolveInboxThreadWorkflow(
-  input: ResolveInboxThreadWorkflowInput,
-): Promise<ResolveInboxThreadWorkflowResult> {
-  const candidates = await getInboxThreadResolutionCandidates(input);
+/**
+ * Thread review workflow — "group first, eject later" pattern.
+ *
+ * 1. Wait for quiet period (debounce — if new message arrives, this workflow
+ *    gets terminated and a new one starts, resetting the timer).
+ * 2. Fetch the thread's messages + candidate threads.
+ * 3. Call LLM to review the batch.
+ * 4. Eject messages that don't belong.
+ */
+export async function threadReviewWorkflow(
+  input: ThreadReviewWorkflowInput,
+): Promise<ThreadReviewWorkflowResult> {
+  // 1. Wait for quiet period (debounce)
+  await sleep(`${QUIET_PERIOD_SECONDS} seconds`);
 
-  if (candidates.length === 0) {
+  // 2. Fetch review data
+  const reviewData = await getThreadReviewData(input);
+
+  if (!reviewData) {
     return {
-      applied: false,
-      matchedThreadId: null,
-      confidence: null,
-      reason: "no_candidates",
+      reviewed: false,
+      verdict: "skipped",
+      ejectionsApplied: 0,
+      reason: "thread_not_found_or_single_message",
     };
   }
 
-  const llmResult = await llmThreadMatchActivity({
-    incomingMessage: input.messageBody,
-    threadGroupingHint: input.issueFingerprint,
-    candidates,
-  });
+  // 3. Call LLM review
+  const llmResult = await llmReviewThreadActivity(reviewData);
 
-  if (!llmResult?.matchedThreadId) {
+  if (!llmResult) {
     return {
-      applied: false,
-      matchedThreadId: null,
-      confidence: llmResult?.confidence ?? null,
-      reason: llmResult?.reason ?? "no_match",
+      reviewed: false,
+      verdict: "skipped",
+      ejectionsApplied: 0,
+      reason: "llm_failed",
     };
   }
 
-  if (llmResult.matchedThreadId === input.threadId) {
+  // 4. Apply ejections if needed
+  if (llmResult.verdict === "keep_all" || llmResult.ejections.length === 0) {
     return {
-      applied: false,
-      matchedThreadId: input.threadId,
-      confidence: llmResult.confidence,
-      reason: "already_on_same_thread",
+      reviewed: true,
+      verdict: "keep_all",
+      ejectionsApplied: 0,
+      reason: "all_messages_belong_together",
     };
   }
 
-  if (llmResult.confidence < AUTO_APPLY_THRESHOLD) {
-    return {
-      applied: false,
-      matchedThreadId: llmResult.matchedThreadId,
-      confidence: llmResult.confidence,
-      reason: "confidence_below_threshold",
-    };
-  }
-
-  const applied = await applyInboxThreadResolution({
+  const applied = await applyThreadEjections({
     workspaceId: input.workspaceId,
-    messageId: input.messageId,
+    source: input.source,
     fromThreadId: input.threadId,
-    toThreadId: llmResult.matchedThreadId,
+    ejections: llmResult.ejections,
   });
 
   return {
-    applied,
-    matchedThreadId: llmResult.matchedThreadId,
-    confidence: llmResult.confidence,
-    reason: applied ? "applied" : "apply_failed",
+    reviewed: true,
+    verdict: "eject",
+    ejectionsApplied: applied,
+    reason: `ejected ${applied} message(s)`,
   };
 }

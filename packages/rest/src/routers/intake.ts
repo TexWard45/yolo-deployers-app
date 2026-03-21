@@ -13,14 +13,11 @@ import { createTRPCRouter, publicProcedure, protectedProcedure } from "../init";
 import {
   buildThreadSummary,
   decideDeterministicThreadMatch,
-  shouldEnqueueResolutionWorkflow,
   type ThreadMatchCandidate,
 } from "./helpers/thread-matching";
-import { llmThreadMatch } from "./helpers/thread-match.prompt";
-import { dispatchResolveInboxThreadWorkflow } from "../temporal";
+import { dispatchThreadReviewWorkflow } from "../temporal";
 
 const DEFAULT_RECENCY_WINDOW_MINUTES = 10;
-const LLM_INLINE_CONFIDENCE_THRESHOLD = 0.85;
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -42,8 +39,13 @@ async function assertWorkspaceMember(params: {
 }
 
 /**
- * Core ingestion logic shared by both authenticated (ingestExternalMessage)
- * and service-to-service (ingestFromChannel) procedures.
+ * Core ingestion logic — group first, review later.
+ *
+ * Deterministic matching only (no LLM at ingestion time):
+ *   external_thread_id → reply_chain → time_proximity → new_thread
+ *
+ * After ingestion, dispatches an async review workflow (debounced by threadId)
+ * that reviews the thread's messages as a batch and ejects outliers.
  */
 async function performIngestion(
   prisma: PrismaClient,
@@ -96,10 +98,10 @@ async function performIngestion(
         thread: existingMessage.thread,
         message: existingMessage,
         matching: {
-          enqueueAsyncResolution: false,
-          confidence: 1,
           strategy: "external_thread_id" as const,
+          confidence: 1,
           issueFingerprint: existingMessage.messageFingerprint ?? "",
+          needsReview: false,
         },
       };
     }
@@ -116,6 +118,7 @@ async function performIngestion(
             },
             select: {
               id: true,
+              customerId: true,
               externalThreadId: true,
               issueFingerprint: true,
               summary: true,
@@ -146,7 +149,7 @@ async function performIngestion(
           })
         : null;
 
-    // Workspace-wide candidates (not per-customer) so cross-user same-issue matching works
+    // Workspace-wide candidates for time-proximity matching
     const candidateThreads = await tx.supportThread.findMany({
       where: {
         workspaceId: input.workspaceId,
@@ -174,7 +177,7 @@ async function performIngestion(
     const recencyWindowMs =
       (agentConfig?.threadRecencyWindowMinutes ?? DEFAULT_RECENCY_WINDOW_MINUTES) * 60 * 1000;
 
-    const deterministicDecision = decideDeterministicThreadMatch({
+    const decision = decideDeterministicThreadMatch({
       externalThreadId: input.externalThreadId,
       inReplyToExternalMessageId: input.inReplyToExternalMessageId,
       threadGroupingHint: input.threadGroupingHint,
@@ -186,58 +189,19 @@ async function performIngestion(
       candidates: candidateThreads as ThreadMatchCandidate[],
     });
 
-    let resolvedThreadId = deterministicDecision.threadId;
-    let resolvedConfidence = deterministicDecision.confidence;
-    let resolvedStrategy = deterministicDecision.strategy;
-    const resolvedFingerprint = deterministicDecision.issueFingerprint;
-
-    // Inline LLM: when deterministic match fails but candidates exist, try GPT-4.1 before creating a new thread
-    if (!resolvedThreadId && candidateThreads.length > 0) {
-      const apiKey = process.env["LLM_API_KEY"];
-      if (apiKey) {
-        const llmResult = await llmThreadMatch(
-          {
-            incomingMessage: messageBody,
-            threadGroupingHint: input.threadGroupingHint ?? resolvedFingerprint,
-            candidates: candidateThreads.map((c) => ({
-              id: c.id,
-              issueFingerprint: c.issueFingerprint,
-              summary: c.summary,
-            })),
-          },
-          { apiKey, model: "gpt-4.1", timeoutMs: 5000 },
-        );
-
-        if (
-          llmResult?.matchedThreadId &&
-          llmResult.confidence >= LLM_INLINE_CONFIDENCE_THRESHOLD &&
-          candidateThreads.some((c) => c.id === llmResult.matchedThreadId)
-        ) {
-          resolvedThreadId = llmResult.matchedThreadId;
-          resolvedConfidence = llmResult.confidence;
-          resolvedStrategy = "llm_inline";
-        }
-      }
-    }
-
-    const enqueueAsyncResolution = shouldEnqueueResolutionWorkflow(
-      deterministicDecision,
-      candidateThreads.length,
-    ) && resolvedStrategy !== "llm_inline";
-
     const threadTitle = input.title ?? messageBody.slice(0, 80);
     const resolvedExternalThreadId =
       input.externalThreadId ??
       `synthetic-${input.source.toLowerCase()}-${randomUUID()}`;
 
     const thread =
-      resolvedThreadId
+      decision.threadId
         ? await tx.supportThread.findUnique({
-            where: { id: resolvedThreadId },
+            where: { id: decision.threadId },
           })
         : null;
 
-    if (!thread && resolvedThreadId) {
+    if (!thread && decision.threadId) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Matched thread no longer exists" });
     }
 
@@ -253,7 +217,7 @@ async function performIngestion(
           status: "WAITING_REVIEW",
           lastMessageAt: now,
           lastInboundAt: now,
-          issueFingerprint: resolvedFingerprint,
+          issueFingerprint: decision.issueFingerprint,
           summary: buildThreadSummary(null, messageBody),
           summaryUpdatedAt: now,
         },
@@ -262,11 +226,9 @@ async function performIngestion(
     const metadata: Record<string, unknown> = {
       ...(input.metadata ?? {}),
       matching: {
-        strategy: resolvedStrategy,
-        confidence: Number(resolvedConfidence.toFixed(3)),
-        requiresReview: deterministicDecision.requiresReview,
-        issueFingerprint: resolvedFingerprint,
-        enqueueAsyncResolution,
+        strategy: decision.strategy,
+        confidence: Number(decision.confidence.toFixed(3)),
+        issueFingerprint: decision.issueFingerprint,
       },
     };
 
@@ -277,7 +239,7 @@ async function performIngestion(
         body: messageBody,
         externalMessageId: input.externalMessageId,
         inReplyToExternalMessageId: input.inReplyToExternalMessageId,
-        messageFingerprint: resolvedFingerprint,
+        messageFingerprint: decision.issueFingerprint,
         senderExternalId: input.externalCustomerId,
         metadata: metadata as Prisma.InputJsonValue,
       },
@@ -289,7 +251,7 @@ async function performIngestion(
         customerId: customer.id,
         title: threadRecord.title ?? threadTitle,
         status: "WAITING_REVIEW",
-        issueFingerprint: resolvedFingerprint,
+        issueFingerprint: decision.issueFingerprint,
         lastMessageAt: message.createdAt,
         lastInboundAt: message.createdAt,
         summary: buildThreadSummary(threadRecord.summary, messageBody),
@@ -297,30 +259,30 @@ async function performIngestion(
       },
     });
 
+    // Dispatch review for time_proximity (may have grouped wrong topic) and new_thread (may match existing)
+    const needsReview =
+      decision.strategy === "time_proximity" || decision.strategy === "new_thread";
+
     return {
       customer,
       thread: updatedThread,
       message,
       matching: {
-        enqueueAsyncResolution,
-        confidence: resolvedConfidence,
-        strategy: resolvedStrategy,
-        issueFingerprint: resolvedFingerprint,
+        strategy: decision.strategy,
+        confidence: decision.confidence,
+        issueFingerprint: decision.issueFingerprint,
+        needsReview,
       },
     };
   });
 
-  if (result.matching.enqueueAsyncResolution) {
-    void dispatchResolveInboxThreadWorkflow({
+  if (result.matching.needsReview) {
+    void dispatchThreadReviewWorkflow({
       workspaceId: input.workspaceId,
       source: input.source,
-      customerId: result.customer.id,
       threadId: result.thread.id,
-      messageId: result.message.id,
-      messageBody: result.message.body,
-      issueFingerprint: result.matching.issueFingerprint,
     }).catch((error: unknown) => {
-      console.error("[intake] Failed to dispatch resolveInboxThreadWorkflow", error);
+      console.error("[intake] Failed to dispatch thread review workflow", error);
     });
   }
 
@@ -412,10 +374,6 @@ export const intakeRouter = createTRPCRouter({
       return performIngestion(ctx.prisma, input);
     }),
 
-  /**
-   * Public ingestion endpoint for service-to-service calls (e.g. Discord bot).
-   * Auth is via the channel connection ID — no user session required.
-   */
   ingestFromChannel: publicProcedure
     .input(IngestSupportMessageInputSchema)
     .mutation(async ({ ctx, input }) => {

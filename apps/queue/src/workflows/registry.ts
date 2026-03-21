@@ -1,5 +1,5 @@
 export const workflowRegistry = {
   templateGreeting: "templateGreetingWorkflow",
-  resolveInboxThread: "resolveInboxThreadWorkflow",
+  threadReview: "threadReviewWorkflow",
   sessionEnrichment: "sessionEnrichmentWorkflow",
 } as const;

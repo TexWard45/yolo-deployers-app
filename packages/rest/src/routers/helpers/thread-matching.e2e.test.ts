@@ -69,8 +69,6 @@ class InMemoryMatcherHarness {
     customerId: string,
   ): string {
     const id = `thread-${this.nextThreadId++}`;
-    // Set lastInboundAt 15 min in the past so time-proximity doesn't interfere
-    // with topic-based matching tests
     this.threads.push({
       id,
       customerId,
@@ -78,37 +76,36 @@ class InMemoryMatcherHarness {
       issueFingerprint,
       summary,
       lastMessageAt: new Date(),
-      lastInboundAt: new Date(Date.now() - 15 * 60 * 1000),
+      lastInboundAt: new Date(), // within recency window — time-proximity will group
     });
     return id;
   }
 }
 
-test("e2e matching flow links related messages and splits unrelated issue", () => {
+test("e2e: rapid-fire messages from same customer all group into one thread", () => {
   const harness = new InMemoryMatcherHarness();
 
-  const thread1 = harness.ingest({
-    body: "we are seeing webhook delivery failures in production",
-    externalMessageId: "m1",
-  });
+  const t1 = harness.ingest({ body: "lu your code is trash", externalMessageId: "m1" });
+  const t2 = harness.ingest({ body: "need fix asap", externalMessageId: "m2" });
+  const t3 = harness.ingest({ body: "who wrote this trash code on settings", externalMessageId: "m3" });
+  const t4 = harness.ingest({ body: "i need to fix this", externalMessageId: "m4" });
 
-  const thread2 = harness.ingest({
-    body: "still seeing webhook delivery failures in production with retries",
-    externalMessageId: "m2",
-  });
+  // All should land on thread-1 via time-proximity (same customer, within window)
+  assert.equal(t1, "thread-1");
+  assert.equal(t2, t1);
+  assert.equal(t3, t1);
+  assert.equal(t4, t1);
+});
 
-  const thread3 = harness.ingest({
+test("e2e: reply chain overrides time-proximity", () => {
+  const harness = new InMemoryMatcherHarness();
+
+  const t1 = harness.ingest({ body: "webhook failures", externalMessageId: "m1" });
+  const t2 = harness.ingest({
     body: "can you share a request id",
-    externalMessageId: "m3",
-    inReplyToExternalMessageId: "m2",
+    externalMessageId: "m2",
+    inReplyToExternalMessageId: "m1",
   });
 
-  const thread4 = harness.ingest({
-    body: "separate issue: billing invoice double charge",
-    externalMessageId: "m4",
-  });
-
-  assert.equal(thread2, thread1);
-  assert.equal(thread3, thread1);
-  assert.notEqual(thread4, thread1);
+  assert.equal(t2, t1);
 });
