@@ -170,12 +170,15 @@ export async function runFixerAgent(params: {
   codexFindings?: unknown | null;
 }): Promise<FixPrFixerOutput> {
   let fileContents = await loadFileContents(params.codeContext.editScope);
+  console.log(`[fix-pr] Local files found: ${fileContents.length}/${params.codeContext.editScope.length}`);
 
   // Fallback: if local files not found, use chunk content from Codex search results
   if (fileContents.length === 0 && params.codexFindings) {
     const findings = params.codexFindings as {
       chunks?: Array<{ filePath?: string; content?: string; symbolName?: string }>;
     };
+    const chunkCount = findings.chunks?.length ?? 0;
+    console.log(`[fix-pr] Falling back to Codex chunks: ${chunkCount} chunks available`);
     if (findings.chunks && findings.chunks.length > 0) {
       const byFile = new Map<string, string[]>();
       for (const chunk of findings.chunks) {
@@ -189,7 +192,18 @@ export async function runFixerAgent(params: {
         filePath,
         content: contents.join("\n\n// ...\n\n"),
       }));
+      console.log(`[fix-pr] Loaded ${fileContents.length} files from Codex chunks`);
     }
+  }
+
+  // Last resort: if still no file contents, tell the LLM to generate a new file
+  if (fileContents.length === 0) {
+    console.log("[fix-pr] No file contents at all — adding placeholder for LLM to create");
+    const targetFile = params.codeContext.editScope[0] ?? "src/fix.ts";
+    fileContents = [{
+      filePath: targetFile,
+      content: "// File not found — generate the fix as a new file or patch",
+    }];
   }
 
   return generateCodexFix(
