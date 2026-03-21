@@ -2,8 +2,6 @@
 
 import {
   LayoutDashboard,
-  Users,
-  FileText,
   Inbox,
   Settings,
   Shield,
@@ -38,8 +36,6 @@ import { logout } from "@/actions/auth";
 const navItems = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
   { title: "Inbox", href: "/inbox", icon: Inbox },
-  { title: "Users", href: "/users", icon: Users },
-  { title: "Posts", href: "/posts", icon: FileText },
   { title: "Replays", href: "/admin/replays", icon: Play },
   { title: "Settings", href: "/settings", icon: Settings },
 ];

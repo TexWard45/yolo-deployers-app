@@ -244,7 +244,9 @@ export type IngestSupportMessageInput = z.infer<typeof IngestSupportMessageInput
 export const ThreadMatchStrategySchema = z.enum([
   "external_thread_id",
   "reply_chain",
+  "time_proximity",
   "fingerprint",
+  "llm_inline",
   "llm_fallback",
   "new_thread",
 ]);

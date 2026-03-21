@@ -9,6 +9,9 @@ interface SimulatedMessage {
   threadId: string;
 }
 
+const DEFAULT_CUSTOMER_ID = "cust-1";
+const DEFAULT_RECENCY_MS = 10 * 60 * 1000;
+
 class InMemoryMatcherHarness {
   private threads: ThreadMatchCandidate[] = [];
   private messages: SimulatedMessage[] = [];
@@ -19,7 +22,10 @@ class InMemoryMatcherHarness {
     externalThreadId?: string;
     externalMessageId: string;
     inReplyToExternalMessageId?: string;
+    customerId?: string;
   }): string {
+    const customerId = input.customerId ?? DEFAULT_CUSTOMER_ID;
+
     const existingThreadByExternalId =
       input.externalThreadId
         ? this.threads.find((thread) => thread.externalThreadId === input.externalThreadId) ?? null
@@ -36,6 +42,8 @@ class InMemoryMatcherHarness {
       inReplyToExternalMessageId: input.inReplyToExternalMessageId ?? null,
       threadGroupingHint: null,
       messageBody: input.body,
+      customerId,
+      recencyWindowMs: DEFAULT_RECENCY_MS,
       existingThreadByExternalId,
       threadIdByReplyChain: replyChainThreadId,
       candidates: this.threads,
@@ -43,7 +51,7 @@ class InMemoryMatcherHarness {
 
     const threadId =
       decision.threadId ??
-      this.createThread(input.externalThreadId, decision.issueFingerprint, input.body);
+      this.createThread(input.externalThreadId, decision.issueFingerprint, input.body, customerId);
     this.messages.push({
       externalMessageId: input.externalMessageId,
       inReplyToExternalMessageId: input.inReplyToExternalMessageId,
@@ -58,15 +66,19 @@ class InMemoryMatcherHarness {
     externalThreadId: string | undefined,
     issueFingerprint: string,
     summary: string,
+    customerId: string,
   ): string {
     const id = `thread-${this.nextThreadId++}`;
+    // Set lastInboundAt 15 min in the past so time-proximity doesn't interfere
+    // with topic-based matching tests
     this.threads.push({
       id,
+      customerId,
       externalThreadId: externalThreadId ?? `synthetic-${id}`,
       issueFingerprint,
       summary,
       lastMessageAt: new Date(),
-      lastInboundAt: new Date(),
+      lastInboundAt: new Date(Date.now() - 15 * 60 * 1000),
     });
     return id;
   }

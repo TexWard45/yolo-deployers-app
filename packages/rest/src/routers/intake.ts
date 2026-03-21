@@ -16,7 +16,11 @@ import {
   shouldEnqueueResolutionWorkflow,
   type ThreadMatchCandidate,
 } from "./helpers/thread-matching";
+import { llmThreadMatch } from "./helpers/thread-match.prompt";
 import { dispatchResolveInboxThreadWorkflow } from "../temporal";
+
+const DEFAULT_RECENCY_WINDOW_MINUTES = 10;
+const LLM_INLINE_CONFIDENCE_THRESHOLD = 0.85;
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -142,17 +146,18 @@ async function performIngestion(
           })
         : null;
 
+    // Workspace-wide candidates (not per-customer) so cross-user same-issue matching works
     const candidateThreads = await tx.supportThread.findMany({
       where: {
         workspaceId: input.workspaceId,
-        customerId: customer.id,
         source: input.source,
         status: { not: "CLOSED" },
       },
       orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
-      take: 10,
+      take: 20,
       select: {
         id: true,
+        customerId: true,
         externalThreadId: true,
         issueFingerprint: true,
         summary: true,
@@ -161,24 +166,64 @@ async function performIngestion(
       },
     });
 
+    // Fetch workspace recency window config
+    const agentConfig = await tx.workspaceAgentConfig.findUnique({
+      where: { workspaceId: input.workspaceId },
+      select: { threadRecencyWindowMinutes: true },
+    });
+    const recencyWindowMs =
+      (agentConfig?.threadRecencyWindowMinutes ?? DEFAULT_RECENCY_WINDOW_MINUTES) * 60 * 1000;
+
     const deterministicDecision = decideDeterministicThreadMatch({
       externalThreadId: input.externalThreadId,
       inReplyToExternalMessageId: input.inReplyToExternalMessageId,
       threadGroupingHint: input.threadGroupingHint,
       messageBody,
+      customerId: customer.id,
+      recencyWindowMs,
       existingThreadByExternalId: existingThreadByExternalId as ThreadMatchCandidate | null,
       threadIdByReplyChain: replyChainThread?.thread.id ?? null,
       candidates: candidateThreads as ThreadMatchCandidate[],
     });
 
-    const resolvedThreadId = deterministicDecision.threadId;
-    const resolvedConfidence = deterministicDecision.confidence;
-    const resolvedStrategy = deterministicDecision.strategy;
+    let resolvedThreadId = deterministicDecision.threadId;
+    let resolvedConfidence = deterministicDecision.confidence;
+    let resolvedStrategy = deterministicDecision.strategy;
     const resolvedFingerprint = deterministicDecision.issueFingerprint;
+
+    // Inline LLM: when deterministic match fails but candidates exist, try GPT-4.1 before creating a new thread
+    if (!resolvedThreadId && candidateThreads.length > 0) {
+      const apiKey = process.env["LLM_API_KEY"];
+      if (apiKey) {
+        const llmResult = await llmThreadMatch(
+          {
+            incomingMessage: messageBody,
+            threadGroupingHint: input.threadGroupingHint ?? resolvedFingerprint,
+            candidates: candidateThreads.map((c) => ({
+              id: c.id,
+              issueFingerprint: c.issueFingerprint,
+              summary: c.summary,
+            })),
+          },
+          { apiKey, model: "gpt-4.1", timeoutMs: 5000 },
+        );
+
+        if (
+          llmResult?.matchedThreadId &&
+          llmResult.confidence >= LLM_INLINE_CONFIDENCE_THRESHOLD &&
+          candidateThreads.some((c) => c.id === llmResult.matchedThreadId)
+        ) {
+          resolvedThreadId = llmResult.matchedThreadId;
+          resolvedConfidence = llmResult.confidence;
+          resolvedStrategy = "llm_inline";
+        }
+      }
+    }
+
     const enqueueAsyncResolution = shouldEnqueueResolutionWorkflow(
       deterministicDecision,
       candidateThreads.length,
-    );
+    ) && resolvedStrategy !== "llm_inline";
 
     const threadTitle = input.title ?? messageBody.slice(0, 80);
     const resolvedExternalThreadId =

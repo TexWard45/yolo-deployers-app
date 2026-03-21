@@ -1,49 +1,128 @@
 import { PrismaClient } from "@shared/types/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { randomBytes, scrypt } from "node:crypto";
 import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Try root .env first, then apps/web/.env as fallback
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
+if (!process.env.DATABASE_URL) {
+  dotenv.config({ path: path.resolve(__dirname, "../../../apps/web/.env") });
+}
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
+function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, 64, (err, derived) => {
+      if (err) reject(err);
+      resolve(`${salt}:${derived.toString("hex")}`);
+    });
+  });
+}
+
 async function main() {
+  const [, , cliUsername, cliPassword] = process.argv;
+
+  // Quick-seed a single user: npx tsx prisma/seed.ts <username> <password>
+  if (cliUsername && cliPassword) {
+    const hashed = await hashPassword(cliPassword);
+    const user = await prisma.user.upsert({
+      where: { username: cliUsername },
+      update: { password: hashed },
+      create: {
+        username: cliUsername,
+        email: `${cliUsername}@seed.local`,
+        password: hashed,
+        name: cliUsername,
+        isSystemAdmin: true,
+      },
+    });
+
+    const workspace = await prisma.workspace.upsert({
+      where: { slug: "default" },
+      update: {},
+      create: { name: "Default", slug: "default" },
+    });
+
+    await prisma.workspaceMember.upsert({
+      where: { userId_workspaceId: { userId: user.id, workspaceId: workspace.id } },
+      update: {},
+      create: { userId: user.id, workspaceId: workspace.id, role: "OWNER" },
+    });
+
+    // Create channel connections so ingestion works out of the box
+    const discordChannel = await prisma.channelConnection.upsert({
+      where: { id: `seed-discord-${workspace.id}` },
+      update: {},
+      create: {
+        id: `seed-discord-${workspace.id}`,
+        workspaceId: workspace.id,
+        type: "DISCORD",
+        name: "Default Discord",
+        status: "active",
+      },
+    });
+
+    const inAppChannel = await prisma.channelConnection.upsert({
+      where: { id: `seed-inapp-${workspace.id}` },
+      update: {},
+      create: {
+        id: `seed-inapp-${workspace.id}`,
+        workspaceId: workspace.id,
+        type: "IN_APP",
+        name: "Default In-App",
+        status: "active",
+      },
+    });
+
+    console.log(`User "${cliUsername}" ready (workspace: default)`);
+    console.log(`  Discord channel connection: ${discordChannel.id}`);
+    console.log(`  In-App channel connection:  ${inAppChannel.id}`);
+    return;
+  }
+
   console.log("Seeding database...");
+
+  const defaultPassword = await hashPassword("password123");
 
   // ── Users ─────────────────────────────────────────────────────────
   const alice = await prisma.user.upsert({
     where: { username: "alice" },
-    update: {},
+    update: { password: defaultPassword },
     create: {
       username: "alice",
       email: "alice@demo.local",
-      password: "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewCjT3J5s5z5Q8Gy", // "password123"
+      password: defaultPassword,
       name: "Alice Demo",
       isSystemAdmin: true,
     },
   });
 
+  const bobPassword = await hashPassword("password123");
   const bob = await prisma.user.upsert({
     where: { username: "bob" },
-    update: {},
+    update: { password: bobPassword },
     create: {
       username: "bob",
       email: "bob@demo.local",
-      password: "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewCjT3J5s5z5Q8Gy", // "password123"
+      password: bobPassword,
       name: "Bob Demo",
     },
   });
 
+  const carolPassword = await hashPassword("password123");
   const carol = await prisma.user.upsert({
     where: { username: "carol" },
-    update: {},
+    update: { password: carolPassword },
     create: {
       username: "carol",
       email: "carol@demo.local",
-      password: "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewCjT3J5s5z5Q8Gy", // "password123"
+      password: carolPassword,
       name: "Carol Demo",
     },
   });
@@ -83,6 +162,43 @@ async function main() {
   });
 
   console.log("✓ Workspaces:", acme.slug, devtools.slug);
+
+  // ── Channel Connections ─────────────────────────────────────────
+  await prisma.channelConnection.upsert({
+    where: { id: `seed-discord-${acme.id}` },
+    update: {},
+    create: {
+      id: `seed-discord-${acme.id}`,
+      workspaceId: acme.id,
+      type: "DISCORD",
+      name: "Acme Discord",
+      status: "active",
+    },
+  });
+  await prisma.channelConnection.upsert({
+    where: { id: `seed-inapp-${acme.id}` },
+    update: {},
+    create: {
+      id: `seed-inapp-${acme.id}`,
+      workspaceId: acme.id,
+      type: "IN_APP",
+      name: "Acme In-App",
+      status: "active",
+    },
+  });
+  await prisma.channelConnection.upsert({
+    where: { id: `seed-discord-${devtools.id}` },
+    update: {},
+    create: {
+      id: `seed-discord-${devtools.id}`,
+      workspaceId: devtools.id,
+      type: "DISCORD",
+      name: "DevTools Discord",
+      status: "active",
+    },
+  });
+
+  console.log("✓ Channel connections created");
 
   // ── Posts ─────────────────────────────────────────────────────────
   await prisma.post.createMany({

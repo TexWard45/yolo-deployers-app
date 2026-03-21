@@ -6,6 +6,8 @@ import {
   DiscordAppIdSchema,
   DiscordWebhookSecretSchema,
   InAppChatSigningSecretSchema,
+  LlmApiKeySchema,
+  LlmModelDefaultSchema,
   SupportSecretEncryptionKeySchema,
   TemporalAddressSchema,
   TemporalNamespaceSchema,
@@ -20,6 +22,8 @@ export const webEnv = createEnv({
     DISCORD_WEBHOOK_SECRET: DiscordWebhookSecretSchema.optional(),
     IN_APP_CHAT_SIGNING_SECRET: InAppChatSigningSecretSchema.optional(),
     SUPPORT_SECRET_ENCRYPTION_KEY: SupportSecretEncryptionKeySchema.optional(),
+    LLM_API_KEY: LlmApiKeySchema.optional(),
+    LLM_MODEL_DEFAULT: LlmModelDefaultSchema,
     // Only consumed server-side (e.g. SSR/API routes)
     DATABASE_URL: z.string().url().optional(),
     TEMPORAL_ADDRESS: TemporalAddressSchema,

@@ -1,17 +1,18 @@
-import type { LlmThreadMatchInput, LlmThreadMatchResult } from "@shared/types";
-
 export const HIGH_CONFIDENCE_THRESHOLD = 0.85;
 export const LOW_CONFIDENCE_THRESHOLD = 0.6;
 
 export type MatchStrategy =
   | "external_thread_id"
   | "reply_chain"
+  | "time_proximity"
   | "fingerprint"
+  | "llm_inline"
   | "llm_fallback"
   | "new_thread";
 
 export interface ThreadMatchCandidate {
   id: string;
+  customerId: string;
   externalThreadId: string;
   issueFingerprint: string | null;
   summary: string | null;
@@ -24,6 +25,8 @@ export interface DeterministicMatchInput {
   inReplyToExternalMessageId?: string | null;
   threadGroupingHint?: string | null;
   messageBody: string;
+  customerId: string;
+  recencyWindowMs: number;
   existingThreadByExternalId: ThreadMatchCandidate | null;
   threadIdByReplyChain: string | null;
   candidates: ThreadMatchCandidate[];
@@ -153,6 +156,32 @@ export function decideDeterministicThreadMatch(input: DeterministicMatchInput): 
     };
   }
 
+  // Time-proximity: same customer, recent activity, no explicit new thread boundary
+  if (input.recencyWindowMs > 0 && !input.externalThreadId) {
+    const now = Date.now();
+    let recentCandidate: ThreadMatchCandidate | null = null;
+    let recentTime = 0;
+
+    for (const candidate of input.candidates) {
+      if (candidate.customerId !== input.customerId) continue;
+      const inboundTs = candidate.lastInboundAt?.getTime() ?? 0;
+      if (inboundTs > 0 && now - inboundTs <= input.recencyWindowMs && inboundTs > recentTime) {
+        recentCandidate = candidate;
+        recentTime = inboundTs;
+      }
+    }
+
+    if (recentCandidate) {
+      return {
+        threadId: recentCandidate.id,
+        confidence: 0.92,
+        strategy: "time_proximity",
+        issueFingerprint,
+        requiresReview: false,
+      };
+    }
+  }
+
   let bestCandidate: ThreadMatchCandidate | null = null;
   let bestScore = 0;
   for (const candidate of input.candidates) {
@@ -200,12 +229,3 @@ export function shouldEnqueueResolutionWorkflow(
   return false;
 }
 
-/**
- * Placeholder for the future Temporal `llmThreadMatchActivity`.
- * For now this keeps ingestion deterministic and non-blocking.
- */
-export async function llmFallbackThreadMatch(
-  _input: LlmThreadMatchInput,
-): Promise<LlmThreadMatchResult | null> {
-  return null;
-}

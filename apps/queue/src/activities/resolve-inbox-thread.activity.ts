@@ -10,16 +10,16 @@ interface InboxThreadResolutionCandidate {
 export async function getInboxThreadResolutionCandidates(
   input: ResolveInboxThreadWorkflowInput,
 ): Promise<InboxThreadResolutionCandidate[]> {
+  // Workspace-wide candidates (not per-customer) so cross-user same-issue matching works
   const candidates = await prisma.supportThread.findMany({
     where: {
       workspaceId: input.workspaceId,
-      customerId: input.customerId,
       source: input.source,
       status: { not: "CLOSED" },
       id: { not: input.threadId },
     },
     orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
-    take: 10,
+    take: 20,
     select: {
       id: true,
       issueFingerprint: true,
