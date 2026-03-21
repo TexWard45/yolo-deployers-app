@@ -582,6 +582,7 @@ export const FixPrFixerOutputSchema = z.object({
   patchPlan: z.string(),
   riskNotes: z.array(z.string()),
   cannotFixSafely: z.boolean().default(false),
+  confidence: z.number().min(0).max(1).default(0.5),
 });
 export type FixPrFixerOutput = z.infer<typeof FixPrFixerOutputSchema>;
 

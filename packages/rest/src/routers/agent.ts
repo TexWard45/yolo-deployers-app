@@ -889,9 +889,30 @@ export const agentRouter = createTRPCRouter({
             alreadyRunning: true,
           };
         }
+
+        // Terminal state — reset and re-run
+        await ctx.prisma.fixPrRun.update({
+          where: { id: existingRun.id },
+          data: {
+            status: "QUEUED",
+            currentStage: "QUEUED",
+            summary: null,
+            lastError: null,
+            maxIterations: config?.codexFixMaxIterations ?? 3,
+          },
+        });
+
+        await dispatchGenerateFixPRWorkflow({
+          runId: existingRun.id,
+          threadId: input.threadId,
+          workspaceId: input.workspaceId,
+          analysisId: input.analysisId,
+          triggeredByUserId: input.userId,
+        });
+
         return {
           runId: existingRun.id,
-          status: existingRun.status,
+          status: "QUEUED",
           alreadyRunning: false,
         };
       }
@@ -1036,6 +1057,36 @@ export const agentRouter = createTRPCRouter({
         throw new TRPCError({ code: "PRECONDITION_FAILED", message: "LLM API key not configured" });
       }
 
+      // Fresh Codex search using analysis summary + RCA as query
+      let freshCodexFindings = analysis.codexFindings;
+      const repoIds = config?.codexRepositoryIds ?? [];
+      if (repoIds.length > 0) {
+        const searchQuery = [
+          analysis.summary,
+          analysis.rcaSummary,
+          analysis.affectedComponent,
+        ].filter(Boolean).join(" ");
+
+        try {
+          const webAppUrl = process.env.WEB_APP_URL ?? "http://localhost:3000";
+          const searchResponse = await fetch(`${webAppUrl}/api/rest/codex/search`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              workspaceId: input.workspaceId,
+              query: searchQuery,
+              repositoryIds: repoIds,
+              limit: 10,
+            }),
+          });
+          if (searchResponse.ok) {
+            freshCodexFindings = await searchResponse.json();
+          }
+        } catch (err) {
+          console.warn("[generateSpec] fresh Codex search failed, using cached findings:", err);
+        }
+      }
+
       const promptInput: TriagePromptInput = {
         analysis: {
           issueCategory: analysis.issueCategory,
@@ -1043,7 +1094,7 @@ export const agentRouter = createTRPCRouter({
           affectedComponent: analysis.affectedComponent,
           summary: analysis.summary,
           rcaSummary: analysis.rcaSummary,
-          codexFindings: analysis.codexFindings,
+          codexFindings: freshCodexFindings,
           sentryFindings: analysis.sentryFindings,
         },
         messages: analysis.thread.messages.map((m) => ({ direction: m.direction, body: m.body })),

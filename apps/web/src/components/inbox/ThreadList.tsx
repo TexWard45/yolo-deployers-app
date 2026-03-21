@@ -88,11 +88,13 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
     // The spinner clears once the new props arrive via the useEffect below
   }, [router]);
 
-  // Clear refreshing state when new data arrives
-  useEffect(() => {
+  // Sync server props to local state
+  const [prevThreads, setPrevThreads] = useState(threads);
+  if (prevThreads !== threads) {
+    setPrevThreads(threads);
     setLocalThreads(threads);
     setIsRefreshing(false);
-  }, [threads]);
+  }
 
   // Auto-refresh interval
   useEffect(() => {

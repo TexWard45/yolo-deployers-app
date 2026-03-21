@@ -456,6 +456,10 @@ function getFixPrButtonLabel(params: {
     return `Fix Run: ${params.fixPrStatus.currentStage}`;
   }
 
+  if (params.fixPrStatus) {
+    return "Retry Fix PR";
+  }
+
   return "Generate Fix PR";
 }
 

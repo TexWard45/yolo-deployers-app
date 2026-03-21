@@ -27,16 +27,18 @@ export default async function DashboardPage() {
   const workspaceIds = session?.workspaces?.map((w) => w.id) ?? [];
   const postResults = await Promise.all(
     workspaceIds.map((wId) =>
-      trpc.post.list({ workspaceId: wId, userId: session!.id }).catch((error) => {
-        console.error(`[dashboard] failed to load posts for workspace ${wId}`, error);
-        if (!dataLoadWarning) {
-          dataLoadWarning = "Some dashboard data is temporarily unavailable. Check your database connection.";
-        }
-        return [];
-      })
+      trpc.post.list({ workspaceId: wId, userId: session!.id })
+        .then((posts) => ({ ok: true as const, posts }))
+        .catch((error) => {
+          console.error(`[dashboard] failed to load posts for workspace ${wId}`, error);
+          return { ok: false as const, posts: [] as Awaited<ReturnType<typeof trpc.post.list>> };
+        })
     )
   );
-  const allPosts = postResults.flat();
+  if (!dataLoadWarning && postResults.some((r) => !r.ok)) {
+    dataLoadWarning = "Some dashboard data is temporarily unavailable. Check your database connection.";
+  }
+  const allPosts = postResults.flatMap((r) => r.posts);
 
   const stats = [
     {

@@ -167,8 +167,30 @@ export async function runFixerAgent(params: {
   testPlan: FixPrTestPlan;
   priorFailures: string[];
   model: string;
+  codexFindings?: unknown | null;
 }): Promise<FixPrFixerOutput> {
-  const fileContents = await loadFileContents(params.codeContext.editScope);
+  let fileContents = await loadFileContents(params.codeContext.editScope);
+
+  // Fallback: if local files not found, use chunk content from Codex search results
+  if (fileContents.length === 0 && params.codexFindings) {
+    const findings = params.codexFindings as {
+      chunks?: Array<{ filePath?: string; content?: string; symbolName?: string }>;
+    };
+    if (findings.chunks && findings.chunks.length > 0) {
+      const byFile = new Map<string, string[]>();
+      for (const chunk of findings.chunks) {
+        if (chunk.filePath && chunk.content) {
+          const existing = byFile.get(chunk.filePath) ?? [];
+          existing.push(chunk.content);
+          byFile.set(chunk.filePath, existing);
+        }
+      }
+      fileContents = [...byFile.entries()].map(([filePath, contents]) => ({
+        filePath,
+        content: contents.join("\n\n// ...\n\n"),
+      }));
+    }
+  }
 
   return generateCodexFix(
     {

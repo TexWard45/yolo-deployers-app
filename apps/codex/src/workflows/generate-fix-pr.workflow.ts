@@ -107,14 +107,16 @@ export async function generateFixPRWorkflow(
         testPlan,
         priorFailures,
         model: context.models.fix,
+        codexFindings: context.codexFindings,
       });
 
-      if (fixerOutput.cannotFixSafely || fixerOutput.changedFiles.length === 0) {
+      if (fixerOutput.changedFiles.length === 0) {
+        const confidence = fixerOutput.confidence ?? 0;
         await saveFixRunProgress({
           runId: input.runId,
           status: "WAITING_REVIEW",
           currentStage: "WAITING_REVIEW",
-          summary: fixerOutput.summary,
+          summary: `${fixerOutput.summary} (confidence: ${Math.round(confidence * 100)}%)`,
           lastError: fixerOutput.riskNotes.join("; "),
           iteration: {
             iteration,
