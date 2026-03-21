@@ -164,8 +164,10 @@ async function performIngestion(
         externalThreadId: true,
         issueFingerprint: true,
         summary: true,
+        status: true,
         lastMessageAt: true,
         lastInboundAt: true,
+        lastOutboundAt: true,
       },
     });
 

@@ -75,8 +75,10 @@ class InMemoryMatcherHarness {
       externalThreadId: externalThreadId ?? `synthetic-${id}`,
       issueFingerprint,
       summary,
+      status: "WAITING_REVIEW",
       lastMessageAt: new Date(),
       lastInboundAt: new Date(), // within recency window — time-proximity will group
+      lastOutboundAt: null,
     });
     return id;
   }

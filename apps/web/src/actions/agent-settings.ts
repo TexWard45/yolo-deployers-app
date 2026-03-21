@@ -21,9 +21,11 @@ export async function updateAgentConfigAction(data: {
 
   try {
     const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    const { workspaceId, ...rest } = data;
     await trpc.agent.updateWorkspaceConfig({
+      workspaceId,
       userId: session.id,
-      ...data,
+      ...rest,
     });
     return { success: true } as const;
   } catch (error) {
