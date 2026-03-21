@@ -48,6 +48,9 @@ function getInitial(name: string): string {
   return (name[0] ?? "?").toUpperCase();
 }
 
+const BOTTOM_MIN = 120;
+const BOTTOM_MAX_RATIO = 0.6;
+
 function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [thread, setThread] = useState<ThreadData | null>(null);
   const [loading, startTransition] = useTransition();
@@ -64,6 +67,37 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [assignSearch, setAssignSearch] = useState("");
   const [assigning, startAssigning] = useTransition();
   const assignDropdownRef = useRef<HTMLDivElement>(null);
+
+  // ── Resizable bottom panel ──
+  const [bottomHeight, setBottomHeight] = useState<number | null>(null);
+  const chatPanelRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  const handleDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: PointerEvent) => {
+      if (!isDragging.current || !chatPanelRef.current) return;
+      const panelRect = chatPanelRef.current.getBoundingClientRect();
+      const maxH = panelRect.height * BOTTOM_MAX_RATIO;
+      const newH = Math.max(BOTTOM_MIN, Math.min(maxH, panelRect.bottom - ev.clientY));
+      setBottomHeight(newH);
+    };
+
+    const onUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }, []);
 
   const handleDraftAvailable = useCallback((d: AnalysisDraft | null) => {
     setDraft(d);
@@ -229,9 +263,9 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
       <div className="flex min-h-0 flex-1">
         {/* Left: Chat panel */}
-        <div className="flex flex-1 flex-col border-r">
-          {/* ── Thread messages — ~65% height, scrolls independently ── */}
-          <div className="min-h-0 flex-[7] overflow-y-auto px-4 py-3">
+        <div ref={chatPanelRef} className="flex flex-1 flex-col border-r">
+          {/* ── Thread messages — scrolls independently, takes remaining space ── */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
             {thread.messages.length === 0 ? (
               <p className="py-12 text-center text-xs text-muted-foreground">
                 No messages yet.
@@ -393,11 +427,22 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
             )}
           </div>
 
-          {/* ── Bottom panel: AI Draft + Reply — ~35% max, pinned at bottom ── */}
-          <div className="flex shrink-0 flex-col border-t bg-muted/20" style={{ maxHeight: "35%" }}>
-            {/* AI Draft suggestion — collapsible, scrollable if long */}
+          {/* ── Drag handle ── */}
+          <div
+            onPointerDown={handleDragStart}
+            className="group relative flex h-2 shrink-0 cursor-row-resize items-center justify-center border-t bg-muted/30 hover:bg-primary/10 active:bg-primary/15 transition-colors"
+          >
+            <div className="h-0.5 w-8 rounded-full bg-foreground/20 group-hover:bg-primary/50 transition-colors" />
+          </div>
+
+          {/* ── Bottom panel: AI Draft + Reply — resizable ── */}
+          <div
+            className="flex shrink-0 flex-col overflow-hidden bg-muted/10"
+            style={{ height: bottomHeight ?? "30%" }}
+          >
+            {/* AI Draft suggestion — scrollable if long */}
             {draft && draft.status === "GENERATED" ? (
-              <div className="max-h-40 overflow-y-auto border-b bg-violet-500/5 px-4 py-2.5">
+              <div className="shrink-0 overflow-y-auto border-b bg-violet-500/5 px-4 py-2.5" style={{ maxHeight: "50%" }}>
                 <DraftChatBubble
                   draft={draft}
                   workspaceId={thread.workspaceId}
@@ -410,35 +455,33 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
               </div>
             ) : null}
 
-            {/* Reply bar — compact, always visible */}
-            <div className="px-3 py-2.5">
-              <div className="flex items-center gap-2">
-                <div className="flex-1">
-                  <textarea
-                    className="w-full resize-none rounded-lg border bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
-                    placeholder={`Reply to ${activeSegment?.label ?? "latest thread"}...`}
-                    rows={1}
-                    value={replyBody}
-                    onChange={(e) => setReplyBody(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                        handleSendReply();
-                      }
-                    }}
-                    style={{ fieldSizing: "content", maxHeight: "6rem" } as React.CSSProperties}
-                  />
+            {/* Reply bar — fills remaining space */}
+            <div className="flex min-h-0 flex-1 flex-col px-3 py-2.5">
+              <div className="flex min-h-0 flex-1 gap-2">
+                <textarea
+                  className="min-h-0 flex-1 resize-none rounded-lg border bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+                  placeholder={`Reply to ${activeSegment?.label ?? "latest thread"}...`}
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      handleSendReply();
+                    }
+                  }}
+                />
+                <div className="flex shrink-0 flex-col gap-1.5">
+                  <Button
+                    size="sm"
+                    disabled={sending || !replyBody.trim()}
+                    onClick={handleSendReply}
+                  >
+                    {sending ? "..." : "Send"}
+                  </Button>
+                  <p className="text-center text-[9px] text-muted-foreground">
+                    <kbd className="rounded border px-1 py-0.5">⌘↵</kbd>
+                  </p>
                 </div>
-                <Button
-                  size="sm"
-                  disabled={sending || !replyBody.trim()}
-                  onClick={handleSendReply}
-                >
-                  {sending ? "..." : "Send"}
-                </Button>
               </div>
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                <kbd className="rounded border px-1 py-0.5 text-[9px]">Cmd+Enter</kbd> to send
-              </p>
             </div>
           </div>
         </div>
