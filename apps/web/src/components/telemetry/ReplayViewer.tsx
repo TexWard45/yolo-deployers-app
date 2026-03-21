@@ -6,6 +6,10 @@ import type { eventWithTime } from "@rrweb/types";
 import "rrweb-player/dist/style.css";
 import { AlertCircle } from "lucide-react";
 
+// rrweb-player renders: [replay frame (height px)] + [controller bar (80px)]
+// We must subtract the controller bar so the total fits inside the container.
+const CONTROLLER_HEIGHT = 80;
+
 interface ReplayViewerProps {
   events: Array<{ type: string; payload: unknown }>;
 }
@@ -24,30 +28,22 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
 
     if (rrwebEvents.length < 2) return;
 
-    // Wait one animation frame so the container has real layout dimensions
+    // Wait for layout so clientWidth/Height are real pixel values
     const raf = requestAnimationFrame(() => {
       if (!containerRef.current) return;
 
-      // Cleanup any previous player
       if (playerRef.current) {
         el.innerHTML = "";
         playerRef.current = null;
       }
 
       const width = el.clientWidth || 800;
-      const height = Math.max(el.clientHeight, 400);
+      // Subtract controller bar height so it stays inside the container
+      const height = Math.max(el.clientHeight - CONTROLLER_HEIGHT, 300);
 
       playerRef.current = new rrwebPlayer({
         target: el,
-        props: {
-          events: rrwebEvents,
-          width,
-          height,
-          autoPlay: false,
-          showController: true,
-          speed: 1,
-          maxScale: 1,
-        },
+        props: { events: rrwebEvents, width, height, autoPlay: false, showController: true, speed: 1 },
       });
     });
 
@@ -77,6 +73,7 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
     );
   }
 
-  // min-h ensures the container has height before rrweb-player reads clientHeight
-  return <div ref={containerRef} className="w-full min-h-[500px] h-full" />;
+  return (
+    <div ref={containerRef} className="w-full min-h-[500px] h-full [&_.rr-player]:!float-none [&_.rr-player]:!w-full [&_.rr-player]:!shadow-none [&_.rr-player]:!rounded-none" />
+  );
 }
