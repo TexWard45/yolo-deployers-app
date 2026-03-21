@@ -37,21 +37,25 @@ export default async function CodexDashboardPage({ params }: CodexDashboardPageP
       title: "Repositories",
       value: stats.repositories,
       icon: Database,
+      color: "oklch(0.89 0.18 192)",
     },
     {
       title: "Files Indexed",
       value: stats.files,
       icon: FileCode,
+      color: "oklch(0.87 0.29 142)",
     },
     {
       title: "Code Chunks",
       value: stats.chunks,
       icon: Boxes,
+      color: "oklch(0.55 0.25 264)",
     },
     {
       title: "Embedded",
       value: stats.embeddedChunks,
       icon: Cpu,
+      color: "oklch(0.82 0.16 85)",
     },
   ];
 
@@ -59,7 +63,7 @@ export default async function CodexDashboardPage({ params }: CodexDashboardPageP
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">Codex</h2>
+          <h2 className="gradient-text text-3xl font-bold tracking-tight">Codex</h2>
           <p className="text-muted-foreground">
             Code search and repository indexing
           </p>
@@ -81,10 +85,10 @@ export default async function CodexDashboardPage({ params }: CodexDashboardPageP
           <Card key={stat.title}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className="size-4 text-muted-foreground" />
+              <stat.icon className="size-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
+              <div className="text-2xl font-bold tabular-nums">{stat.value}</div>
             </CardContent>
           </Card>
         ))}

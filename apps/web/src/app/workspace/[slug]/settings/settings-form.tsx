@@ -46,9 +46,9 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
   const [githubBaseBranch, setGitHubBaseBranch] = useState(config.githubBaseBranch ?? "main");
   const [codexFixModel, setCodexFixModel] = useState(config.codexFixModel ?? "");
   const [codexReviewModel, setCodexReviewModel] = useState(config.codexReviewModel ?? "");
-  const [codexFixMaxIterations, setCodexFixMaxIterations] = useState(config.codexFixMaxIterations);
+  const [codexFixMaxIterations, setCodexFixMaxIterations] = useState(config.codexFixMaxIterations ?? 3);
   const [codexRequiredCheckNames, setCodexRequiredCheckNames] = useState(
-    config.codexRequiredCheckNames.join(", "),
+    (config.codexRequiredCheckNames ?? []).join(", "),
   );
 
   // Sentry

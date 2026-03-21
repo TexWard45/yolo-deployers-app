@@ -35,10 +35,10 @@ interface RepositoryCardProps {
   workspaceSlug: string;
 }
 
-const syncStatusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const syncStatusVariant: Record<string, "info" | "success" | "destructive" | "secondary"> = {
   IDLE: "secondary",
-  SYNCING: "default",
-  COMPLETED: "outline",
+  SYNCING: "info",
+  COMPLETED: "success",
   FAILED: "destructive",
 };
 
@@ -67,7 +67,7 @@ export function RepositoryCard({ repository, workspaceSlug }: RepositoryCardProp
           <CardTitle className="text-base">
             <Link
               href={`/workspace/${workspaceSlug}/codex/repository/${repository.id}`}
-              className="hover:underline"
+              className="hover:text-primary transition-colors"
             >
               {repository.displayName}
             </Link>
@@ -83,7 +83,7 @@ export function RepositoryCard({ repository, workspaceSlug }: RepositoryCardProp
         </Badge>
       </CardHeader>
       <CardContent>
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <GitBranch className="size-3.5" />
             {repository.defaultBranch}
@@ -98,7 +98,7 @@ export function RepositoryCard({ repository, workspaceSlug }: RepositoryCardProp
           </span>
         </div>
         <div className="mt-3 flex items-center gap-2">
-          <Badge variant="outline" className="text-xs">
+          <Badge variant="info" className="text-xs">
             {repository.sourceType}
           </Badge>
           <Button

@@ -34,6 +34,8 @@ interface ThreadListItem {
   summary: string | null;
   status: ThreadStatusValue;
   updatedAt: Date;
+  linearIssueId?: string | null;
+  linearIssueUrl?: string | null;
   customer: {
     displayName: string;
   };
@@ -61,11 +63,11 @@ interface ThreadListProps {
 }
 
 const STATUS_COLOR: Record<ThreadStatusValue, string> = {
-  NEW: "text-blue-600",
-  WAITING_REVIEW: "text-amber-600",
-  WAITING_CUSTOMER: "text-violet-600",
-  ESCALATED: "text-red-600",
-  IN_PROGRESS: "text-emerald-600",
+  NEW: "text-primary",
+  WAITING_REVIEW: "text-amber-600 dark:text-amber-400",
+  WAITING_CUSTOMER: "text-violet-600 dark:text-violet-400",
+  ESCALATED: "text-rose-600 dark:text-rose-400",
+  IN_PROGRESS: "text-emerald-600 dark:text-emerald-400",
   CLOSED: "text-muted-foreground",
 };
 
@@ -186,10 +188,10 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
   const unassignedCount = localThreads.filter((t) => !t.assignedTo).length;
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Filter tabs + refresh toolbar */}
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1">
+      <div className="mb-3 flex shrink-0 items-center justify-between">
+        <div className="flex h-9 items-center gap-0.5 rounded-lg border bg-muted/30 p-1">
           {([
             { key: "all" as const, label: "All", count: localThreads.length },
             { key: "assigned_to_me" as const, label: "Assigned to Me", count: myThreadCount },
@@ -198,7 +200,7 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
             <button
               key={tab.key}
               type="button"
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`inline-flex h-7 items-center rounded-md px-2.5 text-xs font-medium transition-colors ${
                 threadFilter === tab.key
                   ? "bg-background text-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
@@ -206,7 +208,7 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
               onClick={() => setThreadFilter(tab.key)}
             >
               {tab.label}
-              <span className="ml-1.5 text-[10px] text-muted-foreground">
+              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 text-[10px] tabular-nums text-muted-foreground">
                 {tab.count}
               </span>
             </button>
@@ -246,16 +248,16 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
         </Button>
       </div>
 
-      <div className="flex h-[calc(100vh-6rem)] overflow-x-auto pb-2">
-        {THREAD_STATUSES.map((status) => {
+      <div className="grid min-h-0 flex-1 overflow-x-auto rounded-lg border pb-2" style={{ gridTemplateColumns: `repeat(${THREAD_STATUSES.length}, minmax(200px, 1fr))` }}>
+        {THREAD_STATUSES.map((status, colIdx) => {
           const items = grouped[status];
           const isDragOver = dragOverColumn === status;
           return (
             <div
               key={status}
-              className={`flex w-72 shrink-0 flex-col border-r last:border-r-0 transition-colors ${
-                isDragOver ? "bg-accent/30" : ""
-              }`}
+              className={`flex min-w-0 flex-col transition-colors ${
+                colIdx < THREAD_STATUSES.length - 1 ? "border-r" : ""
+              } ${isDragOver ? "bg-primary/5" : ""}`}
               onDragOver={handleDragOver}
               onDragEnter={() => setDragOverColumn(status)}
               onDragLeave={(e) => {
@@ -266,11 +268,11 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
               onDrop={(e) => handleDrop(e, status)}
             >
               {/* Column header */}
-              <div className="flex items-center gap-2 border-b px-3 pb-2">
-                <span className={`text-sm font-semibold ${STATUS_COLOR[status]}`}>
+              <div className="flex h-10 items-center gap-2 border-b px-3">
+                <span className={`text-xs font-semibold ${STATUS_COLOR[status]}`}>
                   {THREAD_STATUS_LABEL[status]}
                 </span>
-                <span className="text-sm text-muted-foreground">
+                <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[10px] tabular-nums text-muted-foreground">
                   {items.length}
                 </span>
               </div>
@@ -301,6 +303,8 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
                           thread.assignedTo?.email ??
                           null
                         }
+                        linearIssueId={thread.linearIssueId}
+                        linearIssueUrl={thread.linearIssueUrl}
                         severity={thread.lastAnalysis?.severity ?? null}
                         issueCategory={thread.lastAnalysis?.issueCategory ?? null}
                         selected={selectedId === thread.id}
@@ -319,6 +323,6 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
         threadId={selectedId}
         onClose={() => selectThread(null)}
       />
-    </>
+    </div>
   );
 }

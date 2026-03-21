@@ -16,11 +16,10 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
 
   const workspaces = session.workspaces ?? [];
-
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
+        <h2 className="gradient-text text-3xl font-bold tracking-tight">Settings</h2>
         <p className="text-muted-foreground">
           Manage your account and workspace memberships.
         </p>
@@ -47,9 +46,9 @@ export default async function SettingsPage() {
               <p className="text-sm font-medium text-muted-foreground">Role</p>
               <p className="text-sm">
                 {session.isSystemAdmin ? (
-                  <Badge>System Admin</Badge>
+                  <Badge variant="magenta">System Admin</Badge>
                 ) : (
-                  <Badge variant="secondary">User</Badge>
+                  <Badge variant="cyan">User</Badge>
                 )}
               </p>
             </div>
@@ -89,7 +88,7 @@ export default async function SettingsPage() {
                     </p>
                   </div>
                   <Badge
-                    variant={ws.role === "OWNER" ? "default" : "secondary"}
+                    variant={ws.role === "OWNER" ? "cyan" : "green"}
                   >
                     {ws.role}
                   </Badge>
@@ -99,6 +98,7 @@ export default async function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
     </div>
   );
 }

@@ -48,6 +48,9 @@ function getInitial(name: string): string {
   return (name[0] ?? "?").toUpperCase();
 }
 
+const BOTTOM_MIN = 120;
+const BOTTOM_MAX_RATIO = 0.6;
+
 function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [thread, setThread] = useState<ThreadData | null>(null);
   const [loading, startTransition] = useTransition();
@@ -64,6 +67,37 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [assignSearch, setAssignSearch] = useState("");
   const [assigning, startAssigning] = useTransition();
   const assignDropdownRef = useRef<HTMLDivElement>(null);
+
+  // ── Resizable bottom panel ──
+  const [bottomHeight, setBottomHeight] = useState<number | null>(null);
+  const chatPanelRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+
+  const handleDragStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (ev: PointerEvent) => {
+      if (!isDragging.current || !chatPanelRef.current) return;
+      const panelRect = chatPanelRef.current.getBoundingClientRect();
+      const maxH = panelRect.height * BOTTOM_MAX_RATIO;
+      const newH = Math.max(BOTTOM_MIN, Math.min(maxH, panelRect.bottom - ev.clientY));
+      setBottomHeight(newH);
+    };
+
+    const onUp = () => {
+      isDragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup", onUp);
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp);
+  }, []);
 
   const handleDraftAvailable = useCallback((d: AnalysisDraft | null) => {
     setDraft(d);
@@ -229,9 +263,9 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
       <div className="flex min-h-0 flex-1">
         {/* Left: Chat panel */}
-        <div className="flex flex-1 flex-col border-r">
-          {/* Messages - scrollable */}
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div ref={chatPanelRef} className="flex flex-1 flex-col border-r">
+          {/* ── Thread messages — scrolls independently, takes remaining space ── */}
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
             {thread.messages.length === 0 ? (
               <p className="py-12 text-center text-xs text-muted-foreground">
                 No messages yet.
@@ -243,11 +277,11 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                     key={segment.id}
                     className={`rounded-lg border ${
                       effectiveActiveReplySegmentId === segment.id
-                        ? "border-primary bg-accent/20"
+                        ? "border-primary/40 bg-primary/5"
                         : "border-border"
                     }`}
                   >
-                    <div className="flex items-center justify-between border-b px-3 py-2">
+                    <div className="flex items-center justify-between border-b px-3 py-1.5">
                       <button
                         type="button"
                         className="text-left"
@@ -258,21 +292,21 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                         </span>
                       </button>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
                           {segment.messages.length} msgs
                         </span>
                         <Button
                           type="button"
-                          size="sm"
+                          size="xs"
                           variant="ghost"
-                          className="h-6 px-2 text-[10px]"
+                          className="h-5 px-1.5 text-[10px]"
                           onClick={() => handleOpenInlineReply(segment.id)}
                         >
                           Reply
                         </Button>
                       </div>
                     </div>
-                    <div className="px-3 py-3">
+                    <div className="px-3 py-2.5">
                       {segment.messages.map((msg, msgIdx) => {
                         const isInbound = msg.direction === "INBOUND";
                         const isOutbound = msg.direction === "OUTBOUND";
@@ -283,27 +317,23 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
                         return (
                           <div key={msg.id} className={isReply ? "relative ml-8" : ""}>
-                            {/* Tree connector line */}
                             {isReply ? (
                               <>
-                                {/* Vertical line from parent */}
                                 <div className="absolute -left-4 -top-3 bottom-0 w-px bg-border" style={isLastReply ? { bottom: "50%" } : undefined} />
-                                {/* Horizontal branch */}
                                 <div className="absolute -left-4 top-4 h-px w-4 bg-border" />
                               </>
                             ) : null}
-                            {/* Vertical line starter below root avatar */}
                             {hasReplies ? (
                               <div className="absolute left-[13px] top-9 h-[calc(100%-36px)] w-px bg-border" style={{ zIndex: 0 }} />
                             ) : null}
 
-                            <div className={`relative flex gap-2.5 ${isReply ? "pt-3" : ""}`}>
+                            <div className={`relative flex gap-2.5 ${isReply ? "pt-2.5" : ""}`}>
                               <span
-                                className={`relative z-10 mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                                className={`relative z-10 mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                                   isInbound
-                                    ? "bg-blue-100 text-blue-700"
+                                    ? "bg-primary/10 text-primary"
                                     : isOutbound
-                                      ? "bg-emerald-100 text-emerald-700"
+                                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                       : "bg-muted text-muted-foreground"
                                 }`}
                               >
@@ -314,7 +344,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                     : "S"}
                               </span>
 
-                              <div className="flex-1">
+                              <div className="flex-1 min-w-0">
                                 <div className="mb-0.5 flex items-center gap-2">
                                   <span className="text-xs font-semibold">
                                     {isInbound
@@ -328,15 +358,15 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                   </span>
                                 </div>
                                 <div
-                                  className={`rounded-lg border p-3 ${
+                                  className={`rounded-lg border p-2.5 ${
                                     isInbound
-                                      ? "border-l-2 border-l-blue-500"
+                                      ? "border-l-2 border-l-primary"
                                       : isOutbound
-                                        ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
+                                        ? "border-l-2 border-l-emerald-500 bg-emerald-500/5"
                                         : "border-l-2 border-l-muted-foreground bg-muted/30"
                                   }`}
                                 >
-                                  <div className="whitespace-pre-wrap text-sm">
+                                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
                                     {renderMessageBody(
                                       msg.body,
                                       (msg.metadata as Record<string, unknown> | null)?.mentions as MentionsMap | undefined,
@@ -357,7 +387,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                         </p>
                         <div className="flex gap-2">
                           <textarea
-                            className="flex-1 resize-none rounded-md border bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                            className="flex-1 resize-none rounded-md border bg-background/50 px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                             placeholder="Write a reply..."
                             rows={2}
                             value={inlineReplyDrafts[segment.id] ?? ""}
@@ -371,8 +401,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                           <div className="flex flex-col gap-1">
                             <Button
                               type="button"
-                              size="sm"
-                              className="h-7 px-2 text-[10px]"
+                              size="xs"
                               disabled={sending || !(inlineReplyDrafts[segment.id] ?? "").trim()}
                               onClick={() => handleSendInlineReply(segment.id)}
                             >
@@ -380,9 +409,8 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                             </Button>
                             <Button
                               type="button"
-                              size="sm"
+                              size="xs"
                               variant="ghost"
-                              className="h-7 px-2 text-[10px]"
                               disabled={sending}
                               onClick={() => setOpenInlineReplySegmentId(null)}
                             >
@@ -399,54 +427,62 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
             )}
           </div>
 
-          {/* AI Draft suggestion */}
-          {draft && draft.status === "GENERATED" ? (
-            <div className="shrink-0 border-t bg-violet-50/50 px-4 py-3 dark:bg-violet-950/10">
-              <DraftChatBubble
-                draft={draft}
-                workspaceId={thread.workspaceId}
-                onDraftActioned={() => {
-                  setDraft(null);
-                  analysisRefreshRef.current?.();
-                  fetchThread(threadId);
-                }}
-              />
-            </div>
-          ) : null}
+          {/* ── Drag handle ── */}
+          <div
+            onPointerDown={handleDragStart}
+            className="group relative flex h-2 shrink-0 cursor-row-resize items-center justify-center border-t bg-muted/30 hover:bg-primary/10 active:bg-primary/15 transition-colors"
+          >
+            <div className="h-0.5 w-8 rounded-full bg-foreground/20 group-hover:bg-primary/50 transition-colors" />
+          </div>
 
-          {/* Reply bar - pinned at bottom */}
-          <div className="shrink-0 border-t p-3">
-            <p className="mb-2 text-[11px] text-muted-foreground">
-              Reply to{" "}
-              <span className="font-semibold text-foreground">
-                {activeSegment?.label ?? "latest thread"}
-              </span>
-            </p>
-            <div className="flex gap-2">
-              <textarea
-                className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="Write a reply..."
-                rows={2}
-                value={replyBody}
-                onChange={(e) => setReplyBody(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    handleSendReply();
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                className="self-end"
-                disabled={sending || !replyBody.trim()}
-                onClick={handleSendReply}
-              >
-                {sending ? "Sending..." : "Send"}
-              </Button>
+          {/* ── Bottom panel: AI Draft + Reply — resizable ── */}
+          <div
+            className="flex shrink-0 flex-col overflow-hidden bg-muted/10"
+            style={{ height: bottomHeight ?? "30%" }}
+          >
+            {/* AI Draft suggestion — scrollable if long */}
+            {draft && draft.status === "GENERATED" ? (
+              <div className="shrink-0 overflow-y-auto border-b bg-violet-500/5 px-4 py-2.5" style={{ maxHeight: "50%" }}>
+                <DraftChatBubble
+                  draft={draft}
+                  workspaceId={thread.workspaceId}
+                  onDraftActioned={() => {
+                    setDraft(null);
+                    analysisRefreshRef.current?.();
+                    fetchThread(threadId);
+                  }}
+                />
+              </div>
+            ) : null}
+
+            {/* Reply bar — fills remaining space */}
+            <div className="flex min-h-0 flex-1 flex-col px-3 py-2.5">
+              <div className="flex min-h-0 flex-1 gap-2">
+                <textarea
+                  className="min-h-0 flex-1 resize-none rounded-lg border bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+                  placeholder={`Reply to ${activeSegment?.label ?? "latest thread"}...`}
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      handleSendReply();
+                    }
+                  }}
+                />
+                <div className="flex shrink-0 flex-col gap-1.5">
+                  <Button
+                    size="sm"
+                    disabled={sending || !replyBody.trim()}
+                    onClick={handleSendReply}
+                  >
+                    {sending ? "..." : "Send"}
+                  </Button>
+                  <p className="text-center text-[9px] text-muted-foreground">
+                    <kbd className="rounded border px-1 py-0.5">⌘↵</kbd>
+                  </p>
+                </div>
+              </div>
             </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              Press Cmd+Enter to send
-            </p>
           </div>
         </div>
 
@@ -454,15 +490,33 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
         <div className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto p-4">
           {/* Status */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Status
             </h3>
             <ThreadStatusBadge status={thread.status} />
           </div>
 
+          {/* Linear Issue */}
+          {thread.linearIssueId && thread.linearIssueUrl ? (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                Issue
+              </h3>
+              <a
+                href={thread.linearIssueUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+              >
+                {thread.linearIssueId}
+                <span className="text-[10px]">&#8599;</span>
+              </a>
+            </div>
+          ) : null}
+
           {/* Customer Info */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Customer
             </h3>
             <div className="space-y-1 text-sm">
@@ -478,7 +532,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Assignee */}
           <div ref={assignDropdownRef}>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Assigned To
             </h3>
             <div className="relative">
@@ -573,7 +627,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Summary */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Summary
             </h3>
             <p className="text-sm text-muted-foreground">
@@ -591,7 +645,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
           {/* Timestamps */}
           <div>
-            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Details
             </h3>
             <div className="space-y-1 text-xs text-muted-foreground">

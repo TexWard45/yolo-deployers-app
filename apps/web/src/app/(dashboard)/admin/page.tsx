@@ -46,14 +46,14 @@ export default async function AdminPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Admin Panel</h2>
+        <h2 className="gradient-text text-3xl font-bold tracking-tight">Admin Panel</h2>
         <p className="text-muted-foreground">
           Manage all workspaces and user assignments.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="border-primary/50 bg-primary/5">
+        <Card className="border-primary/30 bg-primary/5">
           <CardHeader>
             <CardTitle>Telemetry Demo</CardTitle>
             <CardDescription>
@@ -126,7 +126,7 @@ export default async function AdminPage() {
                           <Badge
                             key={m.id}
                             variant={
-                              m.role === "OWNER" ? "default" : "secondary"
+                              m.role === "OWNER" ? "cyan" : "secondary"
                             }
                           >
                             {m.user.username} ({m.role})
@@ -175,7 +175,7 @@ export default async function AdminPage() {
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
                     {user.isSystemAdmin ? (
-                      <Badge>Admin</Badge>
+                      <Badge variant="magenta">Admin</Badge>
                     ) : (
                       <Badge variant="secondary">User</Badge>
                     )}

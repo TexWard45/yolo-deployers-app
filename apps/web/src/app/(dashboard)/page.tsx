@@ -46,38 +46,46 @@ export default async function DashboardPage() {
       value: users.length,
       description: "Registered users",
       icon: Users,
+      color: "oklch(0.89 0.18 192)",
+      glow: "var(--glow-cyan)",
     },
     {
       title: "Total Posts",
       value: allPosts.length,
       description: "Across your workspaces",
       icon: FileText,
+      color: "oklch(0.87 0.29 142)",
+      glow: "var(--glow-green)",
     },
     {
       title: "Workspaces",
       value: workspaceIds.length,
       description: "You belong to",
       icon: Activity,
+      color: "oklch(0.55 0.25 264)",
+      glow: "var(--glow-violet)",
     },
     {
       title: "Growth",
       value: "—",
       description: "This month",
       icon: TrendingUp,
+      color: "oklch(0.70 0.32 328)",
+      glow: "var(--glow-magenta)",
     },
   ];
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <h2 className="gradient-text text-3xl font-bold tracking-tight">Dashboard</h2>
         <p className="text-muted-foreground">
           Overview of your application.
         </p>
       </div>
 
       {dataLoadWarning ? (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-md border border-[oklch(0.82_0.16_85/30%)] bg-[oklch(0.82_0.16_85/10%)] px-4 py-3 text-sm text-[oklch(0.82_0.16_85)] shadow-[0_0_8px_oklch(0.82_0.16_85/15%)]">
           {dataLoadWarning}
         </div>
       ) : null}
@@ -89,10 +97,10 @@ export default async function DashboardPage() {
               <CardTitle className="text-sm font-medium">
                 {stat.title}
               </CardTitle>
-              <stat.icon className="size-4 text-muted-foreground" />
+              <stat.icon className="size-4 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
+              <div className="text-2xl font-bold tabular-nums">{stat.value}</div>
               <p className="text-xs text-muted-foreground">
                 {stat.description}
               </p>
@@ -126,7 +134,7 @@ export default async function DashboardPage() {
                       </p>
                     </div>
                     {user.isSystemAdmin && (
-                      <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
+                      <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
                         Admin
                       </span>
                     )}
