@@ -631,6 +631,14 @@ Exit criteria:
 - [ ] Phase 6: ship draft-PR creation and branch updates last
 - [ ] Phase 7: ship retries, concurrency limits, cancellation, and degraded-mode handling
 
+Current implementation status:
+
+- [x] Local fix-loop scaffold is in place through `fix -> review -> checks`, with persisted run/iteration state.
+- [x] Automated quality gates are green: unit tests, e2e-style router tests, lint, typecheck, and build.
+- [ ] Real Codex app-server thread/fork/review orchestration is not wired yet.
+- [ ] Real GitHub branch/commit/draft-PR automation is not wired yet.
+- [ ] Manual end-to-end validation against local Temporal/Postgres/web/codex workers is not done yet.
+
 ### Schema / Data
 
 - [x] Add `GENERATE_FIX_PR` to `TriageActionType` in `packages/database/prisma/support.schema.prisma`
@@ -649,7 +657,8 @@ Exit criteria:
 - [x] Extend `getWorkspaceConfig` to return redacted GitHub/Codex loop fields
 - [x] Extend `updateWorkspaceConfig` to persist GitHub/Codex loop fields
 - [x] Add `dispatchGenerateFixPRWorkflow` to `packages/rest/src/temporal.ts` with idempotent workflow ID
-- [ ] Add `github-client.ts` helper in `packages/rest/src/routers/helpers/` with branch/commit/PR/check wrappers
+- [ ] Add `github-client.ts` helper in `packages/rest/src/routers/helpers/` with full branch/commit/PR/check wrappers
+- [ ] Current gap: the helper only covers draft PR creation and check listing, not branch/file update flows
 - [x] Add `fix-pr-rca.prompt.ts` helper in `packages/rest/src/routers/helpers/` and structured RCA output types
 - [x] Add `fix-pr-code-context.prompt.ts` helper or equivalent typed prompt builder for file/symbol expansion
 - [x] Add `fix-pr-test-selector.prompt.ts` helper or equivalent typed prompt builder for validation planning
@@ -694,6 +703,15 @@ Exit criteria:
 - [ ] Update `CLAUDE.md` sections for the new Codex fix-review workflow and ownership boundaries
 - [x] Run `npm run lint`, `npm run type-check`, and `npm run build`
 
+### Code Quality
+
+- [x] Refactor router and activity logic into smaller helpers where the first pass was too dense
+- [x] Preserve redacted secrets on settings save instead of overwriting stored credentials with placeholder values
+- [x] Harden workspace patch application against repo-root escape and ambiguous multi-match replacements
+- [x] Validate structured LLM outputs with shared Zod schemas before they enter workflow state
+- [x] Add unit coverage for helper fallback behavior and codex patch safety
+- [x] Add e2e-style router tests for run lifecycle, persistence, and permissions
+
 ## 4. Testing Checklist
 
 ### Happy path
@@ -707,9 +725,9 @@ Exit criteria:
 
 ### Validation
 
-- [ ] Reject when user is not a workspace member (`FORBIDDEN`)
+- [x] Reject when user is not a workspace member (`FORBIDDEN`) via router test coverage
 - [ ] Reject when analysis/thread/workspace mismatch (`NOT_FOUND`/`BAD_REQUEST`)
-- [ ] Reject when `githubToken/owner/repo` missing (`PRECONDITION_FAILED`)
+- [ ] If GitHub automation is enabled in Phase 6, reject incomplete `githubToken/owner/repo` config before PR creation
 - [ ] If Sentry config is absent, workflow continues with code-only RCA and records `rca_source=analysis_only`
 - [ ] Reject malformed queue callback payloads on `/api/rest/fix-pr/progress`
 
@@ -744,6 +762,13 @@ Exit criteria:
 
 - [x] `npm run type-check` passes across all workspaces
 - [x] Zod schemas and inferred types are reused in router, actions, and workflow input/output contracts
+
+### Automated Tests
+
+- [x] `npm test` passes for the branch
+- [x] Router tests cover fix-run lifecycle and workspace-membership rejection
+- [x] Unit tests cover code-context expansion, test selection, GitHub helper basics, and LLM fallback behavior
+- [x] Codex worker tests cover repo-root command execution and safe patch application
 
 ### Lint
 
@@ -807,7 +832,8 @@ Exit criteria:
 
 #### Manual scenario G: regression checks
 
-- [ ] Run `npm run type-check`
-- [ ] Run `npm run lint`
-- [ ] Run `npm run build --workspace @app/web`
-- [ ] Run `npm run build --workspace @app/codex`
+- [x] Run `npm test`
+- [x] Run `npm run type-check`
+- [x] Run `npm run lint`
+- [x] Run `npm run build --workspace @app/web`
+- [x] Run `npm run build --workspace @app/codex`
