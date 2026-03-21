@@ -313,6 +313,89 @@ async function searchCodebaseFallback(params: {
   }
 }
 
+// ── Activity 3b: Expand chunk context (parent + siblings) ───────────
+
+interface ChunkContextResult {
+  parent: { symbolName: string | null; chunkType: string; content: string; file: { filePath: string } } | null;
+  siblings: Array<{ symbolName: string | null; chunkType: string; content: string; file: { filePath: string } }>;
+}
+
+const MAX_CONTEXT_CHARS_PER_CHUNK = 4000;
+
+function truncateContent(content: string, maxLen: number): string {
+  return content.length > maxLen ? content.slice(0, maxLen) + "..." : content;
+}
+
+export async function expandChunkContextActivity(params: {
+  chunkIds: string[];
+  maxSiblings?: number;
+  workspaceId?: string;
+  threadId?: string;
+  investigationABEnabled?: boolean;
+}): Promise<Record<string, ChunkContextResult> | null> {
+  if (params.chunkIds.length === 0) return null;
+
+  const url = `${queueEnv.WEB_APP_URL}/api/rest/codex/chunk/batch-context`;
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chunkIds: params.chunkIds,
+        maxSiblings: params.maxSiblings ?? 3,
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    if (!response.ok) {
+      console.warn(`[analyze-thread] batch-context failed (${response.status})`);
+      return null;
+    }
+
+    const raw = (await response.json()) as Record<string, ChunkContextResult>;
+
+    // Truncate content to stay within token budget
+    for (const [, ctx] of Object.entries(raw)) {
+      if (ctx.parent) {
+        ctx.parent.content = truncateContent(ctx.parent.content, MAX_CONTEXT_CHARS_PER_CHUNK);
+      }
+      for (const sib of ctx.siblings) {
+        sib.content = truncateContent(sib.content, 500);
+      }
+    }
+
+    // A/B logging
+    if (params.investigationABEnabled && params.threadId && params.workspaceId) {
+      const hasExpansion = Object.values(raw).some((ctx) => ctx.parent !== null || ctx.siblings.length > 0);
+      try {
+        await prisma.analysisABLog.create({
+          data: {
+            threadId: params.threadId,
+            analysisId: "pending",
+            workspaceId: params.workspaceId,
+            phase: "context_expansion",
+            controlResult: JSON.parse("null") as Prisma.InputJsonValue,
+            variantResult: JSON.parse(JSON.stringify(raw)) as Prisma.InputJsonValue,
+            tokenDelta: hasExpansion
+              ? Object.values(raw).reduce((sum, ctx) => {
+                  return sum + (ctx.parent?.content.length ?? 0) + ctx.siblings.reduce((s, sib) => s + sib.content.length, 0);
+                }, 0)
+              : 0,
+          },
+        });
+      } catch (abError) {
+        console.warn("[analyze-thread] context expansion A/B log failed:", abError);
+      }
+    }
+
+    return raw;
+  } catch (error) {
+    console.warn("[analyze-thread] expand chunk context error:", error);
+    return null;
+  }
+}
+
 // ── Activity 4: Sentry error lookup ─────────────────────────────────
 
 export async function fetchSentryErrorsActivity(params: {
@@ -356,6 +439,7 @@ export async function generateAnalysisActivity(params: {
   context: AnalysisContext;
   codexFindings: unknown | null;
   sentryFindings: unknown | null;
+  expandedContext?: unknown | null;
 }): Promise<ThreadAnalysisResult | null> {
   const apiKey = queueEnv.LLM_API_KEY;
   if (!apiKey) {
@@ -370,6 +454,7 @@ export async function generateAnalysisActivity(params: {
     threadSummary: params.context.threadSummary,
     codexFindings: params.codexFindings,
     sentryFindings: params.sentryFindings,
+    expandedContext: params.expandedContext ?? null,
   };
 
   return analyzeThread(input, {

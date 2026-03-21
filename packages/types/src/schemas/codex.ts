@@ -98,6 +98,13 @@ export const CodexChunkContextSchema = z.object({
 
 export type CodexChunkContextInput = z.infer<typeof CodexChunkContextSchema>;
 
+export const CodexBatchContextSchema = z.object({
+  chunkIds: z.array(z.string()).min(1).max(10),
+  maxSiblings: z.number().int().min(0).max(5).default(3),
+});
+
+export type CodexBatchContextInput = z.infer<typeof CodexBatchContextSchema>;
+
 // ── Sync Logs ───────────────────────────────────────────────────────
 
 export const CodexSyncLogsQuerySchema = z.object({

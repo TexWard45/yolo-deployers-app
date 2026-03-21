@@ -19,6 +19,7 @@ const {
   escalateThreadActivity,
   // Phase 2: Investigation (reuse from analyze-thread)
   searchCodebaseActivity,
+  expandChunkContextActivity,
   fetchSentryErrorsActivity,
   // Phase 3: Analysis (reuse from analyze-thread)
   generateDraftReplyActivity,
@@ -221,10 +222,27 @@ export async function supportPipelineWorkflow(
   // PHASE 3: Analyze + Draft
   // ✅ PLUGGED IN — LLM analysis → LLM draft → save
   // ────────────────────────────────────────────────────────────────
+  // Expand chunk context (parent + siblings)
+  let expandedContext: unknown = null;
+  if (codexResults) {
+    const codex = codexResults as { chunks?: Array<{ id: string }> };
+    const chunkIds = codex.chunks?.map((c) => c.id) ?? [];
+    if (chunkIds.length > 0) {
+      expandedContext = await expandChunkContextActivity({
+        chunkIds,
+        maxSiblings: 3,
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        investigationABEnabled: context.investigationABEnabled,
+      });
+    }
+  }
+
   const analysisResult = await generateAnalysisActivity({
     context,
     codexFindings: codexResults,
     sentryFindings: sentryResults,
+    expandedContext,
   });
 
   if (!analysisResult) {

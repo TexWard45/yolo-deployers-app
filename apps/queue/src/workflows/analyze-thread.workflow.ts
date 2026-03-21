@@ -10,6 +10,7 @@ const {
   getThreadAnalysisContext,
   checkSufficiencyActivity,
   searchCodebaseActivity,
+  expandChunkContextActivity,
   fetchSentryErrorsActivity,
   generateDraftReplyActivity,
   saveAnalysisAndDraftActivity,
@@ -129,11 +130,28 @@ export async function analyzeThreadWorkflow(
       : Promise.resolve([]),
   ]);
 
+  // 5b. Expand chunk context (parent class + siblings)
+  let expandedContext: unknown = null;
+  if (codexResults) {
+    const codex = codexResults as { chunks?: Array<{ id: string }> };
+    const chunkIds = codex.chunks?.map((c) => c.id) ?? [];
+    if (chunkIds.length > 0) {
+      expandedContext = await expandChunkContextActivity({
+        chunkIds,
+        maxSiblings: 3,
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        investigationABEnabled: context.investigationABEnabled,
+      });
+    }
+  }
+
   // 6. Generate structured analysis
   const analysisResult = await generateAnalysisActivity({
     context,
     codexFindings: codexResults,
     sentryFindings: sentryResults,
+    expandedContext,
   });
 
   if (!analysisResult) {

@@ -47,6 +47,7 @@ export interface ThreadAnalysisInput {
   threadSummary: string | null;
   codexFindings: unknown | null;
   sentryFindings: unknown | null;
+  expandedContext?: unknown | null;
 }
 
 export interface ThreadAnalysisOptions {
@@ -89,7 +90,42 @@ function buildUserMessage(input: ThreadAnalysisInput): string {
           return parts.join("\n");
         })
         .join("\n");
-      lines.push("", "Codebase search results:", codexList);
+      lines.push("", "Primary evidence (codebase search):", codexList);
+    }
+  }
+
+  // Expanded context: parent classes + sibling methods
+  if (input.expandedContext) {
+    const expanded = input.expandedContext as Record<string, {
+      parent?: { symbolName?: string; chunkType?: string; content?: string; file?: { filePath?: string } } | null;
+      siblings?: Array<{ symbolName?: string; chunkType?: string; content?: string; file?: { filePath?: string } }>;
+    }>;
+
+    const contextEntries: string[] = [];
+    for (const [chunkId, ctx] of Object.entries(expanded)) {
+      if (!ctx.parent && (!ctx.siblings || ctx.siblings.length === 0)) continue;
+
+      const parts: string[] = [];
+      if (ctx.parent) {
+        parts.push(`  Parent: ${ctx.parent.file?.filePath ?? "unknown"} — ${ctx.parent.chunkType ?? "unknown"} ${ctx.parent.symbolName ?? ""}`);
+        if (ctx.parent.content) {
+          const truncated = ctx.parent.content.length > 200 ? ctx.parent.content.slice(0, 200) + "..." : ctx.parent.content;
+          parts.push(`    ${truncated}`);
+        }
+      }
+      if (ctx.siblings && ctx.siblings.length > 0) {
+        parts.push(`  Siblings (${ctx.siblings.length}):`);
+        for (const sib of ctx.siblings.slice(0, 3)) {
+          parts.push(`    - ${sib.chunkType ?? "unknown"} ${sib.symbolName ?? "(anonymous)"} in ${sib.file?.filePath ?? "unknown"}`);
+        }
+      }
+      if (parts.length > 0) {
+        contextEntries.push(`  Chunk ${chunkId}:\n${parts.join("\n")}`);
+      }
+    }
+
+    if (contextEntries.length > 0) {
+      lines.push("", "Surrounding context (parent classes + sibling methods):", contextEntries.join("\n"));
     }
   }
 
