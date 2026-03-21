@@ -219,47 +219,12 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       </Button>
 
       {fixPrStatus ? (
-        <div className="space-y-1 rounded border bg-muted/40 p-2">
-          <p className="text-[10px] font-semibold uppercase text-muted-foreground">
-            Fix Run
-          </p>
-          <p className="text-xs">
-            {fixPrStatus.status} • {fixPrStatus.currentStage}
-          </p>
-          <p className="text-[10px] text-muted-foreground">
-            Iteration {fixPrStatus.iterationCount}/{fixPrStatus.maxIterations}
-          </p>
-          {fixPrStatus.summary ? (
-            <p className="text-[10px] text-muted-foreground">{fixPrStatus.summary}</p>
-          ) : null}
-          {fixPrStatus.rcaSummary ? (
-            <p className="text-[10px] text-muted-foreground">RCA: {fixPrStatus.rcaSummary}</p>
-          ) : null}
-          {fixPrStatus.lastError ? (
-            <p className="text-[10px] text-red-600">{fixPrStatus.lastError}</p>
-          ) : null}
-          {fixPrStatus.prUrl ? (
-            <a
-              href={fixPrStatus.prUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block text-xs text-blue-600 hover:underline"
-            >
-              {fixPrStatus.prNumber ? `PR #${fixPrStatus.prNumber}` : "Open PR"}
-            </a>
-          ) : null}
-          {isFixRunActive ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[10px]"
-              disabled={cancellingFixPr}
-              onClick={handleCancelFixPr}
-            >
-              {cancellingFixPr ? "Cancelling..." : "Cancel"}
-            </Button>
-          ) : null}
-        </div>
+        <FixRunPanel
+          fixPrStatus={fixPrStatus}
+          isActive={isFixRunActive}
+          cancellingFixPr={cancellingFixPr}
+          onCancel={handleCancelFixPr}
+        />
       ) : null}
 
       {/* Spec preview */}
@@ -296,6 +261,154 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
             ))}
           </div>
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+const FIX_STAGES = [
+  { key: "COLLECTING_CONTEXT", label: "Collecting context" },
+  { key: "PLANNING", label: "Planning fix" },
+  { key: "FIXING", label: "Applying changes" },
+  { key: "REVIEWING", label: "Reviewing changes" },
+  { key: "CHECKING", label: "Running checks" },
+  { key: "ITERATING", label: "Iterating" },
+  { key: "CREATING_PR", label: "Creating PR" },
+] as const;
+
+const FIX_STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  QUEUED: { bg: "bg-blue-100", text: "text-blue-700", label: "Queued" },
+  RUNNING: { bg: "bg-amber-100", text: "text-amber-700", label: "Running" },
+  PASSED: { bg: "bg-emerald-100", text: "text-emerald-700", label: "Passed" },
+  WAITING_REVIEW: { bg: "bg-violet-100", text: "text-violet-700", label: "Waiting Review" },
+  FAILED: { bg: "bg-red-100", text: "text-red-700", label: "Failed" },
+  CANCELLED: { bg: "bg-gray-100", text: "text-gray-600", label: "Cancelled" },
+};
+
+function FixRunPanel({
+  fixPrStatus,
+  isActive,
+  cancellingFixPr,
+  onCancel,
+}: {
+  fixPrStatus: FixPRStatusResult;
+  isActive: boolean;
+  cancellingFixPr: boolean;
+  onCancel: () => void;
+}) {
+  const style = FIX_STATUS_STYLE[fixPrStatus.status] ?? FIX_STATUS_STYLE.RUNNING!;
+  const currentStageIndex = FIX_STAGES.findIndex((s) => s.key === fixPrStatus.currentStage);
+
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+          Fix Run
+        </p>
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${style.bg} ${style.text}`}>
+          {isActive && (
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-current" />
+            </span>
+          )}
+          {style.label}
+        </span>
+      </div>
+
+      {/* Stage progress */}
+      {isActive && (
+        <div className="space-y-1">
+          {FIX_STAGES.map((stage, idx) => {
+            const isDone = idx < currentStageIndex;
+            const isCurrent = stage.key === fixPrStatus.currentStage;
+            return (
+              <div key={stage.key} className="flex items-center gap-2">
+                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[8px] ${
+                  isDone
+                    ? "bg-emerald-500 text-white"
+                    : isCurrent
+                      ? "bg-amber-500 text-white"
+                      : "bg-muted text-muted-foreground"
+                }`}>
+                  {isDone ? "✓" : isCurrent ? "●" : "○"}
+                </span>
+                <span className={`text-[10px] ${
+                  isCurrent ? "font-medium text-foreground" : isDone ? "text-muted-foreground line-through" : "text-muted-foreground"
+                }`}>
+                  {stage.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Iteration counter */}
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <div className="mb-1 flex justify-between text-[10px] text-muted-foreground">
+            <span>Iteration {fixPrStatus.iterationCount}/{fixPrStatus.maxIterations}</span>
+          </div>
+          <div className="h-1.5 w-full rounded-full bg-muted">
+            <div
+              className={`h-1.5 rounded-full transition-all ${
+                fixPrStatus.status === "PASSED" ? "bg-emerald-500" : fixPrStatus.status === "FAILED" ? "bg-red-500" : "bg-amber-500"
+              }`}
+              style={{ width: `${Math.max((fixPrStatus.iterationCount / fixPrStatus.maxIterations) * 100, 5)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Summary */}
+      {fixPrStatus.summary ? (
+        <p className="text-[10px] text-muted-foreground">{fixPrStatus.summary}</p>
+      ) : null}
+
+      {/* RCA */}
+      {fixPrStatus.rcaSummary ? (
+        <div>
+          <p className="text-[9px] font-semibold uppercase text-muted-foreground">RCA</p>
+          <p className="text-[10px] text-muted-foreground">{fixPrStatus.rcaSummary}</p>
+        </div>
+      ) : null}
+
+      {/* Error */}
+      {fixPrStatus.lastError ? (
+        <p className="text-[10px] text-red-600">{fixPrStatus.lastError}</p>
+      ) : null}
+
+      {/* PR link */}
+      {fixPrStatus.prUrl ? (
+        <a
+          href={fixPrStatus.prUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+        >
+          {fixPrStatus.prNumber ? `PR #${fixPrStatus.prNumber}` : "Open PR"} →
+        </a>
+      ) : null}
+
+      {/* Cancel button */}
+      {isActive ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 w-full px-2 text-[10px] text-muted-foreground hover:text-red-600"
+          disabled={cancellingFixPr}
+          onClick={onCancel}
+        >
+          {cancellingFixPr ? "Cancelling..." : "Cancel Run"}
+        </Button>
+      ) : null}
+
+      {/* Auto-refresh indicator */}
+      {isActive ? (
+        <p className="text-center text-[9px] text-muted-foreground">
+          Auto-refreshing every 5s
+        </p>
       ) : null}
     </div>
   );
