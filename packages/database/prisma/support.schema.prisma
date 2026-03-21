@@ -74,6 +74,9 @@ model WorkspaceAgentConfig {
   model              String?
   threadRecencyWindowMinutes Int @default(0)
 
+  // Reply mode: true = auto-send, false = wait for human approval
+  autoReply          Boolean  @default(false)
+
   // Analysis pipeline settings
   analysisEnabled    Boolean  @default(true)
   maxClarifications  Int      @default(2)

@@ -210,6 +210,7 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
   tone: z.string().optional(),
   replyPolicy: z.string().optional(),
   autoDraftOnInbound: z.boolean().optional(),
+  autoReply: z.boolean().optional(),
   handoffRulesJson: z.record(z.string(), z.unknown()).optional(),
   model: z.string().optional(),
   // Analysis pipeline settings

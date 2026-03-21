@@ -12,6 +12,7 @@ import {
 } from "@shared/types";
 import type { Prisma } from "@shared/types/prisma";
 import { dispatchAnalyzeThreadWorkflow } from "../temporal";
+import { sendDraftToChannel } from "./helpers/send-draft";
 
 export const agentRouter = createTRPCRouter({
   /** Get workspace AI agent config */
@@ -47,6 +48,7 @@ export const agentRouter = createTRPCRouter({
         tone: null,
         replyPolicy: null,
         autoDraftOnInbound: true,
+        autoReply: false,
         handoffRulesJson: null,
         model: null,
         analysisEnabled: true,
@@ -195,154 +197,21 @@ export const agentRouter = createTRPCRouter({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Draft is not in GENERATED state" });
       }
 
-      // 1. Send to external channel (Discord)
-      let externalMessageId: string | null = null;
+      const firstInbound = draft.thread.messages[0] ?? null;
 
-      console.log("[approveDraft] source:", draft.thread.source, "externalThreadId:", draft.thread.externalThreadId);
-
-      if (draft.thread.source === "DISCORD") {
-        const firstInbound = draft.thread.messages[0];
-        const meta = firstInbound?.metadata as Record<string, unknown> | null;
-        const channelId = (meta?.channelId as string)
-          ?? ((meta?.rawPayload as Record<string, unknown> | null)?.channelId as string)
-          ?? null;
-        const isSynthetic = draft.thread.externalThreadId.startsWith("synthetic-");
-
-        console.log("[approveDraft] channelId:", channelId, "isSynthetic:", isSynthetic, "firstInbound externalMessageId:", firstInbound?.externalMessageId);
-
-        const botToken = process.env.DISCORD_BOT_TOKEN;
-        if (!botToken) {
-          console.error("[approveDraft] DISCORD_BOT_TOKEN not set in env");
-        } else if (isSynthetic && channelId && firstInbound?.externalMessageId) {
-          // No Discord thread yet — create one on the customer's first message, then send reply inside it
-          try {
-            const threadName = (firstInbound.body ?? "Support").slice(0, 100);
-
-            // Step 1: Create thread from the customer's message
-            const threadRes = await fetch(
-              `https://discord.com/api/v10/channels/${channelId}/messages/${firstInbound.externalMessageId}/threads`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bot ${botToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  name: threadName,
-                  auto_archive_duration: 1440,
-                }),
-              },
-            );
-
-            let threadChannelId: string | null = null;
-
-            if (threadRes.ok) {
-              const threadData = (await threadRes.json()) as { id: string };
-              threadChannelId = threadData.id;
-              console.log(`[approveDraft] created Discord thread ${threadChannelId}`);
-            } else {
-              const errText = await threadRes.text().catch(() => "");
-              console.error(`[approveDraft] create thread failed (${threadRes.status}): ${errText}`);
-              // Thread might already exist — try using the message's thread ID
-              // Discord returns 400 if thread already exists on this message
-              if (threadRes.status === 400) {
-                // Fall back: send directly to channel as reply
-                threadChannelId = channelId;
-              }
-            }
-
-            // Step 2: Send reply inside the thread
-            if (threadChannelId) {
-              const msgRes = await fetch(
-                `https://discord.com/api/v10/channels/${threadChannelId}/messages`,
-                {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bot ${botToken}`,
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({ content: draft.body }),
-                },
-              );
-
-              if (msgRes.ok) {
-                const msgData = (await msgRes.json()) as { id: string };
-                externalMessageId = msgData.id;
-                console.log(`[approveDraft] sent message ${msgData.id} in thread ${threadChannelId}`);
-
-                // Update SupportThread with the real Discord thread ID
-                if (threadChannelId !== channelId) {
-                  await ctx.prisma.supportThread.update({
-                    where: { id: draft.threadId },
-                    data: { externalThreadId: threadChannelId },
-                  });
-                }
-              } else {
-                const error = await msgRes.text().catch(() => "");
-                console.error(`[approveDraft] Discord send error (${msgRes.status}): ${error}`);
-              }
-            }
-          } catch (error) {
-            console.error("[approveDraft] Discord thread+send failed:", error);
-          }
-        } else if (!isSynthetic) {
-          // Already have a real Discord thread ID — just send in it
-          try {
-            const response = await fetch(
-              `https://discord.com/api/v10/channels/${draft.thread.externalThreadId}/messages`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bot ${botToken}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ content: draft.body }),
-              },
-            );
-
-            if (response.ok) {
-              const data = (await response.json()) as { id: string };
-              externalMessageId = data.id;
-              console.log(`[approveDraft] sent message ${data.id} in existing thread ${draft.thread.externalThreadId}`);
-            } else {
-              const error = await response.text().catch(() => "");
-              console.error(`[approveDraft] Discord API error (${response.status}): ${error}`);
-            }
-          } catch (error) {
-            console.error("[approveDraft] Discord send failed:", error);
-          }
-        } else {
-          console.error("[approveDraft] cannot resolve Discord target — channelId:", channelId, "firstInbound:", firstInbound?.externalMessageId);
-        }
-      }
-
-      // 2. Record outbound message
-      await ctx.prisma.threadMessage.create({
-        data: {
-          threadId: draft.threadId,
-          direction: "OUTBOUND",
-          body: draft.body,
-          externalMessageId,
-          metadata: { source: "ai-draft-approved", draftId: input.draftId },
-        },
+      await sendDraftToChannel(ctx.prisma, {
+        draftId: input.draftId,
+        draftBody: draft.body,
+        threadId: draft.threadId,
+        threadSource: draft.thread.source,
+        externalThreadId: draft.thread.externalThreadId,
+        firstInbound: firstInbound
+          ? { metadata: firstInbound.metadata, externalMessageId: firstInbound.externalMessageId, body: firstInbound.body }
+          : null,
+        metadataSource: "ai-draft-approved",
       });
 
-      // 3. Update thread status + timestamps
-      const now = new Date();
-      await ctx.prisma.supportThread.update({
-        where: { id: draft.threadId },
-        data: {
-          lastMessageAt: now,
-          lastOutboundAt: now,
-          status: "WAITING_CUSTOMER",
-        },
-      });
-
-      // 4. Mark draft as SENT
-      return ctx.prisma.replyDraft.update({
-        where: { id: input.draftId },
-        data: { status: "SENT" },
-      });
+      return ctx.prisma.replyDraft.findUniqueOrThrow({ where: { id: input.draftId } });
     }),
 
   /** Dismiss a draft */
@@ -498,6 +367,43 @@ export const agentRouter = createTRPCRouter({
         where: { id: input.threadId },
         data: updateData,
       });
+
+      // Auto-reply: if workspace has autoReply enabled, send the draft immediately
+      const agentConfig = await ctx.prisma.workspaceAgentConfig.findUnique({
+        where: { workspaceId: input.workspaceId },
+        select: { autoReply: true },
+      });
+
+      if (agentConfig?.autoReply) {
+        console.log(`[saveAnalysis] autoReply enabled — auto-sending draft ${draft.id}`);
+
+        const thread = await ctx.prisma.supportThread.findUnique({
+          where: { id: input.threadId },
+          include: {
+            messages: {
+              where: { direction: "INBOUND" },
+              orderBy: { createdAt: "asc" },
+              take: 1,
+              select: { metadata: true, externalMessageId: true, body: true },
+            },
+          },
+        });
+
+        if (thread) {
+          const firstInbound = thread.messages[0] ?? null;
+          await sendDraftToChannel(ctx.prisma, {
+            draftId: draft.id,
+            draftBody: draft.body,
+            threadId: input.threadId,
+            threadSource: thread.source,
+            externalThreadId: thread.externalThreadId,
+            firstInbound: firstInbound
+              ? { metadata: firstInbound.metadata, externalMessageId: firstInbound.externalMessageId, body: firstInbound.body }
+              : null,
+            metadataSource: "ai-auto-reply",
+          });
+        }
+      }
 
       return { analysisId: analysis.id, draftId: draft.id };
     }),
