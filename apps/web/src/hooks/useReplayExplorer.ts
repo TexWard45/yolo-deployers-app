@@ -20,8 +20,10 @@ export type ReplayExplorerReturn = {
   sessions: any[];
   selectedSession: any | undefined;
   sessionsLoading: boolean;
-  hasMore: boolean;
-  loadMore: () => void;
+  page: number;
+  totalPages: number;
+  total: number;
+  goToPage: (p: number) => void;
   replayData: any | undefined;
   replayLoading: boolean;
   timelineData: any | undefined;
@@ -40,8 +42,10 @@ const EMPTY_FILTERS: SessionFilters = {
 export function useReplayExplorer(): ReplayExplorerReturn {
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [filters, setFilters] = useState<SessionFilters>(EMPTY_FILTERS);
+  const [page, setPage] = useState(1);
 
   const filterInput = {
+    page,
     limit: 20,
     ...(filters.customerId ? { customerId: filters.customerId } : {}),
     ...(filters.customerEmail ? { customerEmail: filters.customerEmail } : {}),
@@ -51,16 +55,12 @@ export function useReplayExplorer(): ReplayExplorerReturn {
     ...(filters.hasError ? { hasError: true } : {}),
   };
 
-  const {
-    data: sessionsData,
-    isLoading: sessionsLoading,
-    fetchNextPage,
-    hasNextPage,
-  } = trpc.telemetry.listSessions.useInfiniteQuery(filterInput, {
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-  });
+  const { data: sessionsData, isLoading: sessionsLoading } =
+    trpc.telemetry.listSessions.useQuery(filterInput);
 
-  const sessions = sessionsData?.pages.flatMap((p) => p.sessions) ?? [];
+  const sessions = sessionsData?.sessions ?? [];
+  const total = sessionsData?.total ?? 0;
+  const totalPages = sessionsData?.totalPages ?? 0;
 
   const { data: replayData, isLoading: replayLoading } =
     trpc.telemetry.getSessionReplay.useQuery(
@@ -81,15 +81,22 @@ export function useReplayExplorer(): ReplayExplorerReturn {
     .map((t: any) => new Date(t.timestamp).getTime());
 
   const setFilter = useCallback((key: keyof SessionFilters, value: string) => {
+    setPage(1); // reset to page 1 on filter change
     setFilters((prev) => ({ ...prev, [key]: value }));
   }, []);
 
   const setHasErrorFilter = useCallback((value: boolean) => {
+    setPage(1);
     setFilters((prev) => ({ ...prev, hasError: value }));
   }, []);
 
   const clearFilters = useCallback(() => {
+    setPage(1);
     setFilters(EMPTY_FILTERS);
+  }, []);
+
+  const goToPage = useCallback((p: number) => {
+    setPage(p);
   }, []);
 
   return {
@@ -102,8 +109,10 @@ export function useReplayExplorer(): ReplayExplorerReturn {
     sessions,
     selectedSession,
     sessionsLoading,
-    hasMore: hasNextPage ?? false,
-    loadMore: () => void fetchNextPage(),
+    page,
+    totalPages,
+    total,
+    goToPage,
     replayData,
     replayLoading,
     timelineData,

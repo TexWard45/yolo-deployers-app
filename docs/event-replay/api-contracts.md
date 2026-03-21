@@ -5,13 +5,15 @@
 ### Model: Session
 ```prisma
 model Session {
-  id        String   @id @default(cuid())   // Session ID, also used as client-generated UUID
-  userId    String?                          // Optional FK to User
-  user      User?    @relation(...)
-  userAgent String?                          // Browser user agent
-  ipAddress String?                          // Client IP (not yet populated)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())   // Session ID, also used as client-generated UUID
+  userId     String?                          // Optional FK to User
+  user       User?    @relation(...)
+  userAgent  String?                          // Browser user agent
+  ipAddress  String?                          // Client IP (not yet populated)
+  hasError   Boolean  @default(false)         // True if any system_error event was ingested
+  errorCount Int      @default(0)             // Total error events accumulated across all batches
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   events    ReplayEvent[]
   timelines SessionTimeline[]
@@ -19,6 +21,9 @@ model Session {
   @@index([userId])
 }
 ```
+
+> **Migration:** `20260321120000_add_session_error_flags`
+> `hasError` enables O(1) filtering without joining `SessionTimeline`. Updated atomically inside the `ingestEvents` transaction via `errorCount: { increment: N }`.
 
 ### Model: ReplayEvent
 ```prisma
@@ -82,16 +87,18 @@ model SessionTimeline {
   id        String   @id @default(cuid())
   sessionId String                           // FK to Session
   session   Session  @relation(..., onDelete: Cascade)
-  type      String                           // "session_summary" | "click" | "error_summary"
-  content   String                           // Mô tả text human-readable
-  metadata  Json?                            // Data bổ sung (eventCount, clickType, etc.)
-  timestamp DateTime                         // Thời điểm liên quan
+  type      String                           // "session_summary" | "click" | "ERROR"
+  content   String                           // Human-readable description / error message
+  metadata  Json?                            // Raw rrweb event payload for ERROR rows
+  timestamp DateTime                         // Exact moment the event occurred
 
   createdAt DateTime @default(now())
 
   @@index([sessionId, timestamp])
 }
 ```
+
+> **`type = "ERROR"` rows** are written automatically by `ingestEvents` when a `system_error` custom event is detected. `content` = error message, `metadata` = full rrweb event payload including `details` passed to `Telemetry.logError()`. These rows are the source for red timeline markers and error timestamps in the replay player.
 
 ---
 
@@ -148,7 +155,19 @@ model SessionTimeline {
 
 ### `telemetry.listSessions` — Query
 
-**Input**: `{ limit?: number (1-100, default 20), cursor?: string }`
+**Input**:
+```ts
+{
+  page?:          number,   // 1-indexed, default 1
+  limit?:         number,   // 1–100, default 20
+  customerId?:    string,   // matched via user.identify payload.id
+  customerEmail?: string,   // matched via user.identify payload.email
+  customerPhone?: string,   // matched via user.identify payload.phone
+  startDate?:     Date,
+  endDate?:       Date,
+  hasError?:      boolean,  // filter to only errored sessions
+}
+```
 
 **Output**:
 ```json
@@ -158,15 +177,20 @@ model SessionTimeline {
       "id": "clx123...",
       "userId": null,
       "userAgent": "Mozilla/5.0...",
-      "ipAddress": null,
-      "createdAt": "2026-03-14T07:08:40.000Z",
-      "updatedAt": "2026-03-14T07:08:45.000Z",
-      "_count": { "events": 47 }
+      "hasError": true,
+      "errorCount": 3,
+      "createdAt": "2026-03-21T10:23:47.000Z",
+      "updatedAt": "2026-03-21T10:24:12.000Z",
+      "_count": { "events": 94 }
     }
   ],
-  "nextCursor": "clx456..."
+  "total": 142,
+  "page": 1,
+  "totalPages": 8
 }
 ```
+
+> **Breaking change from cursor → page-based pagination.** `cursor` and `nextCursor` are removed. Use `page` + `totalPages` for navigation.
 
 ---
 
@@ -184,6 +208,47 @@ model SessionTimeline {
   ]
 }
 ```
+
+---
+
+### `telemetry.getExactErrorMoment` — Query
+
+Resolves a customer identity to their most recent errored session and returns the sub-second precise video offset to the first error.
+
+**Input**:
+```ts
+{
+  userId?:        string,  // at least one identity field required
+  customerEmail?: string,
+  customerPhone?: string,
+  startTime:      Date,
+  endTime:        Date,
+}
+```
+
+**Output (found)**:
+```json
+{
+  "found": true,
+  "sessionId": "clx_xyz123",
+  "offsetMs": 47300,
+  "errorContent": "Cannot read properties of undefined",
+  "errorCount": 3
+}
+```
+
+**Output (not found)**:
+```json
+{ "found": false }
+```
+
+**Identity resolution:** all three identity fields are looked up via `user.identify` `ReplayEvent` payloads (`payload.id`, `payload.email`, `payload.phone`). `Session.userId` is `null` for SDK-recorded sessions — identity lives in the event stream, not the column. `userId` also performs a secondary direct column match for authenticated flows.
+
+**Time window:** filters on `SessionTimeline.timestamp` (the actual error moment), not `session.createdAt`. Sessions that started before the window but errored inside it are correctly matched.
+
+**`offsetMs` precision:** computed as `errorTimestamp - firstReplayEvent.timestamp`, not `session.createdAt`. This eliminates drift caused by DB write latency and ensures the seek position is anchored to `rrweb-player`'s actual `0:00` mark.
+
+See [error-tracking.md](./error-tracking.md) for full integration guide.
 
 ---
 

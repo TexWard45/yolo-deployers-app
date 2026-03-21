@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown, ShieldAlert, Search, ChevronUp } from "lucide-react";
+import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown, ChevronLeft, ChevronRight, ShieldAlert, Search, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { trpc } from "@/trpc/client";
 
@@ -32,8 +32,8 @@ export default function ReplaysPage() {
     ...(investigatorFields.userId ? { userId: investigatorFields.userId } : {}),
     ...(investigatorFields.customerEmail ? { customerEmail: investigatorFields.customerEmail } : {}),
     ...(investigatorFields.customerPhone ? { customerPhone: investigatorFields.customerPhone } : {}),
-    startTime: investigatorFields.startDate ? new Date(investigatorFields.startDate) : new Date(Date.now() - 86_400_000),
-    endTime: investigatorFields.endDate ? new Date(investigatorFields.endDate) : new Date(),
+    ...(investigatorFields.startDate ? { startTime: new Date(investigatorFields.startDate) } : {}),
+    ...(investigatorFields.endDate ? { endTime: new Date(investigatorFields.endDate) } : {}),
   };
 
   const hasInvestigatorIdentity =
@@ -54,8 +54,10 @@ export default function ReplaysPage() {
     sessions,
     selectedSession,
     sessionsLoading,
-    hasMore,
-    loadMore,
+    page,
+    totalPages,
+    total,
+    goToPage,
     replayData,
     replayLoading,
     timelineData,
@@ -85,7 +87,7 @@ export default function ReplaysPage() {
         </div>
         <div className="flex items-center gap-4">
           <Badge variant="outline" className="px-3 py-1 bg-primary/5 border-primary/20">
-            {sessions.length} Sessions{hasMore ? "+" : ""}
+            {total} Sessions
           </Badge>
         </div>
       </header>
@@ -276,15 +278,54 @@ export default function ReplaysPage() {
                       </div>
                     </button>
                   ))}
-                  {hasMore && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full h-8 text-xs text-muted-foreground mt-1"
-                      onClick={loadMore}
-                    >
-                      <ChevronDown className="w-3 h-3 mr-1" /> Load more
-                    </Button>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-2 mt-1 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={page <= 1}
+                        onClick={() => goToPage(page - 1)}
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                          .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                          .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                            if (idx > 0 && (arr[idx - 1] as number) + 1 < p) acc.push("…");
+                            acc.push(p);
+                            return acc;
+                          }, [])
+                          .map((p, idx) =>
+                            p === "…" ? (
+                              <span key={`ellipsis-${idx}`} className="text-[10px] text-muted-foreground px-0.5">…</span>
+                            ) : (
+                              <button
+                                key={p}
+                                onClick={() => goToPage(p)}
+                                className={cn(
+                                  "h-6 w-6 rounded text-[10px] font-medium transition-colors",
+                                  p === page
+                                    ? "bg-primary text-primary-foreground"
+                                    : "text-muted-foreground hover:bg-muted"
+                                )}
+                              >
+                                {p}
+                              </button>
+                            )
+                          )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={page >= totalPages}
+                        onClick={() => goToPage(page + 1)}
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   )}
                 </>
               )}

@@ -91,8 +91,8 @@ export const telemetryRouter = createTRPCRouter({
   listSessions: protectedProcedure
     .input(
       z.object({
+        page: z.number().int().min(1).default(1),
         limit: z.number().int().min(1).max(100).default(20),
-        cursor: z.string().optional(),
         customerId: z.string().optional(),
         customerEmail: z.string().optional(),
         customerPhone: z.string().optional(),
@@ -102,7 +102,7 @@ export const telemetryRouter = createTRPCRouter({
       })
     )
     .query(async ({ ctx, input }) => {
-      const { limit, cursor, customerId, customerEmail, customerPhone, startDate, endDate, hasError } = input;
+      const { page, limit, customerId, customerEmail, customerPhone, startDate, endDate, hasError } = input;
 
       // Resolve session IDs by searching user.identify event payloads
       let sessionIdFilter: string[] | undefined;
@@ -118,37 +118,34 @@ export const telemetryRouter = createTRPCRouter({
           distinct: ["sessionId"],
         });
         sessionIdFilter = matchingEvents.map((e) => e.sessionId);
-        if (sessionIdFilter.length === 0) return { sessions: [], nextCursor: undefined };
+        if (sessionIdFilter.length === 0) return { sessions: [], total: 0, page, totalPages: 0 };
       }
 
-      const sessions = await ctx.prisma.session.findMany({
-        take: limit + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        where: {
-          ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
-          ...(hasError !== undefined ? { hasError } : {}),
-          ...(startDate ?? endDate
-            ? {
-                createdAt: {
-                  ...(startDate ? { gte: startDate } : {}),
-                  ...(endDate ? { lte: endDate } : {}),
-                },
-              }
-            : {}),
-        },
-        orderBy: { createdAt: "desc" },
-        include: {
-          _count: { select: { events: true } },
-        },
-      });
+      const where = {
+        ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
+        ...(hasError !== undefined ? { hasError } : {}),
+        ...(startDate ?? endDate
+          ? {
+              createdAt: {
+                ...(startDate ? { gte: startDate } : {}),
+                ...(endDate ? { lte: endDate } : {}),
+              },
+            }
+          : {}),
+      };
 
-      let nextCursor: string | undefined;
-      if (sessions.length > limit) {
-        const last = sessions.pop();
-        nextCursor = last?.id;
-      }
+      const [total, sessions] = await ctx.prisma.$transaction([
+        ctx.prisma.session.count({ where }),
+        ctx.prisma.session.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { createdAt: "desc" },
+          include: { _count: { select: { events: true } } },
+        }),
+      ]);
 
-      return { sessions, nextCursor };
+      return { sessions, total, page, totalPages: Math.ceil(total / limit) };
     }),
 
   getSessionReplay: protectedProcedure
@@ -214,47 +211,79 @@ export const telemetryRouter = createTRPCRouter({
         userId: z.string().optional(),
         customerEmail: z.string().optional(),
         customerPhone: z.string().optional(),
-        startTime: z.coerce.date(),
-        endTime: z.coerce.date(),
+        startTime: z.coerce.date().optional(),
+        endTime: z.coerce.date().optional(),
       }).refine(
         (d) => d.userId ?? d.customerEmail ?? d.customerPhone,
         { message: "Provide at least one of: userId, customerEmail, customerPhone" }
       )
     )
     .query(async ({ ctx, input }) => {
-      const { userId, customerEmail, customerPhone, startTime, endTime } = input;
+      const now = new Date();
+      const {
+        userId,
+        customerEmail,
+        customerPhone,
+        startTime = new Date(now.getTime() - 86_400_000),
+        endTime = now,
+      } = input;
 
-      // Resolve session IDs from identity events when searching by email/phone
-      let sessionIdFilter: string[] | undefined;
+      // ── Step 1: resolve all identity fields via user.identify event payloads ──
+      // Session.userId is null for anonymous SDK sessions (the SDK doesn't send
+      // userId in the ingest payload — identity lives only in user.identify events).
+      // So we treat userId, customerEmail, and customerPhone identically: all are
+      // matched against the user.identify ReplayEvent payload JSON.
       const identityConditions: { payload: { path: string[]; string_contains: string } }[] = [];
+      if (userId)        identityConditions.push({ payload: { path: ["id"],    string_contains: userId } });
       if (customerEmail) identityConditions.push({ payload: { path: ["email"], string_contains: customerEmail } });
       if (customerPhone) identityConditions.push({ payload: { path: ["phone"], string_contains: customerPhone } });
 
-      if (identityConditions.length > 0) {
-        const matchingEvents = await ctx.prisma.replayEvent.findMany({
-          where: { type: "user.identify", OR: identityConditions },
-          select: { sessionId: true },
-          distinct: ["sessionId"],
+      const identityEvents = await ctx.prisma.replayEvent.findMany({
+        where: { type: "user.identify", OR: identityConditions },
+        select: { sessionId: true },
+        distinct: ["sessionId"],
+      });
+
+      // Also include any session where Session.userId directly matches (covers
+      // authenticated flows where userId is written to the column on creation).
+      let sessionIdFilter: string[] = identityEvents.map((e) => e.sessionId);
+      if (userId) {
+        const directMatches = await ctx.prisma.session.findMany({
+          where: { userId },
+          select: { id: true },
         });
-        sessionIdFilter = matchingEvents.map((e) => e.sessionId);
-        if (sessionIdFilter.length === 0) return { found: false as const };
+        const directIds = directMatches.map((s) => s.id);
+        // Merge, deduplicate
+        sessionIdFilter = [...new Set([...sessionIdFilter, ...directIds])];
       }
 
-      const session = await ctx.prisma.session.findFirst({
+      if (sessionIdFilter.length === 0) return { found: false as const };
+
+      // ── Step 2: find the most recent ERROR timeline entry within the time window ──
+      // Filter on SessionTimeline.timestamp (the actual error moment), NOT on
+      // session.createdAt. A session starting before the window can still have an
+      // error inside it — filtering on createdAt would silently miss those.
+      const errorTimeline = await ctx.prisma.sessionTimeline.findFirst({
         where: {
-          ...(userId ? { userId } : {}),
-          ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
-          createdAt: { gte: startTime, lte: endTime },
-          hasError: true,
+          sessionId: { in: sessionIdFilter },
+          type: "ERROR",
+          timestamp: { gte: startTime, lte: endTime },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: { timestamp: "desc" },
+        select: { sessionId: true, timestamp: true, content: true },
+      });
+
+      if (!errorTimeline) return { found: false as const };
+
+      // ── Step 3: load the session + first event for precise offset calculation ──
+      const session = await ctx.prisma.session.findUnique({
+        where: { id: errorTimeline.sessionId },
         include: {
           timelines: {
             where: { type: "ERROR" },
             orderBy: { timestamp: "asc" },
             take: 1,
           },
-          // Fetch the first recorded event to anchor the video timeline precisely
           events: {
             orderBy: { sequence: "asc" },
             take: 1,
@@ -268,7 +297,6 @@ export const telemetryRouter = createTRPCRouter({
       const firstEventTime =
         session.events[0]?.timestamp.getTime() ?? session.createdAt.getTime();
       const errorTime = session.timelines[0]!.timestamp.getTime();
-      // Offset from the start of the rrweb recording to the error moment
       const offsetMs = Math.max(0, errorTime - firstEventTime);
 
       return {
