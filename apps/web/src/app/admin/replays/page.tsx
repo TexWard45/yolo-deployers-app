@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ReplayViewer } from "@/components/telemetry/ReplayViewer";
 import { useReplayExplorer } from "@/hooks/useReplayExplorer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -73,6 +73,13 @@ export default function ReplaysPage() {
     timelineData,
     errorTimestamps,
   } = useReplayExplorer();
+
+  useEffect(() => {
+    const sessionId = new URLSearchParams(window.location.search).get("id");
+    if (sessionId && sessionId !== selectedSessionId) {
+      setSelectedSessionId(sessionId);
+    }
+  }, [selectedSessionId, setSelectedSessionId]);
 
   const hasActiveFilters = Object.values(filters).some(Boolean) || filters.hasError;
 

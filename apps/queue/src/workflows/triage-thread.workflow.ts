@@ -10,6 +10,7 @@ const {
   getTriageContext,
   triageSearchCodebaseActivity,
   triageFetchSentryActivity,
+  fetchTelemetryFindingsActivity,
   generateLinearIssueActivity,
   createOrUpdateLinearTicketActivity,
   generateEngSpecActivity,
@@ -36,6 +37,8 @@ const {
 export async function triageThreadWorkflow(
   input: TriageThreadWorkflowInput,
 ): Promise<TriageThreadWorkflowResult> {
+  const mode = input.mode ?? "FULL_TRIAGE";
+
   // ── Step 1: Get context ────────────────────────────────────────
   const context = await getTriageContext(input);
   if (!context) {
@@ -74,17 +77,27 @@ export async function triageThreadWorkflow(
       : Promise.resolve([]),
   ]);
 
-  // ── Step 3: Generate Linear issue body (LLM) ──────────────────
-  const issueBody = await generateLinearIssueActivity({
-    context,
-    freshCodexFindings: freshCodex,
-    freshSentryFindings: freshSentry,
+  const telemetryFindings = await fetchTelemetryFindingsActivity({
+    telemetrySessionId: context.telemetrySessionId,
+    customerEmail: context.customerEmail,
+    threadCreatedAt: context.threadCreatedAt,
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
   });
+
+  // ── Step 3: Generate Linear issue body (LLM) ──────────────────
+  const issueBody = mode === "FULL_TRIAGE"
+    ? await generateLinearIssueActivity({
+        context,
+        freshCodexFindings: freshCodex,
+        freshSentryFindings: freshSentry,
+      })
+    : null;
 
   // ── Step 4: Create/update Linear ticket ────────────────────────
   let linearResult: Awaited<ReturnType<typeof createOrUpdateLinearTicketActivity>> = null;
 
-  if (issueBody && context.linearConfig) {
+  if (mode === "FULL_TRIAGE" && issueBody && context.linearConfig) {
     linearResult = await createOrUpdateLinearTicketActivity({
       context,
       issueTitle: issueBody.title,
@@ -97,6 +110,7 @@ export async function triageThreadWorkflow(
     context,
     freshCodexFindings: freshCodex,
     freshSentryFindings: freshSentry,
+    telemetryFindings,
   });
 
   // ── Step 6: Save triage result ────────────────────────────────
@@ -107,13 +121,13 @@ export async function triageThreadWorkflow(
   });
 
   // ── Return ────────────────────────────────────────────────────
-  const action = linearResult
-    ? specResult
+  const action = mode === "SPEC_ONLY"
+    ? (specResult ? "spec_generated" : "skipped")
+    : linearResult
       ? "triaged"
-      : "triaged"
-    : specResult
-      ? "spec_generated"
-      : "skipped";
+      : specResult
+        ? "spec_generated"
+        : "skipped";
 
   return {
     linearIssueId: linearResult?.identifier ?? null,

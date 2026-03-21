@@ -79,12 +79,14 @@ export async function dispatchTriageThreadWorkflow(
   input: TriageThreadWorkflowInput,
 ): Promise<void> {
   const client = await getClient();
+  const workflowMode = input.mode ?? "FULL_TRIAGE";
+  const modeSuffix = workflowMode === "SPEC_ONLY" ? "-spec" : "";
 
   try {
     await client.workflow.start("triageThreadWorkflow", {
       args: [input],
       taskQueue: webEnv.TEMPORAL_TASK_QUEUE,
-      workflowId: `triage-thread-${input.threadId}-${input.analysisId}`,
+      workflowId: `triage-thread-${input.threadId}-${input.analysisId}${modeSuffix}`,
     });
   } catch (error: unknown) {
     if (error instanceof WorkflowExecutionAlreadyStartedError) return;

@@ -12,10 +12,13 @@ const {
   runRcaAgent,
   runCodeContextAgent,
   runTestAgent,
+  cloneRepository,
   runFixerAgent,
   applyWorkspacePatch,
   runReviewerAgent,
   runChecksAgent,
+  resolveFixTargetRepository,
+  createFixPullRequest,
   saveFixRunProgress,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: "5 minutes",
@@ -23,6 +26,18 @@ const {
     maximumAttempts: 2,
   },
 });
+
+interface FixPrWorkflowInputLike {
+  debugLogs?: boolean;
+}
+
+function createWorkflowDebugLogger(input: FixPrWorkflowInputLike) {
+  const debugEnabled = Boolean(input.debugLogs);
+  return (message: string, ...rest: unknown[]) => {
+    if (!debugEnabled) return;
+    console.log(`[fix-pr][workflow] ${message}`, ...rest);
+  };
+}
 
 export interface GenerateFixPRWorkflowResult {
   runId: string;
@@ -32,6 +47,13 @@ export interface GenerateFixPRWorkflowResult {
 export async function generateFixPRWorkflow(
   input: GenerateFixPRWorkflowInput,
 ): Promise<GenerateFixPRWorkflowResult> {
+  const debugLog = createWorkflowDebugLogger(input);
+  debugLog("workflow started", {
+    runId: input.runId,
+    threadId: input.threadId,
+    workspaceId: input.workspaceId,
+    analysisId: input.analysisId,
+  });
   const context = await getFixRunContext(input);
   if (!context) {
     return {
@@ -40,7 +62,17 @@ export async function generateFixPRWorkflow(
     };
   }
 
+  debugLog("workflow context", {
+    runId: context.runId,
+    analysisId: context.analysisId,
+    githubOwner: context.github.owner,
+    githubRepo: context.github.repo,
+    baseBranch: context.github.baseBranch,
+    repoCount: context.codexRepositoryIds.length,
+  });
+
   try {
+    debugLog("workflow state", { runId: input.runId, stage: "COLLECTING_CONTEXT" });
     await saveFixRunProgress({
       runId: input.runId,
       status: "RUNNING",
@@ -51,6 +83,7 @@ export async function generateFixPRWorkflow(
       runId: input.runId,
       analysisId: input.analysisId,
     });
+    debugLog("workflow parent thread", { runId: input.runId, parentThreadId });
 
     await saveFixRunProgress({
       runId: input.runId,
@@ -67,13 +100,85 @@ export async function generateFixPRWorkflow(
         sentryFindings: context.sentryFindings,
       }),
       runCodeContextAgent({
+        workspaceId: context.workspaceId,
+        summary: context.summary,
+        rcaSummary: context.rcaSummary,
+        repositoryIds: context.codexRepositoryIds,
+        messages: context.messages,
         codexFindings: context.codexFindings,
       }),
     ]);
 
+    debugLog("workflow context resolved", {
+      runId: input.runId,
+      editScopeCount: codeContext.editScope.length,
+      symbolCount: codeContext.symbols.length,
+      relatedChunkCount: codeContext.relatedChunks.length,
+      filesCount: codeContext.files.length,
+      rcaConfidence: rca.confidence,
+    });
+
+    const targetRepository = await resolveFixTargetRepository({
+      repositoryIds: context.codexRepositoryIds,
+      filePaths: codeContext.editScope,
+      preferredOwner: context.github.owner,
+      preferredRepo: context.github.repo,
+      configuredBaseBranch: context.github.baseBranch,
+    });
+    if (!targetRepository) {
+      debugLog("workflow no target repository", {
+        runId: input.runId,
+        repositoryIds: context.codexRepositoryIds,
+      });
+      await saveFixRunProgress({
+        runId: input.runId,
+        status: "FAILED",
+        currentStage: "FAILED",
+        lastError: "Unable to resolve a target repository for this fix run.",
+      });
+      return {
+        runId: input.runId,
+        status: "FAILED",
+      };
+    }
+    debugLog("workflow target repository", {
+      runId: input.runId,
+      targetRepository,
+    });
+    const githubToken = context.github.token;
+    const syncedRepo = await cloneRepository({
+      repositoryId: targetRepository.repositoryId,
+    });
+
+    const workingDirectory = syncedRepo.localPath;
+    if (!workingDirectory) {
+      throw new Error("No target repository was resolved for this fix run.");
+    }
+
+    const canCreatePullRequest = Boolean(
+      targetRepository.canCreatePullRequest
+      || (
+        targetRepository.owner
+        && targetRepository.repo
+        && githubToken
+        && workingDirectory.length > 0
+      ),
+    );
+    debugLog("workflow target decision", {
+      runId: input.runId,
+      canCreatePullRequest,
+      workingDirectory,
+    });
+
     const testPlan = await runTestAgent({
       codeContext,
       requiredCheckNames: context.requiredCheckNames,
+    });
+    debugLog("workflow test plan", {
+      runId: input.runId,
+      commands: testPlan.commands,
+      requiredChecks: testPlan.requiredChecks,
+      rationale: testPlan.rationale,
     });
 
     await saveFixRunProgress({
@@ -89,8 +194,20 @@ export async function generateFixPRWorkflow(
     });
 
     let priorFailures: string[] = [];
+    let latestAppliedState: {
+      iteration: number;
+      summary: string;
+      patchPlan: string;
+      appliedFiles: string[];
+      headSha: string | null;
+      failureSummary: string | null;
+    } | null = null;
 
     for (let iteration = 1; iteration <= context.maxIterations; iteration += 1) {
+      debugLog("workflow iteration start", {
+        runId: input.runId,
+        iteration,
+      });
       await saveFixRunProgress({
         runId: input.runId,
         currentStage: "FIXING",
@@ -108,16 +225,26 @@ export async function generateFixPRWorkflow(
         priorFailures,
         model: context.models.fix,
         codexFindings: context.codexFindings,
+        workingDirectory,
+        targetRepositoryId: targetRepository.repositoryId,
+      });
+      debugLog("workflow fixer output", {
+        runId: input.runId,
+        iteration,
+        changedFileCount: fixerOutput.changedFiles.length,
+        summary: fixerOutput.summary,
+        cannotFixSafely: fixerOutput.cannotFixSafely,
       });
 
       if (fixerOutput.changedFiles.length === 0) {
         const confidence = fixerOutput.confidence ?? 0;
+        const noChangeError = fixerOutput.riskNotes.join("; ")
+          || "Fixer produced no code changes to apply.";
         await saveFixRunProgress({
           runId: input.runId,
-          status: "WAITING_REVIEW",
-          currentStage: "WAITING_REVIEW",
+          currentStage: "ITERATING",
           summary: `${fixerOutput.summary} (confidence: ${Math.round(confidence * 100)}%)`,
-          lastError: fixerOutput.riskNotes.join("; "),
+          lastError: noChangeError,
           iteration: {
             iteration,
             status: "FAILED",
@@ -127,14 +254,20 @@ export async function generateFixPRWorkflow(
           },
         });
 
-        return {
-          runId: input.runId,
-          status: "WAITING_REVIEW",
-        };
+        priorFailures = [noChangeError];
+        continue;
       }
 
       const applied = await applyWorkspacePatch({
         fixerOutput,
+        workingDirectory,
+        targetRepositoryId: targetRepository.repositoryId,
+      });
+      debugLog("workflow applied patch", {
+        runId: input.runId,
+        iteration,
+        appliedFiles: applied.appliedFiles,
+        headSha: applied.headSha,
       });
 
       const [reviewerOutput, checksOutput] = await Promise.all([
@@ -146,17 +279,26 @@ export async function generateFixPRWorkflow(
         }),
         runChecksAgent({
           commands: testPlan.commands,
+          workingDirectory,
         }),
       ]);
 
       const iterationStatus = reviewerOutput.approved && checksOutput.passed ? "PASSED" : "FAILED";
+      const iterationFailureSummary = buildFailureSummary(reviewerOutput, checksOutput);
+      debugLog("workflow iteration result", {
+        runId: input.runId,
+        iteration,
+        iterationStatus,
+        reviewerApproved: reviewerOutput.approved,
+        checksPassed: checksOutput.passed,
+      });
 
       await saveFixRunProgress({
         runId: input.runId,
-        currentStage: iterationStatus === "PASSED" ? "PASSED" : "ITERATING",
+        currentStage: "ITERATING",
         headSha: applied.headSha,
         summary: fixerOutput.summary,
-        lastError: buildFailureSummary(reviewerOutput, checksOutput),
+        lastError: iterationFailureSummary,
         iteration: {
           iteration,
           status: iterationStatus,
@@ -168,35 +310,194 @@ export async function generateFixPRWorkflow(
         },
       });
 
+      latestAppliedState = {
+        iteration,
+        summary: fixerOutput.summary,
+        patchPlan: fixerOutput.patchPlan,
+        appliedFiles: applied.appliedFiles,
+        headSha: applied.headSha,
+        failureSummary: iterationFailureSummary,
+      };
+
       if (reviewerOutput.approved && checksOutput.passed) {
+        if (canCreatePullRequest && targetRepository && githubToken) {
+          try {
+            debugLog("workflow creating PR", {
+              runId: input.runId,
+              iteration,
+              changedFiles: applied.appliedFiles,
+            });
+            const pr = await createFixPullRequest({
+              runId: input.runId,
+              summary: fixerOutput.summary,
+              patchPlan: fixerOutput.patchPlan,
+              changedFiles: applied.appliedFiles,
+              targetRepository,
+              workingDirectory: targetRepository.localPath,
+              githubToken,
+              iteration,
+            });
+            debugLog("workflow PR created", {
+              runId: input.runId,
+              iteration,
+              branchName: pr.branchName,
+              prUrl: pr.prUrl,
+              prNumber: pr.prNumber,
+            });
+
+            await saveFixRunProgress({
+              runId: input.runId,
+              status: "PASSED",
+              currentStage: "PASSED",
+              headSha: pr.headSha,
+              branchName: pr.branchName,
+              prUrl: pr.prUrl,
+              prNumber: pr.prNumber,
+              summary: fixerOutput.summary,
+              lastError: null,
+            });
+
+            return {
+              runId: input.runId,
+              status: "PASSED",
+            };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            debugLog("workflow PR creation failed", {
+              runId: input.runId,
+              iteration,
+              message,
+            });
+            const prCreationError = `Automatic PR creation failed: ${message}`;
+            await saveFixRunProgress({
+              runId: input.runId,
+              currentStage: "ITERATING",
+              headSha: applied.headSha,
+              summary: fixerOutput.summary,
+              lastError: prCreationError,
+              iteration: {
+                iteration,
+                status: "FAILED",
+                fixPlan: fixerOutput,
+                reviewFindings: reviewerOutput,
+                checkResults: checksOutput,
+                appliedFiles: applied.appliedFiles,
+                completed: true,
+              },
+            });
+
+            priorFailures = [prCreationError];
+            continue;
+          }
+        }
+
+        const disabledPrMessage =
+          "Automatic PR creation is disabled or not configured for this workspace/repo.";
         await saveFixRunProgress({
           runId: input.runId,
-          status: "PASSED",
-          currentStage: "PASSED",
+          status: "FAILED",
+          currentStage: "FAILED",
+          headSha: applied.headSha,
+          summary: fixerOutput.summary,
+          lastError: disabledPrMessage,
+          iteration: {
+            iteration,
+            status: "PASSED",
+            fixPlan: fixerOutput,
+            reviewFindings: reviewerOutput,
+            checkResults: checksOutput,
+            appliedFiles: applied.appliedFiles,
+            completed: true,
+          },
         });
 
         return {
           runId: input.runId,
-          status: "PASSED",
+          status: "FAILED",
         };
       }
 
       priorFailures = collectFailureMessages(reviewerOutput, checksOutput);
+      debugLog("workflow prior failures updated", {
+        runId: input.runId,
+        iteration,
+        priorFailuresCount: priorFailures.length,
+      });
+    }
+
+    if (canCreatePullRequest && targetRepository && githubToken && latestAppliedState) {
+      const fallbackSummary = [
+        latestAppliedState.summary,
+        "",
+        `Auto-created after reaching max iterations (${context.maxIterations}) without a clean review/check pass.`,
+      ].join("\n");
+      const fallbackPatchPlan = [
+        latestAppliedState.patchPlan,
+        "",
+        `Fallback draft PR created from iteration ${latestAppliedState.iteration}.`,
+      ].join("\n");
+
+      try {
+        debugLog("workflow creating fallback PR after max iterations", {
+          runId: input.runId,
+          iteration: latestAppliedState.iteration,
+          changedFiles: latestAppliedState.appliedFiles,
+        });
+
+        const pr = await createFixPullRequest({
+          runId: input.runId,
+          summary: fallbackSummary,
+          patchPlan: fallbackPatchPlan,
+          changedFiles: latestAppliedState.appliedFiles,
+          targetRepository,
+          workingDirectory: targetRepository.localPath,
+          githubToken,
+          iteration: latestAppliedState.iteration,
+        });
+
+        await saveFixRunProgress({
+          runId: input.runId,
+          status: "WAITING_REVIEW",
+          currentStage: "WAITING_REVIEW",
+          headSha: pr.headSha,
+          branchName: pr.branchName,
+          prUrl: pr.prUrl,
+          prNumber: pr.prNumber,
+          summary: latestAppliedState.summary,
+          lastError:
+            latestAppliedState.failureSummary
+            || `Reached max iterations (${context.maxIterations}) before a clean pass; draft PR created for manual review.`,
+        });
+
+        return {
+          runId: input.runId,
+          status: "WAITING_REVIEW",
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        priorFailures = [
+          ...priorFailures,
+          `Fallback PR creation after max iterations failed: ${message}`,
+        ];
+      }
     }
 
     await saveFixRunProgress({
       runId: input.runId,
-      status: "WAITING_REVIEW",
-      currentStage: "WAITING_REVIEW",
-      lastError: priorFailures.join("; "),
+      status: "FAILED",
+      currentStage: "FAILED",
+      lastError:
+        priorFailures.join("; ")
+        || `Reached max iterations (${context.maxIterations}) without creating a draft PR.`,
     });
 
     return {
       runId: input.runId,
-      status: "WAITING_REVIEW",
+      status: "FAILED",
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    debugLog("workflow failed", { runId: input.runId, message });
 
     await saveFixRunProgress({
       runId: input.runId,

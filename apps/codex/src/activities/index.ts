@@ -15,5 +15,7 @@ export {
   applyWorkspacePatch,
   runReviewerAgent,
   runChecksAgent,
+  resolveFixTargetRepository,
+  createFixPullRequest,
   saveFixRunProgress,
 } from "./generate-fix-pr.activity.js";

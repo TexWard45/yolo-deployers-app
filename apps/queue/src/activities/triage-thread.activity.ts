@@ -12,6 +12,7 @@ import {
 import type { SentryConfig, TriagePromptInput } from "@shared/rest";
 import type { TriageThreadWorkflowInput } from "@shared/types";
 import { queueEnv } from "@shared/env/queue";
+import { resolveSentryConfig } from "./helpers/sentry-config.js";
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -37,6 +38,9 @@ export interface TriageContext {
   // Messages for LLM context
   messages: Array<{ direction: string; body: string }>;
   customerDisplayName: string;
+  telemetrySessionId: string | null;
+  customerEmail: string | null;
+  threadCreatedAt: string;
   // Config
   codexRepositoryIds: string[];
   sentryConfig: SentryConfig | null;
@@ -74,15 +78,21 @@ export async function getTriageContext(
     where: { workspaceId: input.workspaceId },
   });
 
-  const sentryConfig: SentryConfig | null =
-    config?.sentryOrgSlug && (config.sentryProjectSlug || (config.sentryProjectSlugs && config.sentryProjectSlugs.length > 0)) && config.sentryAuthToken
-      ? {
-          orgSlug: config.sentryOrgSlug,
-          projectSlug: config.sentryProjectSlug ?? config.sentryProjectSlugs[0]!,
-          authToken: config.sentryAuthToken,
-          projectSlugs: config.sentryProjectSlugs.length > 0 ? config.sentryProjectSlugs : undefined,
-        }
-      : null;
+  const sentryConfig: SentryConfig | null = resolveSentryConfig(config);
+  const workspaceRepos = await prisma.codexRepository.findMany({
+    where: { workspaceId: input.workspaceId },
+    select: { id: true },
+  });
+  const availableRepoIds = workspaceRepos.map((repo) => repo.id);
+  const availableRepoIdSet = new Set(availableRepoIds);
+  const configuredRepoIds = config?.codexRepositoryIds ?? [];
+  const codexRepositoryIds =
+    configuredRepoIds.length > 0
+      ? configuredRepoIds.filter((repoId) => availableRepoIdSet.has(repoId))
+      : availableRepoIds;
+  if (codexRepositoryIds.length === 0) {
+    console.warn(`[triage] no Codex repositories available for workspace ${input.workspaceId}`);
+  }
 
   const linearConfig =
     config?.linearApiKey && config.linearTeamId
@@ -115,7 +125,10 @@ export async function getTriageContext(
       body: m.body,
     })),
     customerDisplayName: analysis.thread.customer.displayName,
-    codexRepositoryIds: config?.codexRepositoryIds ?? [],
+    telemetrySessionId: analysis.thread.telemetrySessionId,
+    customerEmail: analysis.thread.customer.email,
+    threadCreatedAt: analysis.thread.createdAt.toISOString(),
+    codexRepositoryIds,
     sentryConfig,
     linearConfig,
     agentModel: config?.model ?? null,
@@ -296,6 +309,7 @@ export async function generateEngSpecActivity(params: {
   context: TriageContext;
   freshCodexFindings: unknown | null;
   freshSentryFindings: unknown | null;
+  telemetryFindings?: unknown | null;
 }): Promise<{ specMarkdown: string; specTitle: string } | null> {
   const apiKey = queueEnv.LLM_API_KEY;
   if (!apiKey) {
@@ -314,6 +328,7 @@ export async function generateEngSpecActivity(params: {
     messages: params.context.messages,
     customerDisplayName: params.context.customerDisplayName,
     threadTitle: params.context.threadTitle,
+    telemetryFindings: params.telemetryFindings ?? null,
   };
 
   return generateEngSpec(promptInput, {

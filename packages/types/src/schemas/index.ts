@@ -632,6 +632,7 @@ export const GenerateFixPRWorkflowInputSchema = z.object({
   workspaceId: z.string(),
   analysisId: z.string(),
   triggeredByUserId: z.string(),
+  debugLogs: z.boolean().optional().default(false),
 });
 export type GenerateFixPRWorkflowInput = z.infer<typeof GenerateFixPRWorkflowInputSchema>;
 
@@ -684,6 +685,7 @@ export const TriageThreadWorkflowInputSchema = z.object({
   threadId: z.string(),
   analysisId: z.string(),
   triggeredByUserId: z.string(),
+  mode: z.enum(["FULL_TRIAGE", "SPEC_ONLY"]).default("FULL_TRIAGE"),
 });
 export type TriageThreadWorkflowInput = z.infer<typeof TriageThreadWorkflowInputSchema>;
 

@@ -22,7 +22,9 @@ test("generateFixPR returns an existing active run without creating a duplicate"
         workspaceId: "workspace-1",
         threadId: "thread-1",
         thread: { id: "thread-1" },
+        codexFindings: null,
       }),
+      findMany: async () => [],
     },
     workspaceAgentConfig: {
       findUnique: async () => null,
@@ -76,6 +78,7 @@ test("getFixPRStatus returns serialized run details for the latest thread run", 
         branchName: "fix/thread-1",
         rcaSummary: "Null handling bug",
         rcaConfidence: 0.82,
+        metadata: null,
         iterations: [
           {
             id: "iter-2",
@@ -119,6 +122,7 @@ test("getFixPRStatus returns serialized run details for the latest thread run", 
     branchName: "fix/thread-1",
     rcaSummary: "Null handling bug",
     rcaConfidence: 0.82,
+    metadata: null,
     iterations: [
       {
         id: "iter-2",

@@ -20,6 +20,7 @@ import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
 import { renderMessageBody, type MentionsMap, type AttachmentInfo } from "@/components/inbox/render-message-body";
 import { getThreadDetail, sendReply, getWorkspaceMembers, assignThreadAction } from "@/actions/inbox";
 import { AnalysisPanel, DraftChatBubble, type AnalysisDraft } from "@/components/inbox/AnalysisPanel";
+import { InlineSessionReplay } from "@/components/inbox/InlineSessionReplay";
 import {
   getDefaultReplySegmentId,
   getReplyToExternalMessageId,
@@ -310,6 +311,13 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                       {segment.messages.map((msg, msgIdx) => {
                         const isInbound = msg.direction === "INBOUND";
                         const isOutbound = msg.direction === "OUTBOUND";
+                        const metadata = msg.metadata as Record<string, unknown> | null;
+                        const telemetrySessionUrl = typeof metadata?.["telemetrySessionUrl"] === "string"
+                          ? metadata["telemetrySessionUrl"]
+                          : null;
+                        const telemetrySessionId = typeof metadata?.["telemetrySessionId"] === "string"
+                          ? metadata["telemetrySessionId"]
+                          : null;
                         const isRoot = msgIdx === 0;
                         const isReply = !isRoot;
                         const hasReplies = msgIdx === 0 && segment.messages.length > 1;
@@ -361,7 +369,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                   className={`rounded-lg border p-2.5 ${
                                     isInbound
                                       ? "border-l-2 border-l-primary"
-                                      : isOutbound
+                                    : isOutbound
                                         ? "border-l-2 border-l-emerald-500 bg-emerald-500/5"
                                         : "border-l-2 border-l-muted-foreground bg-muted/30"
                                   }`}
@@ -369,10 +377,16 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                   <div className="whitespace-pre-wrap text-sm leading-relaxed">
                                     {renderMessageBody(
                                       msg.body,
-                                      (msg.metadata as Record<string, unknown> | null)?.mentions as MentionsMap | undefined,
-                                      (msg.metadata as Record<string, unknown> | null)?.attachments as AttachmentInfo[] | undefined,
+                                      metadata?.mentions as MentionsMap | undefined,
+                                      metadata?.attachments as AttachmentInfo[] | undefined,
                                     )}
                                   </div>
+                                  {msg.direction === "SYSTEM" && telemetrySessionId ? (
+                                    <InlineSessionReplay
+                                      sessionId={telemetrySessionId}
+                                      replayUrl={telemetrySessionUrl}
+                                    />
+                                  ) : null}
                                 </div>
                               </div>
                             </div>

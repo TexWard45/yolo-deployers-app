@@ -324,6 +324,7 @@ export async function supportPipelineWorkflow(
     threadId: input.threadId,
     analysisId,
     triggeredByUserId: "pipeline-auto",
+    mode: "FULL_TRIAGE",
   });
 
   let linearIssueId: string | null = null;

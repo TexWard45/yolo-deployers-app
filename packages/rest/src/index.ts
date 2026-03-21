@@ -18,7 +18,10 @@ export { fetchSentryContext, extractErrorSignals, testSentryConnection } from ".
 export type { SentryConfig, SentryFinding } from "./routers/helpers/sentry-client";
 export { generateLinearIssueBody, generateEngSpec } from "./routers/helpers/triage-spec.prompt";
 export type { TriagePromptInput, TriagePromptOptions } from "./routers/helpers/triage-spec.prompt";
-export { expandFixPrCodeContext } from "./routers/helpers/fix-pr-code-context";
+export {
+  expandFixPrCodeContext,
+  summarizeCodexFindingsRelevance,
+} from "./routers/helpers/fix-pr-code-context";
 export { buildFixPrTestPlan } from "./routers/helpers/fix-pr-test-selector";
 export { generateFixPrRca } from "./routers/helpers/fix-pr-rca.prompt";
 export type { FixPrRcaPromptInput } from "./routers/helpers/fix-pr-rca.prompt";

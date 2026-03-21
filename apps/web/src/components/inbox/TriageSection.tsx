@@ -52,6 +52,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
         setLinearIssueId,
         setLinearIssueUrl,
         setHistory,
+        setSpecMarkdown,
         setFixPrStatus,
       });
     });
@@ -83,6 +84,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       setLinearIssueId,
       setLinearIssueUrl,
       setHistory,
+      setSpecMarkdown,
       setFixPrStatus,
     });
   };
@@ -106,13 +108,32 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
 
   const handleGenerateSpec = () => {
     startGenerating(async () => {
+      const previousHistoryCount = history.length;
       const result = await generateSpecAction({
         threadId,
         workspaceId,
         linearIssueId: linearIssueId ?? undefined,
       });
       if (result.success) {
-        setSpecMarkdown(result.specMarkdown ?? null);
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          const triageResult = await getTriageStatusAction(threadId, workspaceId);
+          if (triageResult) {
+            const latestSpec = triageResult.history.find((entry) => entry.specMarkdown)?.specMarkdown ?? null;
+            applyTriageSectionState({
+              triageResult,
+              fixPrResult: fixPrStatus,
+              setLinearIssueId,
+              setLinearIssueUrl,
+              setHistory,
+              setSpecMarkdown,
+              setFixPrStatus,
+            });
+            if (latestSpec || triageResult.history.length > previousHistoryCount) {
+              return;
+            }
+          }
+        }
         await refreshStatus();
       } else {
         alert(result.error);
@@ -202,7 +223,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
         disabled={generating}
         onClick={handleGenerateSpec}
       >
-        {generating ? "Generating spec..." : "Generate Spec"}
+        {generating ? "Running spec workflow..." : "Generate Spec"}
       </Button>
 
       <Button
@@ -429,12 +450,15 @@ function applyTriageSectionState(params: {
   setLinearIssueId: (value: string | null) => void;
   setLinearIssueUrl: (value: string | null) => void;
   setHistory: (value: TriageHistory[]) => void;
+  setSpecMarkdown: (value: string | null) => void;
   setFixPrStatus: (value: FixPRStatusResult | null) => void;
 }) {
   if (params.triageResult) {
     params.setLinearIssueId(params.triageResult.linearIssueId);
     params.setLinearIssueUrl(params.triageResult.linearIssueUrl);
     params.setHistory(params.triageResult.history);
+    const latestSpec = params.triageResult.history.find((entry) => entry.specMarkdown)?.specMarkdown ?? null;
+    params.setSpecMarkdown(latestSpec);
   }
 
   params.setFixPrStatus(params.fixPrResult);
