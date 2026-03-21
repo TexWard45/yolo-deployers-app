@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ReplayViewer } from "@/components/telemetry/ReplayViewer";
 import { useReplayExplorer } from "@/hooks/useReplayExplorer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -25,8 +25,12 @@ export default function ReplaysPage() {
   /* ── Investigator state ── */
   const [investigatorOpen, setInvestigatorOpen] = useState(false);
   const [investigatorFields, setInvestigatorFields] = useState(INVESTIGATOR_DEFAULTS);
-  const [investigatorEnabled, setInvestigatorEnabled] = useState(false);
   const [investigatorOffsetMs, setInvestigatorOffsetMs] = useState<number | undefined>(undefined);
+  const [investigatorResult, setInvestigatorResult] = useState<
+    { found: true; sessionId?: string; offsetMs?: number; errorContent?: string; errorCount?: number } |
+    { found: false } |
+    null
+  >(null);
 
   // Only include date fields when the user has typed a value.
   // Guards against new Date("") → Invalid Date, which would pass the Zod coerce
@@ -43,9 +47,11 @@ export default function ReplaysPage() {
   const hasInvestigatorIdentity =
     !!(investigatorFields.userId || investigatorFields.customerEmail || investigatorFields.customerPhone);
 
-  const { data: investigatorResult, isFetching: investigatorLoading } =
+  // Never auto-fires — always triggered manually via refetch() in the button handler.
+  const [investigatorLoading, setInvestigatorLoading] = useState(false);
+  const { refetch: refetchInvestigator } =
     trpc.telemetry.getExactErrorMoment.useQuery(investigatorInput, {
-      enabled: investigatorEnabled && hasInvestigatorIdentity,
+      enabled: false,
     });
 
   const {
@@ -70,20 +76,23 @@ export default function ReplaysPage() {
 
   const hasActiveFilters = Object.values(filters).some(Boolean) || filters.hasError;
 
-  const handleInvestigatorSearch = () => {
-    setInvestigatorEnabled(true);
+  // Imperatively trigger the query and handle result in the event handler —
+  // no useEffect needed, no cascading renders.
+  const handleInvestigatorSearch = async () => {
     setInvestigatorOffsetMs(undefined);
-  };
-
-  // Auto-select session when investigator returns a result.
-  // Must be in useEffect — calling setState during render causes infinite loops in Strict Mode.
-  useEffect(() => {
-    if (investigatorResult?.found && investigatorResult.sessionId !== selectedSessionId) {
-      setSelectedSessionId(investigatorResult.sessionId ?? null);
-      setInvestigatorOffsetMs(investigatorResult.offsetMs);
-      setInvestigatorEnabled(false);
+    setInvestigatorResult(null);
+    setInvestigatorLoading(true);
+    try {
+      const { data } = await refetchInvestigator();
+      setInvestigatorResult(data ?? { found: false });
+      if (data?.found) {
+        setSelectedSessionId(data.sessionId ?? null);
+        setInvestigatorOffsetMs(data.offsetMs);
+      }
+    } finally {
+      setInvestigatorLoading(false);
     }
-  }, [investigatorResult]);
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
