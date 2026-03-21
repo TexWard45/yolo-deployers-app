@@ -207,4 +207,76 @@ export const telemetryRouter = createTRPCRouter({
 
       return { sessions: [...sessions, ...additionalSessions] };
     }),
+
+  getExactErrorMoment: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        customerEmail: z.string().optional(),
+        customerPhone: z.string().optional(),
+        startTime: z.coerce.date(),
+        endTime: z.coerce.date(),
+      }).refine(
+        (d) => d.userId ?? d.customerEmail ?? d.customerPhone,
+        { message: "Provide at least one of: userId, customerEmail, customerPhone" }
+      )
+    )
+    .query(async ({ ctx, input }) => {
+      const { userId, customerEmail, customerPhone, startTime, endTime } = input;
+
+      // Resolve session IDs from identity events when searching by email/phone
+      let sessionIdFilter: string[] | undefined;
+      const identityConditions: { payload: { path: string[]; string_contains: string } }[] = [];
+      if (customerEmail) identityConditions.push({ payload: { path: ["email"], string_contains: customerEmail } });
+      if (customerPhone) identityConditions.push({ payload: { path: ["phone"], string_contains: customerPhone } });
+
+      if (identityConditions.length > 0) {
+        const matchingEvents = await ctx.prisma.replayEvent.findMany({
+          where: { type: "user.identify", OR: identityConditions },
+          select: { sessionId: true },
+          distinct: ["sessionId"],
+        });
+        sessionIdFilter = matchingEvents.map((e) => e.sessionId);
+        if (sessionIdFilter.length === 0) return { found: false as const };
+      }
+
+      const session = await ctx.prisma.session.findFirst({
+        where: {
+          ...(userId ? { userId } : {}),
+          ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
+          createdAt: { gte: startTime, lte: endTime },
+          hasError: true,
+        },
+        orderBy: { createdAt: "desc" },
+        include: {
+          timelines: {
+            where: { type: "ERROR" },
+            orderBy: { timestamp: "asc" },
+            take: 1,
+          },
+          // Fetch the first recorded event to anchor the video timeline precisely
+          events: {
+            orderBy: { sequence: "asc" },
+            take: 1,
+            select: { timestamp: true },
+          },
+        },
+      });
+
+      if (!session || session.timelines.length === 0) return { found: false as const };
+
+      const firstEventTime =
+        session.events[0]?.timestamp.getTime() ?? session.createdAt.getTime();
+      const errorTime = session.timelines[0]!.timestamp.getTime();
+      // Offset from the start of the rrweb recording to the error moment
+      const offsetMs = Math.max(0, errorTime - firstEventTime);
+
+      return {
+        found: true as const,
+        sessionId: session.id,
+        offsetMs,
+        errorContent: session.timelines[0]!.content,
+        errorCount: session.errorCount,
+      };
+    }),
 });

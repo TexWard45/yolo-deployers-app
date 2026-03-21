@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ReplayViewer } from "@/components/telemetry/ReplayViewer";
 import { useReplayExplorer } from "@/hooks/useReplayExplorer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -8,10 +9,41 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown, ShieldAlert } from "lucide-react";
+import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown, ShieldAlert, Search, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/trpc/client";
+
+const INVESTIGATOR_DEFAULTS = {
+  userId: "",
+  customerEmail: "",
+  customerPhone: "",
+  startDate: "",
+  endDate: "",
+};
 
 export default function ReplaysPage() {
+  /* ── Investigator state ── */
+  const [investigatorOpen, setInvestigatorOpen] = useState(false);
+  const [investigatorFields, setInvestigatorFields] = useState(INVESTIGATOR_DEFAULTS);
+  const [investigatorEnabled, setInvestigatorEnabled] = useState(false);
+  const [investigatorOffsetMs, setInvestigatorOffsetMs] = useState<number | undefined>(undefined);
+
+  const investigatorInput = {
+    ...(investigatorFields.userId ? { userId: investigatorFields.userId } : {}),
+    ...(investigatorFields.customerEmail ? { customerEmail: investigatorFields.customerEmail } : {}),
+    ...(investigatorFields.customerPhone ? { customerPhone: investigatorFields.customerPhone } : {}),
+    startTime: investigatorFields.startDate ? new Date(investigatorFields.startDate) : new Date(Date.now() - 86_400_000),
+    endTime: investigatorFields.endDate ? new Date(investigatorFields.endDate) : new Date(),
+  };
+
+  const hasInvestigatorIdentity =
+    !!(investigatorFields.userId || investigatorFields.customerEmail || investigatorFields.customerPhone);
+
+  const { data: investigatorResult, isFetching: investigatorLoading } =
+    trpc.telemetry.getExactErrorMoment.useQuery(investigatorInput, {
+      enabled: investigatorEnabled && hasInvestigatorIdentity,
+    });
+
   const {
     selectedSessionId,
     setSelectedSessionId,
@@ -32,6 +64,18 @@ export default function ReplaysPage() {
 
   const hasActiveFilters = Object.values(filters).some(Boolean) || filters.hasError;
 
+  // When investigator finds a result, auto-select the session and store the precise offset
+  const handleInvestigatorSearch = () => {
+    setInvestigatorEnabled(true);
+    setInvestigatorOffsetMs(undefined);
+  };
+
+  if (investigatorResult?.found && investigatorResult.sessionId !== selectedSessionId) {
+    setSelectedSessionId(investigatorResult.sessionId ?? null);
+    setInvestigatorOffsetMs(investigatorResult.offsetMs);
+    setInvestigatorEnabled(false);
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
       <header className="flex items-center justify-between px-6 py-4 border-b bg-card">
@@ -45,6 +89,88 @@ export default function ReplaysPage() {
           </Badge>
         </div>
       </header>
+
+      {/* ── Error Investigator ── */}
+      <div className="border-b bg-amber-50/40">
+        <button
+          className="w-full flex items-center gap-2 px-6 py-2.5 text-left hover:bg-amber-50/60 transition-colors"
+          onClick={() => setInvestigatorOpen((v) => !v)}
+        >
+          <Search className="w-4 h-4 text-amber-600" />
+          <span className="text-sm font-semibold text-amber-800">Error Investigator</span>
+          <span className="text-xs text-amber-600 ml-1">— find exact error moment by customer identity</span>
+          <span className="ml-auto text-amber-500">
+            {investigatorOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </span>
+        </button>
+
+        {investigatorOpen && (
+          <div className="px-6 pb-4 space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              <Input
+                placeholder="User ID"
+                className="h-7 text-[11px]"
+                value={investigatorFields.userId}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, userId: e.target.value }))}
+              />
+              <Input
+                placeholder="Email"
+                className="h-7 text-[11px]"
+                value={investigatorFields.customerEmail}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, customerEmail: e.target.value }))}
+              />
+              <Input
+                placeholder="Phone"
+                className="h-7 text-[11px]"
+                value={investigatorFields.customerPhone}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, customerPhone: e.target.value }))}
+              />
+              <Input
+                type="datetime-local"
+                className="h-7 text-[11px]"
+                value={investigatorFields.startDate}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, startDate: e.target.value }))}
+              />
+              <Input
+                type="datetime-local"
+                className="h-7 text-[11px]"
+                value={investigatorFields.endDate}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, endDate: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-amber-600 hover:bg-amber-700"
+                disabled={!hasInvestigatorIdentity || investigatorLoading}
+                onClick={handleInvestigatorSearch}
+              >
+                <Search className="w-3 h-3 mr-1" />
+                {investigatorLoading ? "Searching…" : "Find Error Moment"}
+              </Button>
+
+              {investigatorResult && !investigatorLoading && (
+                investigatorResult.found ? (
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-green-500 text-white text-[10px]">Found</Badge>
+                    <span className="text-xs text-muted-foreground font-mono">{investigatorResult.sessionId?.slice(0, 12)}…</span>
+                    <span className="text-xs text-green-700 font-medium">
+                      Error at +{((investigatorResult.offsetMs ?? 0) / 1000).toFixed(1)}s — {investigatorResult.errorContent}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">({investigatorResult.errorCount} total errors)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">No match</Badge>
+                    <span className="text-xs text-muted-foreground">No errored session found for this customer in the given time range.</span>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Pane: Session List */}
@@ -225,7 +351,11 @@ export default function ReplaysPage() {
                           </div>
                         </div>
                       ) : replayData?.events && replayData.events.length >= 2 ? (
-                        <ReplayViewer events={replayData.events} errorTimestamps={errorTimestamps} />
+                        <ReplayViewer
+                          events={replayData.events}
+                          errorTimestamps={errorTimestamps}
+                          initialOffsetMs={investigatorOffsetMs}
+                        />
                       ) : (
                         <div className="flex-1 h-full flex items-center justify-center p-8 text-center">
                           <div className="space-y-4 max-w-xs">
