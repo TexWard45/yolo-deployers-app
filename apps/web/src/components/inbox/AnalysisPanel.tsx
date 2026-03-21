@@ -6,7 +6,24 @@ import { Button } from "@/components/ui/button";
 import { DraftTypeBadge } from "@/components/inbox/DraftTypeBadge";
 import { getThreadAnalysis, triggerThreadAnalysis } from "@/actions/inbox";
 
-type Analysis = NonNullable<Awaited<ReturnType<typeof getThreadAnalysis>>>;
+interface AnalysisDraft {
+  id: string;
+  body: string;
+  draftType: string;
+  status: string;
+}
+
+interface Analysis {
+  id: string;
+  severity: string | null;
+  issueCategory: string | null;
+  affectedComponent: string | null;
+  summary: string;
+  rcaSummary: string | null;
+  sufficient: boolean;
+  codexFindings: unknown;
+  drafts: AnalysisDraft[];
+}
 
 interface AnalysisPanelProps {
   threadId: string;
@@ -28,7 +45,7 @@ export function AnalysisPanel({ threadId, workspaceId }: AnalysisPanelProps) {
   const fetchAnalysis = useCallback(() => {
     startTransition(async () => {
       const data = await getThreadAnalysis(threadId, workspaceId);
-      setAnalysis(data);
+      setAnalysis(data as Analysis | null);
     });
   }, [threadId, workspaceId]);
 
