@@ -5,6 +5,7 @@ export interface SegmentableMessage {
   createdAt: Date;
   externalMessageId?: string | null;
   inReplyToExternalMessageId?: string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 export interface MessageSegment {

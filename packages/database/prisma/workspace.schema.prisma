@@ -19,6 +19,8 @@ model Workspace {
 
   channelConnections ChannelConnection[]
   agentConfig        WorkspaceAgentConfig?
+  threadAnalyses     ThreadAnalysis[]
+  triageActions      TriageAction[]
 }
 
 model WorkspaceMember {

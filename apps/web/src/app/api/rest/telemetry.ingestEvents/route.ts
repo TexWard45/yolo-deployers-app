@@ -2,13 +2,22 @@ import { NextResponse } from "next/server";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
 
+// App Router uses the native Web API Request.json() which has no body
+// size limit, so large FullSnapshot payloads are handled automatically.
+export const maxDuration = 30;
+
 // Safe fallback CORS origin — deferred to request time so the build step
 // doesn't throw when NEXT_PUBLIC_APP_URL is absent during `next build`.
 function getCorsHeaders() {
-  const origin =
-    process.env.NODE_ENV === "production"
-      ? process.env.NEXT_PUBLIC_APP_URL ?? "*"
-      : "*";
+  let origin: string;
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.NEXT_PUBLIC_APP_URL) {
+      console.warn("[Telemetry] NEXT_PUBLIC_APP_URL is not set in production — falling back to wildcard CORS. Set this env var to restrict the allowed origin.");
+    }
+    origin = process.env.NEXT_PUBLIC_APP_URL ?? "*";
+  } else {
+    origin = "*";
+  }
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Methods": "POST, OPTIONS",

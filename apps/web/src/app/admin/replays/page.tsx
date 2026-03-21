@@ -4,26 +4,31 @@ import { ReplayViewer } from "@/components/telemetry/ReplayViewer";
 import { useReplayExplorer } from "@/hooks/useReplayExplorer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Search, Play, History, List, AlertCircle, Clock, MousePointer2 } from "lucide-react";
+import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function ReplaysPage() {
   const {
     selectedSessionId,
     setSelectedSessionId,
-    searchQuery,
-    setSearchQuery,
-    filteredSessions,
+    filters,
+    setFilter,
+    clearFilters,
+    sessions,
     selectedSession,
     sessionsLoading,
-    sessionsData,
+    hasMore,
+    loadMore,
     replayData,
     replayLoading,
     timelineData,
   } = useReplayExplorer();
+
+  const hasActiveFilters = Object.values(filters).some(Boolean);
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
@@ -34,7 +39,7 @@ export default function ReplaysPage() {
         </div>
         <div className="flex items-center gap-4">
           <Badge variant="outline" className="px-3 py-1 bg-primary/5 border-primary/20">
-            {sessionsData?.sessions.length ?? 0} Total Sessions
+            {sessions.length} Sessions{hasMore ? "+" : ""}
           </Badge>
         </div>
       </header>
@@ -42,55 +47,100 @@ export default function ReplaysPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left Pane: Session List */}
         <aside className="w-80 border-r bg-card/50 flex flex-col">
-          <div className="p-4 space-y-4">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          {/* Filters */}
+          <div className="p-3 space-y-2 border-b">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Filters</span>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground">
+                  <X className="w-3 h-3" /> Clear
+                </button>
+              )}
+            </div>
+            <Input
+              placeholder="Customer ID"
+              className="h-7 text-[11px]"
+              value={filters.customerId}
+              onChange={(e) => setFilter("customerId", e.target.value)}
+            />
+            <Input
+              placeholder="Email"
+              className="h-7 text-[11px]"
+              value={filters.customerEmail}
+              onChange={(e) => setFilter("customerEmail", e.target.value)}
+            />
+            <Input
+              placeholder="Phone"
+              className="h-7 text-[11px]"
+              value={filters.customerPhone}
+              onChange={(e) => setFilter("customerPhone", e.target.value)}
+            />
+            <div className="flex gap-1.5">
               <Input
-                placeholder="Search IDs or User Agents..."
-                className="pl-9 h-9 text-xs"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                type="date"
+                className="h-7 text-[11px] flex-1"
+                value={filters.startDate}
+                onChange={(e) => setFilter("startDate", e.target.value)}
+              />
+              <Input
+                type="date"
+                className="h-7 text-[11px] flex-1"
+                value={filters.endDate}
+                onChange={(e) => setFilter("endDate", e.target.value)}
               />
             </div>
           </div>
+
           <ScrollArea className="flex-1">
-            <div className="px-2 pb-4 space-y-1">
+            <div className="px-2 pt-2 pb-4 space-y-1">
               {sessionsLoading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="h-16 w-full animate-pulse bg-muted rounded-md mb-1" />
                 ))
-              ) : filteredSessions.length === 0 ? (
+              ) : sessions.length === 0 ? (
                 <div className="text-center py-10 px-4">
                   <p className="text-sm text-muted-foreground">No sessions found.</p>
                 </div>
               ) : (
-                filteredSessions.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setSelectedSessionId(s.id)}
-                    className={cn(
-                      "group w-full text-left p-3 rounded-md transition-all border",
-                      selectedSessionId === s.id
-                        ? "bg-primary/10 border-primary shadow-sm"
-                        : "border-transparent hover:bg-muted/50 hover:border-border"
-                    )}
-                  >
-                    <div className="flex justify-between items-start mb-1">
-                      <p className="font-mono text-[10px] font-bold truncate max-w-[140px]">
-                        {s.id}
-                      </p>
-                      <Badge variant="secondary" className="text-[9px] h-4 px-1 leading-none">
-                        {s._count.events} ev
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <Clock className="w-3 h-3" />
-                      <span className="text-[10px]">
-                        {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  </button>
-                ))
+                <>
+                  {sessions.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => setSelectedSessionId(s.id)}
+                      className={cn(
+                        "group w-full text-left p-3 rounded-md transition-all border",
+                        selectedSessionId === s.id
+                          ? "bg-primary/10 border-primary shadow-sm"
+                          : "border-transparent hover:bg-muted/50 hover:border-border"
+                      )}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <p className="font-mono text-[10px] font-bold truncate max-w-[140px]">
+                          {s.id}
+                        </p>
+                        <Badge variant="secondary" className="text-[9px] h-4 px-1 leading-none">
+                          {s._count.events} ev
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-muted-foreground">
+                        <Clock className="w-3 h-3" />
+                        <span className="text-[10px]">
+                          {new Date(s.createdAt).toLocaleDateString()} {new Date(s.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                  {hasMore && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full h-8 text-xs text-muted-foreground mt-1"
+                      onClick={loadMore}
+                    >
+                      <ChevronDown className="w-3 h-3 mr-1" /> Load more
+                    </Button>
+                  )}
+                </>
               )}
             </div>
           </ScrollArea>
@@ -184,7 +234,7 @@ export default function ReplaysPage() {
                         <div className="absolute left-8 top-0 bottom-0 w-px bg-border" />
                         <div className="space-y-8">
                           {timelineData && timelineData.length > 0 ? (
-                            timelineData.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).map((t: any) => (
+                            [...timelineData].sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).map((t: any) => (
                               <div key={t.id} className="relative pl-12">
                                 <div className={cn(
                                   "absolute left-6 w-4 h-4 rounded-full border-4 border-background -translate-x-1/2 flex items-center justify-center",

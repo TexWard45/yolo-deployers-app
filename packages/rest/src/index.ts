@@ -8,3 +8,21 @@ export { llmThreadMatch } from "./routers/helpers/thread-match.prompt";
 export type { LlmThreadMatchOptions } from "./routers/helpers/thread-match.prompt";
 export { reviewThreadMessages } from "./routers/helpers/thread-review.prompt";
 export type { ThreadReviewInput, ThreadReviewOptions } from "./routers/helpers/thread-review.prompt";
+export { checkSufficiency } from "./routers/helpers/sufficiency-check.prompt";
+export type { SufficiencyCheckInput, SufficiencyCheckOptions } from "./routers/helpers/sufficiency-check.prompt";
+export { analyzeThread } from "./routers/helpers/thread-analysis.prompt";
+export type { ThreadAnalysisInput, ThreadAnalysisOptions } from "./routers/helpers/thread-analysis.prompt";
+export { generateDraftReply } from "./routers/helpers/draft-reply.prompt";
+export type { DraftReplyInput, DraftReplyOptions } from "./routers/helpers/draft-reply.prompt";
+export { fetchSentryContext, extractErrorSignals } from "./routers/helpers/sentry-client";
+export type { SentryConfig, SentryFinding } from "./routers/helpers/sentry-client";
+export { generateLinearIssueBody, generateEngSpec } from "./routers/helpers/triage-spec.prompt";
+export type { TriagePromptInput, TriagePromptOptions } from "./routers/helpers/triage-spec.prompt";
+export {
+  createLinearClient,
+  createLinearIssue,
+  updateLinearIssue,
+  getLinearIssue,
+  severityToPriority,
+} from "./routers/helpers/linear-client";
+export type { CreateLinearIssueInput, LinearIssueResult, UpdateLinearIssueInput } from "./routers/helpers/linear-client";

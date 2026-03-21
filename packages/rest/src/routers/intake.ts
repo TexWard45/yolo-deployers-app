@@ -15,7 +15,7 @@ import {
   decideDeterministicThreadMatch,
   type ThreadMatchCandidate,
 } from "./helpers/thread-matching";
-import { dispatchThreadReviewWorkflow } from "../temporal";
+import { dispatchThreadReviewWorkflow, dispatchAnalyzeThreadWorkflow } from "../temporal";
 
 const DEFAULT_RECENCY_WINDOW_SECONDS = 50;
 
@@ -164,15 +164,22 @@ async function performIngestion(
         externalThreadId: true,
         issueFingerprint: true,
         summary: true,
+        status: true,
         lastMessageAt: true,
         lastInboundAt: true,
+        lastOutboundAt: true,
       },
     });
 
     // Fetch workspace recency window config
     const agentConfig = await tx.workspaceAgentConfig.findUnique({
       where: { workspaceId: input.workspaceId },
-      select: { threadRecencyWindowMinutes: true },
+      select: {
+        threadRecencyWindowMinutes: true,
+        enabled: true,
+        analysisEnabled: true,
+        autoDraftOnInbound: true,
+      },
     });
     const recencyWindowMs =
       (agentConfig?.threadRecencyWindowMinutes ?? 0) > 0
@@ -275,6 +282,13 @@ async function performIngestion(
         issueFingerprint: decision.issueFingerprint,
         needsReview,
       },
+      agentConfig: agentConfig
+        ? {
+            enabled: agentConfig.enabled,
+            analysisEnabled: agentConfig.analysisEnabled,
+            autoDraftOnInbound: agentConfig.autoDraftOnInbound,
+          }
+        : null,
     };
   }, { timeout: 15000 });
 
@@ -285,6 +299,18 @@ async function performIngestion(
       threadId: result.thread.id,
     }).catch((error: unknown) => {
       console.error("[intake] Failed to dispatch thread review workflow", error);
+    });
+  }
+
+  // Dispatch AI analysis pipeline (if enabled)
+  if (result.agentConfig?.enabled && result.agentConfig.analysisEnabled && result.agentConfig.autoDraftOnInbound) {
+    void dispatchAnalyzeThreadWorkflow({
+      workspaceId: input.workspaceId,
+      threadId: result.thread.id,
+      source: input.source,
+      triggeredByMessageId: result.message.id,
+    }).catch((error: unknown) => {
+      console.error("[intake] Failed to dispatch analyze thread workflow", error);
     });
   }
 

@@ -10,8 +10,10 @@ export interface ThreadMatchCandidate {
   externalThreadId: string;
   issueFingerprint: string | null;
   summary: string | null;
+  status: string;
   lastMessageAt: Date | null;
   lastInboundAt: Date | null;
+  lastOutboundAt: Date | null;
 }
 
 export interface DeterministicMatchInput {

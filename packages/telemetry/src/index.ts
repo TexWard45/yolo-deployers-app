@@ -62,6 +62,7 @@ export class TelemetryClient {
 
     // Throttle if we are constantly erroring out (simple exponential backoff style drop logic would be better but this limits buffer bloat)
     if (this._consecutiveErrors > 5) {
+      console.warn(`[Telemetry] Dropping ${this._buffer.length} events after ${this._consecutiveErrors} consecutive errors`);
       this._buffer = []; // Drop everything if network is hopelessly dead
       this._consecutiveErrors = 0;
       this._isFlushing = false;
@@ -72,28 +73,35 @@ export class TelemetryClient {
     const batch = this._buffer.splice(0, Math.min(this._buffer.length, maxBatch));
     
     try {
+      const body = JSON.stringify({
+        "0": {
+          json: {
+            sessionId: this._sessionId,
+            events: batch.map((e) => ({
+              ...e,
+              timestamp: e.timestamp.toISOString(),
+            })),
+          },
+        },
+      });
+
       const res = await fetch(`${this._config.endpoint}/telemetry.ingestEvents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          "0": {
-            json: {
-              sessionId: this._sessionId,
-              events: batch.map((e) => ({
-                ...e,
-                timestamp: e.timestamp.toISOString(),
-              })),
-            },
-          },
-        }),
-        keepalive: true,
+        body,
+        // NOTE: Do NOT set keepalive: true here. Browsers enforce a 64KB
+        // body limit on keepalive requests, which silently rejects the
+        // FullSnapshot batch (~350KB+). Without keepalive, in-flight
+        // requests may be cancelled on page unload, but the critical
+        // FullSnapshot will always be delivered successfully.
       });
 
-      if (!res.ok) throw new Error("Fetch failed");
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
       
       this._consecutiveErrors = 0;
-    } catch {
+    } catch (err) {
       this._consecutiveErrors++;
+      console.warn(`[Telemetry] Flush failed (attempt #${this._consecutiveErrors}):`, err);
       // Retry: put events back if buffer is not full
       if (this._buffer.length + batch.length <= this._config.maxBufferSize) {
         this._buffer.unshift(...batch);
@@ -105,6 +113,12 @@ export class TelemetryClient {
 
   /**
    * Initialize session recording. Call once at app startup.
+   *
+   * NOTE: We delay `rrweb.record()` until the page is fully loaded so
+   * that Next.js / Turbopack has finished injecting CSS `<style>` tags
+   * into the DOM. Without this delay, the initial Full Snapshot captured
+   * the correct DOM tree but with no stylesheet rules, producing a
+   * structurally valid but visually blank replay.
    */
   public init(config: TelemetryConfig): void {
     if (this._stopFn) {
@@ -130,6 +144,23 @@ export class TelemetryClient {
     this._sequence = 0;
     this._consecutiveErrors = 0;
 
+    // Delay recording until the document is fully loaded (CSS injected).
+    const startRecording = () => {
+      // Extra 500ms grace period for JS-injected stylesheets (Turbopack, etc.)
+      setTimeout(() => this._startRecording(), 500);
+    };
+
+    if (typeof document !== "undefined" && document.readyState === "complete") {
+      startRecording();
+    } else if (typeof window !== "undefined") {
+      window.addEventListener("load", startRecording, { once: true });
+    }
+  }
+
+  /** @internal — start the actual rrweb recorder (must be called after CSS is in the DOM) */
+  private _startRecording(): void {
+    if (this._stopFn || !this._config) return; // guard against double-start or stopped
+
     const stop = rrweb.record({
       emit: (event) => {
         // Drop events if buffer exceeds max capacity to avoid infinite memory growth
@@ -141,13 +172,21 @@ export class TelemetryClient {
           payload: event as unknown as Record<string, unknown>,
           sequence: this._sequence++,
         });
-        
-        if (this._config && this._buffer.length >= this._config.batchSize) {
+
+        // rrweb event type 2 = FullSnapshot (the critical initial DOM capture).
+        // Flush immediately so this massive event reaches the server ASAP
+        // and doesn't get lost in a full buffer or failed batch.
+        const isFullSnapshot = (event as any).type === 2;
+        if (isFullSnapshot || (this._config && this._buffer.length >= this._config.batchSize)) {
           void this._flush();
         }
       },
       maskAllInputs: this._config.maskAllInputs,
       blockSelector: this._config.blockSelector,
+      // Inline all CSS / fonts / images so the replay is self-contained
+      inlineStylesheet: true,
+      collectFonts: true,
+      inlineImages: true,
     });
 
     this._stopFn = stop ?? null;

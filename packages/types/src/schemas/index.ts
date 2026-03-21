@@ -210,8 +210,22 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
   tone: z.string().optional(),
   replyPolicy: z.string().optional(),
   autoDraftOnInbound: z.boolean().optional(),
+  autoReply: z.boolean().optional(),
   handoffRulesJson: z.record(z.string(), z.unknown()).optional(),
   model: z.string().optional(),
+  // Analysis pipeline settings
+  analysisEnabled: z.boolean().optional(),
+  maxClarifications: z.number().int().min(0).max(10).optional(),
+  codexRepositoryIds: z.array(z.string()).optional(),
+  // Sentry integration
+  sentryDsn: z.string().optional(),
+  sentryOrgSlug: z.string().optional(),
+  sentryProjectSlug: z.string().optional(),
+  sentryAuthToken: z.string().optional(),
+  // Linear integration
+  linearApiKey: z.string().optional(),
+  linearTeamId: z.string().optional(),
+  linearDefaultLabels: z.array(z.string()).optional(),
 });
 
 export type UpdateWorkspaceAgentConfigInput = z.infer<typeof UpdateWorkspaceAgentConfigSchema>;
@@ -339,3 +353,173 @@ export const ResolveInboxThreadWorkflowResultSchema = z.object({
 export type ResolveInboxThreadWorkflowResult = z.infer<
   typeof ResolveInboxThreadWorkflowResultSchema
 >;
+
+// ── Thread Analysis Pipeline ────────────────────────────────────────
+
+export const DraftTypeSchema = z.enum(["RESOLUTION", "CLARIFICATION", "MANUAL"]);
+export type DraftTypeValue = z.infer<typeof DraftTypeSchema>;
+
+export const AnalyzeThreadWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  source: CustomerSourceSchema,
+  triggeredByMessageId: z.string(),
+});
+export type AnalyzeThreadWorkflowInput = z.infer<typeof AnalyzeThreadWorkflowInputSchema>;
+
+export const AnalyzeThreadWorkflowResultSchema = z.object({
+  analysisId: z.string().nullable(),
+  draftId: z.string().nullable(),
+  action: z.enum(["clarification", "resolution", "escalated", "skipped"]),
+  reason: z.string().optional(),
+});
+export type AnalyzeThreadWorkflowResult = z.infer<typeof AnalyzeThreadWorkflowResultSchema>;
+
+export const SufficiencyCheckResultSchema = z.object({
+  sufficient: z.boolean(),
+  missingContext: z.array(z.string()),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string(),
+});
+export type SufficiencyCheckResult = z.infer<typeof SufficiencyCheckResultSchema>;
+
+export const ThreadAnalysisResultSchema = z.object({
+  issueCategory: z.string().nullable(),
+  severity: z.string().nullable(),
+  affectedComponent: z.string().nullable(),
+  summary: z.string(),
+  rcaSummary: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+export type ThreadAnalysisResult = z.infer<typeof ThreadAnalysisResultSchema>;
+
+export const DraftReplyResultSchema = z.object({
+  body: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type DraftReplyResult = z.infer<typeof DraftReplyResultSchema>;
+
+export const SaveAnalysisInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  analysis: z.object({
+    issueCategory: z.string().nullable(),
+    severity: z.string().nullable(),
+    affectedComponent: z.string().nullable(),
+    summary: z.string(),
+    codexFindings: z.unknown().nullable(),
+    sentryFindings: z.unknown().nullable(),
+    rcaSummary: z.string().nullable(),
+    sufficient: z.boolean(),
+    missingContext: z.array(z.string()),
+    model: z.string().nullable(),
+    promptVersion: z.string().nullable(),
+    totalTokens: z.number().nullable(),
+    durationMs: z.number().nullable(),
+  }),
+  draft: z.object({
+    body: z.string(),
+    draftType: DraftTypeSchema,
+    basedOnMessageId: z.string().optional(),
+    model: z.string().nullable(),
+  }),
+});
+export type SaveAnalysisInput = z.infer<typeof SaveAnalysisInputSchema>;
+
+export const TriggerAnalysisInputSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type TriggerAnalysisInput = z.infer<typeof TriggerAnalysisInputSchema>;
+
+export const GetLatestAnalysisInputSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type GetLatestAnalysisInput = z.infer<typeof GetLatestAnalysisInputSchema>;
+
+// ── Triage Pipeline ────────────────────────────────────────────────────
+
+export const TriageToLinearSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+  analysisId: z.string(),
+  overrides: z.object({
+    title: z.string().optional(),
+    description: z.string().optional(),
+    severity: z.enum(["urgent", "high", "medium", "low", "none"]).optional(),
+    labels: z.array(z.string()).optional(),
+  }).optional(),
+});
+export type TriageToLinearInput = z.infer<typeof TriageToLinearSchema>;
+
+export const GetTriageStatusSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type GetTriageStatusInput = z.infer<typeof GetTriageStatusSchema>;
+
+export const GenerateSpecSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+  linearIssueId: z.string().optional(),
+});
+export type GenerateSpecInput = z.infer<typeof GenerateSpecSchema>;
+
+// ── Triage Workflow (Temporal) ─────────────────────────────────────
+
+export const TriageThreadWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  analysisId: z.string(),
+  triggeredByUserId: z.string(),
+});
+export type TriageThreadWorkflowInput = z.infer<typeof TriageThreadWorkflowInputSchema>;
+
+export const TriageThreadWorkflowResultSchema = z.object({
+  linearIssueId: z.string().nullable(),
+  linearIssueUrl: z.string().nullable(),
+  specMarkdown: z.string().nullable(),
+  action: z.enum(["triaged", "spec_generated", "skipped", "failed"]),
+  reason: z.string().optional(),
+});
+export type TriageThreadWorkflowResult = z.infer<typeof TriageThreadWorkflowResultSchema>;
+
+// ── Support Pipeline Master Workflow (Temporal) ────────────────────
+
+export const SupportPipelineWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  source: CustomerSourceSchema,
+  triggeredByMessageId: z.string(),
+});
+export type SupportPipelineWorkflowInput = z.infer<typeof SupportPipelineWorkflowInputSchema>;
+
+export const SupportPipelinePhaseSchema = z.enum([
+  "gate_1_investigate",
+  "phase_1_context",
+  "phase_2_investigate",
+  "phase_3_analyze",
+  "gate_2_triage",
+  "phase_4_triage",
+  "gate_3_spec",
+  "phase_5_spec",
+  "done",
+]);
+export type SupportPipelinePhase = z.infer<typeof SupportPipelinePhaseSchema>;
+
+export const SupportPipelineWorkflowResultSchema = z.object({
+  phase: SupportPipelinePhaseSchema,
+  analysisId: z.string().nullable(),
+  draftId: z.string().nullable(),
+  linearIssueId: z.string().nullable(),
+  linearIssueUrl: z.string().nullable(),
+  specMarkdown: z.string().nullable(),
+  reason: z.string().optional(),
+});
+export type SupportPipelineWorkflowResult = z.infer<typeof SupportPipelineWorkflowResultSchema>;

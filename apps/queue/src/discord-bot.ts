@@ -161,6 +161,13 @@ function discordMessageToInput(
       username: message.author.username,
       channelId: message.channelId,
       guildId: message.guildId,
+      mentions: Object.fromEntries(
+        message.mentions.users.map((user) => {
+          const member = message.mentions.members?.get(user.id);
+          const displayName = member?.displayName ?? user.globalName ?? user.username;
+          return [displayName, { avatarUrl: user.displayAvatarURL({ size: 32 }) }];
+        }),
+      ),
     },
     externalThreadId: message.channel.isThread() ? message.channelId : null,
     inReplyToExternalMessageId: message.reference?.messageId ?? null,
