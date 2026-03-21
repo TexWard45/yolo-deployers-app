@@ -148,6 +148,11 @@ export class TelemetryClient {
       },
       maskAllInputs: this._config.maskAllInputs,
       blockSelector: this._config.blockSelector,
+      // Critical for Next.js / Turbopack: inline all CSS into the snapshot
+      // so replays render correctly instead of showing a blank white page.
+      inlineStylesheet: true,
+      collectFonts: true,
+      inlineImages: true,
     });
 
     this._stopFn = stop ?? null;
