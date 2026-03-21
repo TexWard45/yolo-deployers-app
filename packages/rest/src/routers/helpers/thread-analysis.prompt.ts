@@ -3,7 +3,7 @@ import type { ThreadAnalysisResult } from "@shared/types";
 
 // ── System Prompt ────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a support engineer analyzing a customer issue. You have access to the conversation, codebase search results, and error tracking data.
+const SYSTEM_PROMPT = `You are a support engineer analyzing a customer issue. You have access to the conversation, codebase search results, error tracking data, and session replay telemetry.
 
 # Task
 Produce a structured analysis of the customer's issue: classify it, assess severity, identify the affected component, write a concise summary, and provide root cause analysis when possible.
@@ -19,7 +19,8 @@ Produce a structured analysis of the customer's issue: classify it, assess sever
 # Root Cause Analysis
 - If codebase search results are provided, connect the customer's symptoms to the relevant code paths
 - If error tracking data is provided, cite error types, frequency, and stack trace context
-- If neither is available, provide your best assessment based on the conversation alone
+- If session replay telemetry is provided, use the captured errors and user agent info to understand exactly what went wrong on the client side
+- If none of these are available, provide your best assessment based on the conversation alone
 - Be specific: name files, functions, error types when the data supports it
 - If you cannot determine root cause, say so — do NOT fabricate
 
@@ -49,6 +50,7 @@ export interface ThreadAnalysisInput {
   codexFindings: unknown | null;
   sentryFindings: unknown | null;
   expandedContext?: unknown | null;
+  telemetryFindings?: unknown | null;
 }
 
 export interface ThreadAnalysisOptions {
@@ -146,6 +148,37 @@ function buildUserMessage(input: ThreadAnalysisInput): string {
       })
       .join("\n");
     lines.push("", "Error tracking data:", sentryList);
+  }
+
+  if (input.telemetryFindings) {
+    const telemetry = input.telemetryFindings as {
+      sessionId?: string;
+      sessionUrl?: string;
+      errorCount?: number;
+      errors?: Array<{ message?: string; timestamp?: string }>;
+      userAgent?: string | null;
+    };
+
+    const telemetryParts: string[] = [];
+    if (telemetry.sessionUrl) {
+      telemetryParts.push(`Session replay: ${telemetry.sessionUrl}`);
+    }
+    if (telemetry.userAgent) {
+      telemetryParts.push(`User agent: ${telemetry.userAgent}`);
+    }
+    if (telemetry.errorCount != null && telemetry.errorCount > 0) {
+      telemetryParts.push(`Total errors captured: ${telemetry.errorCount}`);
+    }
+    if (telemetry.errors && telemetry.errors.length > 0) {
+      const errorList = telemetry.errors
+        .slice(0, 10)
+        .map((e, i) => `  ${i + 1}. [${e.timestamp ?? "unknown"}] ${e.message ?? "unknown error"}`)
+        .join("\n");
+      telemetryParts.push(`Captured errors:\n${errorList}`);
+    }
+    if (telemetryParts.length > 0) {
+      lines.push("", "Session replay telemetry:", telemetryParts.join("\n"));
+    }
   }
 
   lines.push("", "Analyze this issue and provide a structured assessment.");

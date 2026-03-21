@@ -67,6 +67,11 @@ export async function generateFixPRWorkflow(
         sentryFindings: context.sentryFindings,
       }),
       runCodeContextAgent({
+        workspaceId: context.workspaceId,
+        summary: context.summary,
+        rcaSummary: context.rcaSummary,
+        repositoryIds: context.codexRepositoryIds,
+        messages: context.messages,
         codexFindings: context.codexFindings,
       }),
     ]);

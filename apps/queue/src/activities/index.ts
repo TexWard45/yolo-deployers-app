@@ -15,6 +15,7 @@ export {
   generateDraftReplyActivity,
   saveAnalysisAndDraftActivity,
   escalateThreadActivity,
+  fetchTelemetryFindingsActivity,
 } from "./analyze-thread.activity.js";
 export {
   getOutboundContext,

@@ -25,6 +25,7 @@ import {
   dispatchGenerateFixPRWorkflow,
   cancelGenerateFixPRWorkflow,
 } from "../temporal";
+import { expandFixPrCodeContext } from "./helpers/fix-pr-code-context";
 import { sendDraftToChannel } from "./helpers/send-draft";
 import { testSentryConnection as testSentryConnectionFn } from "./helpers/sentry-client";
 import {
@@ -41,6 +42,10 @@ const ACTIVE_FIX_PR_STATUSES = new Set(["QUEUED", "RUNNING"]);
 const TERMINAL_FIX_PR_STATUSES = new Set(["PASSED", "WAITING_REVIEW", "FAILED", "CANCELLED"]);
 const ADMIN_WORKSPACE_ROLES = new Set(["OWNER", "ADMIN"]);
 const REDACTED_SECRET_PLACEHOLDER = "***";
+
+function hasFixPrCodeContext(codexFindings: unknown | null): boolean {
+  return expandFixPrCodeContext(codexFindings).editScope.length > 0;
+}
 
 async function requireWorkspaceMember(
   ctx: TRPCContext,
@@ -864,13 +869,49 @@ export const agentRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       await requireWorkspaceMember(ctx, input);
 
-      const analysis = await ctx.prisma.threadAnalysis.findUnique({
+      const requestedAnalysis = await ctx.prisma.threadAnalysis.findUnique({
         where: { id: input.analysisId },
         include: { thread: true },
       });
 
-      if (!analysis || analysis.workspaceId !== input.workspaceId || analysis.threadId !== input.threadId) {
+      if (
+        !requestedAnalysis ||
+        requestedAnalysis.workspaceId !== input.workspaceId ||
+        requestedAnalysis.threadId !== input.threadId
+      ) {
         throw new TRPCError({ code: "NOT_FOUND", message: "Analysis not found" });
+      }
+
+      let selectedAnalysis = requestedAnalysis;
+      if (!hasFixPrCodeContext(requestedAnalysis.codexFindings)) {
+        const candidates = await ctx.prisma.threadAnalysis.findMany({
+          where: {
+            threadId: input.threadId,
+            workspaceId: input.workspaceId,
+            id: { not: requestedAnalysis.id },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+          select: {
+            id: true,
+            codexFindings: true,
+            sufficient: true,
+          },
+        });
+
+        const preferredCandidate =
+          candidates.find((candidate) => candidate.sufficient && hasFixPrCodeContext(candidate.codexFindings))
+          ?? candidates.find((candidate) => hasFixPrCodeContext(candidate.codexFindings));
+
+        if (preferredCandidate) {
+          selectedAnalysis = await ctx.prisma.threadAnalysis.findUniqueOrThrow({
+            where: { id: preferredCandidate.id },
+            include: { thread: true },
+          });
+          console.log(
+            `[generateFixPR] selected fallback analysis ${selectedAnalysis.id} (requested ${requestedAnalysis.id})`,
+          );
+        }
       }
 
       const config = await ctx.prisma.workspaceAgentConfig.findUnique({
@@ -878,7 +919,7 @@ export const agentRouter = createTRPCRouter({
       });
 
       const existingRun = await ctx.prisma.fixPrRun.findUnique({
-        where: { analysisId: input.analysisId },
+        where: { analysisId: selectedAnalysis.id },
       });
 
       if (existingRun) {
@@ -906,7 +947,7 @@ export const agentRouter = createTRPCRouter({
           runId: existingRun.id,
           threadId: input.threadId,
           workspaceId: input.workspaceId,
-          analysisId: input.analysisId,
+          analysisId: selectedAnalysis.id,
           triggeredByUserId: input.userId,
         });
 
@@ -921,7 +962,7 @@ export const agentRouter = createTRPCRouter({
         data: {
           workspaceId: input.workspaceId,
           threadId: input.threadId,
-          analysisId: input.analysisId,
+          analysisId: selectedAnalysis.id,
           createdById: input.userId,
           status: "QUEUED",
           currentStage: "QUEUED",
@@ -934,7 +975,7 @@ export const agentRouter = createTRPCRouter({
         runId: run.id,
         threadId: input.threadId,
         workspaceId: input.workspaceId,
-        analysisId: input.analysisId,
+        analysisId: selectedAnalysis.id,
         triggeredByUserId: input.userId,
       });
 

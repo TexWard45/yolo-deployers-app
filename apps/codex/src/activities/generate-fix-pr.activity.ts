@@ -54,6 +54,11 @@ export interface FixRunContext {
     review: string;
   };
   requiredCheckNames: string[];
+  codexRepositoryIds: string[];
+}
+
+function hasCodeContext(codexFindings: unknown | null): boolean {
+  return expandFixPrCodeContext(codexFindings).editScope.length > 0;
 }
 
 export async function getFixRunContext(
@@ -86,17 +91,67 @@ export async function getFixRunContext(
     return null;
   }
 
+  let analysisSummary = run.analysis.summary;
+  let analysisRcaSummary = run.analysis.rcaSummary;
+  let analysisCodexFindings = run.analysis.codexFindings;
+  let analysisSentryFindings = run.analysis.sentryFindings;
+
+  if (!hasCodeContext(analysisCodexFindings)) {
+    const recentAnalyses = await prisma.threadAnalysis.findMany({
+      where: {
+        threadId: run.threadId,
+        workspaceId: run.workspaceId,
+        id: { not: run.analysisId },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: {
+        id: true,
+        summary: true,
+        rcaSummary: true,
+        codexFindings: true,
+        sentryFindings: true,
+        sufficient: true,
+      },
+    });
+
+    const preferredAnalysis =
+      recentAnalyses.find((analysis) => analysis.sufficient && hasCodeContext(analysis.codexFindings))
+      ?? recentAnalyses.find((analysis) => hasCodeContext(analysis.codexFindings));
+
+    if (preferredAnalysis) {
+      analysisSummary = preferredAnalysis.summary;
+      analysisRcaSummary = preferredAnalysis.rcaSummary;
+      analysisCodexFindings = preferredAnalysis.codexFindings;
+      analysisSentryFindings = preferredAnalysis.sentryFindings;
+      console.log(
+        `[fix-pr] run ${run.id} using fallback analysis ${preferredAnalysis.id} because ${run.analysisId} had empty codex findings`,
+      );
+    }
+  }
+
   const config = run.workspace.agentConfig;
+  const configuredRepoIds = config?.codexRepositoryIds ?? [];
+  let codexRepositoryIds = configuredRepoIds;
+
+  // Fallback: if workspace config does not explicitly scope repos, use all indexed repos.
+  if (codexRepositoryIds.length === 0) {
+    const workspaceRepos = await prisma.codexRepository.findMany({
+      where: { workspaceId: input.workspaceId },
+      select: { id: true },
+    });
+    codexRepositoryIds = workspaceRepos.map((repo) => repo.id);
+  }
 
   return {
     runId: run.id,
     workspaceId: run.workspaceId,
     threadId: run.threadId,
     analysisId: run.analysisId,
-    summary: run.analysis.summary,
-    rcaSummary: run.analysis.rcaSummary,
-    codexFindings: run.analysis.codexFindings,
-    sentryFindings: run.analysis.sentryFindings,
+    summary: analysisSummary,
+    rcaSummary: analysisRcaSummary,
+    codexFindings: analysisCodexFindings,
+    sentryFindings: analysisSentryFindings,
     messages: run.analysis.thread.messages.map((message) => ({
       direction: message.direction,
       body: message.body,
@@ -113,6 +168,7 @@ export async function getFixRunContext(
       review: config?.codexReviewModel ?? codexConfig.llm.model,
     },
     requiredCheckNames: config?.codexRequiredCheckNames ?? [],
+    codexRepositoryIds,
   };
 }
 
@@ -146,9 +202,78 @@ export async function runRcaAgent(params: {
 }
 
 export async function runCodeContextAgent(params: {
+  workspaceId?: string;
+  summary?: string;
+  rcaSummary?: string | null;
+  repositoryIds?: string[];
+  messages?: Array<{ direction: string; body: string }>;
   codexFindings: unknown | null;
 }): Promise<FixPrCodeContextOutput> {
-  return expandFixPrCodeContext(params.codexFindings);
+  const cachedContext = expandFixPrCodeContext(params.codexFindings);
+  if (cachedContext.editScope.length > 0) {
+    return cachedContext;
+  }
+
+  if (!params.workspaceId) {
+    return cachedContext;
+  }
+
+  let repositoryIds = params.repositoryIds ?? [];
+  if (repositoryIds.length === 0) {
+    const workspaceRepos = await prisma.codexRepository.findMany({
+      where: { workspaceId: params.workspaceId },
+      select: { id: true },
+    });
+    repositoryIds = workspaceRepos.map((repo) => repo.id);
+  }
+  if (repositoryIds.length === 0) {
+    console.warn(`[fix-pr] no Codex repositories available for workspace ${params.workspaceId}`);
+    return cachedContext;
+  }
+
+  const recentMessageBodies = (params.messages ?? [])
+    .filter((message) => message.direction === "INBOUND" || message.direction === "SYSTEM")
+    .slice(-3)
+    .map((message) => message.body.trim())
+    .filter(Boolean);
+
+  const searchQuery = [params.summary, params.rcaSummary, ...recentMessageBodies]
+    .filter(Boolean)
+    .join(" ")
+    .slice(0, 500);
+  if (!searchQuery) {
+    return cachedContext;
+  }
+
+  try {
+    const response = await fetch(`${codexConfig.webAppUrl}/api/rest/codex/search`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        workspaceId: params.workspaceId,
+        query: searchQuery,
+        repositoryIds,
+        limit: 10,
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!response.ok) {
+      console.warn(`[fix-pr] fresh codex search failed (${response.status})`);
+      return cachedContext;
+    }
+
+    const freshFindings = (await response.json()) as unknown;
+    const freshContext = expandFixPrCodeContext(freshFindings);
+    if (freshContext.editScope.length > 0) {
+      console.log(`[fix-pr] fresh code context recovered ${freshContext.editScope.length} files`);
+      return freshContext;
+    }
+  } catch (error) {
+    console.warn("[fix-pr] fresh codex search errored:", error);
+  }
+
+  return cachedContext;
 }
 
 export async function runTestAgent(params: {

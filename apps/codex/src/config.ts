@@ -1,5 +1,12 @@
 import { resolve } from "node:path";
+import "./bootstrap-env.js";
 import { codexEnv } from "@shared/env/codex";
+
+const resolvedLlmApiKey = codexEnv.LLM_API_KEY ?? codexEnv.OPENAI_API_KEY ?? null;
+
+if (!process.env.OPENAI_API_KEY && resolvedLlmApiKey) {
+  process.env.OPENAI_API_KEY = resolvedLlmApiKey;
+}
 
 export const temporalConfig = {
   address: codexEnv.TEMPORAL_ADDRESS,
@@ -10,7 +17,7 @@ export const temporalConfig = {
 export const codexConfig = {
   cloneBasePath: resolve(codexEnv.CODEX_CLONE_BASE_PATH),
   llm: {
-    apiKey: codexEnv.LLM_API_KEY,
+    apiKey: resolvedLlmApiKey,
     model: codexEnv.LLM_MODEL_DEFAULT,
   },
   webAppUrl: codexEnv.WEB_APP_URL,

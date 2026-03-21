@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Providers } from "@/trpc/provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { TelemetryProvider } from "@shared/telemetry/react";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 import "@/app/globals.css";
@@ -33,9 +32,7 @@ export default function RootLayout({
     >
       <body>
         <Providers>
-          <TelemetryProvider endpoint="/api/rest">
-            <TooltipProvider>{children}</TooltipProvider>
-          </TelemetryProvider>
+          <TooltipProvider>{children}</TooltipProvider>
         </Providers>
       </body>
     </html>

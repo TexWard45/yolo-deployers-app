@@ -15,6 +15,7 @@ const {
   generateDraftReplyActivity,
   saveAnalysisAndDraftActivity,
   escalateThreadActivity,
+  fetchTelemetryFindingsActivity,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: "30 seconds",
   retry: { maximumAttempts: 3 },
@@ -32,7 +33,8 @@ const DEBOUNCE_SECONDS = 30;
  * AI Thread Analysis & Auto-Response Pipeline.
  *
  * Triggered after each inbound message. Debounces rapid messages,
- * evaluates sufficiency, investigates via Codex + Sentry, generates
+ * fetches telemetry session data, evaluates sufficiency (enriched with
+ * telemetry errors), investigates via Codex + Sentry, generates
  * analysis and draft reply.
  */
 export async function analyzeThreadWorkflow(
@@ -47,8 +49,35 @@ export async function analyzeThreadWorkflow(
     return { analysisId: null, draftId: null, action: "skipped", reason: "agent_disabled_or_thread_closed" };
   }
 
-  // 3. Sufficiency check
-  const sufficiency = await checkSufficiencyActivity(context);
+  // 2b. Fetch telemetry session EARLY — before sufficiency check
+  // Session errors (e.g. "Cannot read properties of undefined") enrich
+  // vague customer messages so the sufficiency check can pass.
+  const telemetryFindings = await fetchTelemetryFindingsActivity({
+    telemetrySessionId: context.telemetrySessionId,
+    customerEmail: context.customerEmail,
+    threadCreatedAt: context.threadCreatedAt,
+    workspaceId: input.workspaceId,
+    threadId: input.threadId,
+  });
+
+  // Enrich messages with telemetry errors for sufficiency check
+  const enrichedContext = telemetryFindings && telemetryFindings.errors.length > 0
+    ? {
+        ...context,
+        messages: [
+          ...context.messages,
+          {
+            id: "__telemetry__",
+            direction: "SYSTEM" as const,
+            body: `[Session Replay Errors] ${telemetryFindings.errors.map((e) => e.message).join("; ")} (User Agent: ${telemetryFindings.userAgent ?? "unknown"})`,
+            createdAt: context.threadCreatedAt ?? new Date().toISOString(),
+          },
+        ],
+      }
+    : context;
+
+  // 3. Sufficiency check (now includes telemetry errors if available)
+  const sufficiency = await checkSufficiencyActivity(enrichedContext);
   if (!sufficiency) {
     return { analysisId: null, draftId: null, action: "skipped", reason: "sufficiency_check_failed" };
   }
@@ -152,6 +181,7 @@ export async function analyzeThreadWorkflow(
     codexFindings: codexResults,
     sentryFindings: sentryResults,
     expandedContext,
+    telemetryFindings,
   });
 
   if (!analysisResult) {

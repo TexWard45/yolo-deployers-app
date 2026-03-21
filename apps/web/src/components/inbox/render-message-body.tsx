@@ -13,6 +13,34 @@ export interface AttachmentInfo {
 }
 
 const MENTION_RE = /(@[\w.]+|#[\w-]+)/g;
+const URL_RE = /(https?:\/\/[^\s<>"')]+)(?=[\s)]|$)/g;
+
+function linkifyText(text: string, keyPrefix: string): ReactNode[] {
+  const parts = text.split(URL_RE);
+  const nodes: ReactNode[] = [];
+
+  parts.forEach((part, i) => {
+    if (!part) return;
+    if (part.startsWith("http://") || part.startsWith("https://")) {
+      nodes.push(
+        <a
+          key={`${keyPrefix}-url-${i}`}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground"
+        >
+          {part}
+        </a>,
+      );
+      return;
+    }
+
+    nodes.push(part);
+  });
+
+  return nodes;
+}
 
 export function renderMessageBody(
   body: string,
@@ -20,38 +48,45 @@ export function renderMessageBody(
   attachments?: AttachmentInfo[],
 ): ReactNode[] {
   const parts = body.split(MENTION_RE);
-  const nodes: ReactNode[] = parts.map((part, i) => {
+  const nodes: ReactNode[] = [];
+
+  parts.forEach((part, i) => {
+    if (!part) return;
+
     if (part.startsWith("@")) {
-      const name = part.slice(1);
-      const mention = mentions?.[name];
-      return (
+      const mention = mentions?.[part.slice(1)];
+      nodes.push(
         <span
           key={i}
           className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
         >
-          {mention?.avatarUrl ? (
+          {mention && "avatarUrl" in mention && mention.avatarUrl ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={mention.avatarUrl}
-              alt={name}
+              alt={part.slice(1)}
               className="inline-block size-3.5 rounded-full"
             />
           ) : null}
           {part}
-        </span>
+        </span>,
       );
+      return;
     }
+
     if (part.startsWith("#")) {
-      return (
+      nodes.push(
         <span
           key={i}
           className="inline rounded bg-gray-100 px-1 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300"
         >
           {part}
-        </span>
+        </span>,
       );
+      return;
     }
-    return part;
+
+    nodes.push(...linkifyText(part, `text-${i}`));
   });
 
   if (attachments && attachments.length > 0) {

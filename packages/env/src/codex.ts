@@ -17,6 +17,7 @@ export const codexEnv = createEnv({
     TEMPORAL_NAMESPACE: TemporalNamespaceSchema,
     CODEX_TASK_QUEUE: z.string().default("codex-sync-queue"),
     LLM_API_KEY: LlmApiKeySchema.optional(),
+    OPENAI_API_KEY: z.string().min(1).optional(),
     LLM_MODEL_DEFAULT: LlmModelDefaultSchema,
     WEB_APP_URL: WebAppUrlSchema,
     INTERNAL_API_SECRET: InternalApiSecretSchema,

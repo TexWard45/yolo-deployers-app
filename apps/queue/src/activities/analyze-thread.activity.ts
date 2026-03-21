@@ -20,6 +20,7 @@ import type {
   SaveAnalysisInput,
 } from "@shared/types";
 import { queueEnv } from "@shared/env/queue";
+import { resolveSentryConfig } from "./helpers/sentry-config.js";
 
 // ── Internal types ──────────────────────────────────────────────────
 
@@ -46,6 +47,9 @@ export interface AnalysisContext {
   codexRepositoryIds: string[];
   sentryConfig: SentryConfig | null;
   investigationABEnabled: boolean;
+  telemetrySessionId: string | null;
+  customerEmail: string | null;
+  threadCreatedAt: string | null;
 }
 
 // ── Activity 1: Fetch thread analysis context ───────────────────────
@@ -81,15 +85,21 @@ export async function getThreadAnalysisContext(
     return null;
   }
 
-  const sentryConfig: SentryConfig | null =
-    config.sentryOrgSlug && (config.sentryProjectSlug || (config.sentryProjectSlugs && config.sentryProjectSlugs.length > 0)) && config.sentryAuthToken
-      ? {
-          orgSlug: config.sentryOrgSlug,
-          projectSlug: config.sentryProjectSlug ?? config.sentryProjectSlugs[0]!,
-          authToken: config.sentryAuthToken,
-          projectSlugs: config.sentryProjectSlugs.length > 0 ? config.sentryProjectSlugs : undefined,
-        }
-      : null;
+  const sentryConfig: SentryConfig | null = resolveSentryConfig(config);
+  const workspaceRepos = await prisma.codexRepository.findMany({
+    where: { workspaceId: input.workspaceId },
+    select: { id: true },
+  });
+  const availableRepoIds = workspaceRepos.map((repo) => repo.id);
+  const availableRepoIdSet = new Set(availableRepoIds);
+  const configuredRepoIds = config.codexRepositoryIds ?? [];
+  const codexRepositoryIds =
+    configuredRepoIds.length > 0
+      ? configuredRepoIds.filter((repoId) => availableRepoIdSet.has(repoId))
+      : availableRepoIds;
+  if (codexRepositoryIds.length === 0) {
+    console.warn(`[analyze-thread] no Codex repositories available for workspace ${input.workspaceId}`);
+  }
 
   return {
     threadId: thread.id,
@@ -111,9 +121,12 @@ export async function getThreadAnalysisContext(
       systemPrompt: config.systemPrompt,
       model: config.model,
     },
-    codexRepositoryIds: config.codexRepositoryIds,
+    codexRepositoryIds,
     sentryConfig,
     investigationABEnabled: config.investigationABEnabled,
+    telemetrySessionId: thread.telemetrySessionId,
+    customerEmail: thread.customer.email,
+    threadCreatedAt: thread.createdAt.toISOString(),
   };
 }
 
@@ -440,6 +453,7 @@ export async function generateAnalysisActivity(params: {
   codexFindings: unknown | null;
   sentryFindings: unknown | null;
   expandedContext?: unknown | null;
+  telemetryFindings?: unknown | null;
 }): Promise<ThreadAnalysisResult | null> {
   const apiKey = queueEnv.LLM_API_KEY;
   if (!apiKey) {
@@ -455,6 +469,7 @@ export async function generateAnalysisActivity(params: {
     codexFindings: params.codexFindings,
     sentryFindings: params.sentryFindings,
     expandedContext: params.expandedContext ?? null,
+    telemetryFindings: params.telemetryFindings ?? null,
   };
 
   return analyzeThread(input, {
@@ -538,4 +553,195 @@ export async function escalateThreadActivity(params: {
     data: { status: "ESCALATED" },
   });
   console.log(`[analyze-thread] escalated thread ${params.threadId}`);
+}
+
+// ── Activity 9: Fetch telemetry session findings ─────────────────────
+
+export interface TelemetryFinding {
+  sessionId: string;
+  sessionUrl: string;
+  errorCount: number;
+  errors: Array<{
+    message: string;
+    timestamp: string;
+  }>;
+  userAgent: string | null;
+}
+
+export async function fetchTelemetryFindingsActivity(params: {
+  telemetrySessionId: string | null;
+  customerEmail: string | null;
+  threadCreatedAt: string | null;
+  workspaceId: string;
+  threadId: string;
+}): Promise<TelemetryFinding | null> {
+  const webAppUrl = queueEnv.WEB_APP_URL;
+
+  // Strategy 1: Direct session ID from the thread
+  if (params.telemetrySessionId) {
+    return fetchSessionFindings(params.telemetrySessionId, webAppUrl);
+  }
+
+  // Strategy 2: Find session by customer email + time proximity
+  if (params.customerEmail) {
+    try {
+      const endTime = params.threadCreatedAt ? new Date(params.threadCreatedAt) : new Date();
+      const startTime = new Date(endTime.getTime() - 60 * 60 * 1000);
+
+      const response = await fetch(`${webAppUrl}/api/rest/telemetry.getExactErrorMoment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          "0": {
+            json: {
+              customerEmail: params.customerEmail,
+              startTime: startTime.toISOString(),
+              endTime: endTime.toISOString(),
+            },
+          },
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (response.ok) {
+        const result = (await response.json()) as Array<{ result?: { data?: { json?: { found: boolean; sessionId?: string } } } }>;
+        const data = result[0]?.result?.data?.json;
+        if (data?.found && data.sessionId) {
+          const finding = await fetchSessionFindings(data.sessionId, webAppUrl);
+          if (finding) {
+            await linkSessionToThread(params.workspaceId, params.threadId, data.sessionId, webAppUrl);
+            return finding;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn("[telemetry-findings] customer email lookup failed:", error);
+    }
+  }
+
+  // Strategy 3: Time-proximity — find any error session created around the thread's creation time
+  if (params.threadCreatedAt) {
+    try {
+      const threadTime = new Date(params.threadCreatedAt);
+      // Look 30 min before and 5 min after thread creation
+      const startTime = new Date(threadTime.getTime() - 30 * 60 * 1000);
+      const endTime = new Date(threadTime.getTime() + 5 * 60 * 1000);
+
+      const errorSession = await prisma.session.findFirst({
+        where: {
+          hasError: true,
+          createdAt: { gte: startTime, lte: endTime },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+
+      if (errorSession) {
+        console.log(`[telemetry-findings] matched session ${errorSession.id} by time proximity`);
+        const finding = await fetchSessionFindings(errorSession.id, webAppUrl);
+        if (finding) {
+          await linkSessionToThread(params.workspaceId, params.threadId, errorSession.id, webAppUrl);
+          return finding;
+        }
+      }
+    } catch (error) {
+      console.warn("[telemetry-findings] time proximity lookup failed:", error);
+    }
+  }
+
+  return null;
+}
+
+async function fetchSessionFindings(
+  sessionId: string,
+  webAppUrl: string,
+): Promise<TelemetryFinding | null> {
+  try {
+    // Fetch session + timeline errors directly from DB (activity can use prisma)
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        id: true,
+        errorCount: true,
+        userAgent: true,
+        timelines: {
+          where: { type: "ERROR" },
+          orderBy: { timestamp: "asc" },
+          take: 10,
+          select: { content: true, timestamp: true },
+        },
+      },
+    });
+
+    if (!session) {
+      console.warn(`[telemetry-findings] session ${sessionId} not found`);
+      return null;
+    }
+
+    return {
+      sessionId: session.id,
+      sessionUrl: `${webAppUrl}/admin/replays?id=${session.id}`,
+      errorCount: session.errorCount,
+      errors: session.timelines.map((t) => ({
+        message: t.content,
+        timestamp: t.timestamp.toISOString(),
+      })),
+      userAgent: session.userAgent,
+    };
+  } catch (error) {
+    console.warn("[telemetry-findings] fetch session failed:", error);
+    return null;
+  }
+}
+
+async function linkSessionToThread(
+  _workspaceId: string,
+  threadId: string,
+  sessionId: string,
+  webAppUrl: string,
+): Promise<void> {
+  const replayUrl = `${webAppUrl}/admin/replays?id=${sessionId}`;
+  const systemExternalMessageId = `system-telemetry-session-${sessionId}`;
+
+  try {
+    await prisma.supportThread.update({
+      where: { id: threadId },
+      data: { telemetrySessionId: sessionId },
+    });
+    console.log(`[telemetry-findings] linked session ${sessionId} to thread ${threadId}`);
+  } catch (error) {
+    console.warn("[telemetry-findings] failed to link session to thread:", error);
+  }
+
+  try {
+    const existing = await prisma.threadMessage.findUnique({
+      where: {
+        threadId_externalMessageId: {
+          threadId,
+          externalMessageId: systemExternalMessageId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (existing) return;
+
+    await prisma.threadMessage.create({
+      data: {
+        threadId,
+        direction: "SYSTEM",
+        externalMessageId: systemExternalMessageId,
+        body: `Session replay matched for developer investigation: ${replayUrl}`,
+        metadata: {
+          source: "telemetry-replay-link",
+          telemetrySessionId: sessionId,
+          telemetrySessionUrl: replayUrl,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    console.log(`[telemetry-findings] posted replay link message for thread ${threadId}`);
+  } catch (error) {
+    console.warn("[telemetry-findings] failed to post replay link message:", error);
+  }
 }
