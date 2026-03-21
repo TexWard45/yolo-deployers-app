@@ -62,12 +62,47 @@ export const telemetryRouter = createTRPCRouter({
       z.object({
         limit: z.number().int().min(1).max(100).default(20),
         cursor: z.string().optional(),
+        customerId: z.string().optional(),
+        customerEmail: z.string().optional(),
+        customerPhone: z.string().optional(),
+        startDate: z.coerce.date().optional(),
+        endDate: z.coerce.date().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
+      const { limit, cursor, customerId, customerEmail, customerPhone, startDate, endDate } = input;
+
+      // Resolve session IDs by searching user.identify event payloads
+      let sessionIdFilter: string[] | undefined;
+      const identityConditions: { payload: { path: string[]; string_contains: string } }[] = [];
+      if (customerEmail) identityConditions.push({ payload: { path: ["email"], string_contains: customerEmail } });
+      if (customerPhone) identityConditions.push({ payload: { path: ["phone"], string_contains: customerPhone } });
+      if (customerId) identityConditions.push({ payload: { path: ["id"], string_contains: customerId } });
+
+      if (identityConditions.length > 0) {
+        const matchingEvents = await ctx.prisma.replayEvent.findMany({
+          where: { type: "user.identify", OR: identityConditions },
+          select: { sessionId: true },
+          distinct: ["sessionId"],
+        });
+        sessionIdFilter = matchingEvents.map((e) => e.sessionId);
+        if (sessionIdFilter.length === 0) return { sessions: [], nextCursor: undefined };
+      }
+
       const sessions = await ctx.prisma.session.findMany({
-        take: input.limit + 1,
-        ...(input.cursor ? { cursor: { id: input.cursor }, skip: 1 } : {}),
+        take: limit + 1,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        where: {
+          ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
+          ...(startDate ?? endDate
+            ? {
+                createdAt: {
+                  ...(startDate ? { gte: startDate } : {}),
+                  ...(endDate ? { lte: endDate } : {}),
+                },
+              }
+            : {}),
+        },
         orderBy: { createdAt: "desc" },
         include: {
           _count: { select: { events: true } },
@@ -75,7 +110,7 @@ export const telemetryRouter = createTRPCRouter({
       });
 
       let nextCursor: string | undefined;
-      if (sessions.length > input.limit) {
+      if (sessions.length > limit) {
         const last = sessions.pop();
         nextCursor = last?.id;
       }
@@ -91,6 +126,7 @@ export const telemetryRouter = createTRPCRouter({
         ctx.prisma.replayEvent.findMany({
           where: { sessionId: input.sessionId },
           orderBy: { sequence: "asc" },
+          take: 5000,
         }),
       ]);
 

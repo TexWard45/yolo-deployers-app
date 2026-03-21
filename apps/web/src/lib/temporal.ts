@@ -1,5 +1,5 @@
 import "server-only";
-import { Client, Connection } from "@temporalio/client";
+import { Client, Connection, WorkflowExecutionAlreadyStartedError } from "@temporalio/client";
 import { webEnv } from "@shared/env/web";
 
 // Promise-based singleton: parallel callers share the same in-flight connection
@@ -27,7 +27,11 @@ export async function dispatchSessionEnrichment(sessionId: string): Promise<void
       workflowId: `session-enrichment-${sessionId}`,
     });
   } catch (err) {
-    // If workflow.start fails due to a broken connection, clear cache so next call reconnects
+    // Expected: multiple telemetry batches for the same session will race to
+    // start the same workflow. The first one wins; later ones are harmless.
+    if (err instanceof WorkflowExecutionAlreadyStartedError) return;
+
+    // Genuinely unexpected error — clear client cache so next call reconnects
     _clientPromise = null;
     throw err;
   }
