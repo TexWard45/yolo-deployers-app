@@ -48,12 +48,6 @@ function applyDiscount(total: number, code: string): number {
   return total; // unknown code — no discount
 }
 
-/** BUG #2 — Quantity update that silently produces NaN */
-function adjustQuantity(qty: number, delta: number): number {
-  // BUG: When delta is a string "1" from input, NaN can sneak in
-  const result = qty + delta;
-  return result; // might return NaN if qty was corrupted
-}
 
 /** BUG #3 — Price display function that intermittently shows wrong values */
 function formatPrice(price: number): string {

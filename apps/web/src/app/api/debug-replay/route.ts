@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
         firstSeq: firstEvent?.sequence ?? null,
         firstType: firstEvent ? (firstEvent.payload as any)?.type : null,
         firstTypeLabel: firstEvent
-          ? { 0: "DomContentLoaded", 1: "Load", 2: "FullSnapshot", 3: "IncrementalSnapshot", 4: "Meta" }[(firstEvent.payload as any)?.type] ?? "Unknown"
+          ? ({ 0: "DomContentLoaded", 1: "Load", 2: "FullSnapshot", 3: "IncrementalSnapshot", 4: "Meta" } as Record<number, string>)[(firstEvent.payload as any)?.type as number] ?? "Unknown"
           : null,
       });
     }
