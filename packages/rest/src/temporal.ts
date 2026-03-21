@@ -6,6 +6,7 @@ import type {
   TriageThreadWorkflowInput,
   SupportPipelineWorkflowInput,
   GenerateFixPRWorkflowInput,
+  SyncDiscordChannelsWorkflowInput,
 } from "@shared/types";
 
 let _clientPromise: Promise<Client> | null = null;
@@ -172,6 +173,28 @@ export async function cancelGenerateFixPRWorkflow(
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     if (message.includes("not found")) return;
+    _clientPromise = null;
+    throw error;
+  }
+}
+
+/**
+ * Dispatch the sync-discord-channels workflow — one per connection.
+ * Discovers channels matching a name filter and backfills messages.
+ */
+export async function dispatchSyncDiscordChannelsWorkflow(
+  input: SyncDiscordChannelsWorkflowInput,
+): Promise<void> {
+  const client = await getClient();
+
+  try {
+    await client.workflow.start("syncDiscordChannelsWorkflow", {
+      args: [input],
+      taskQueue: webEnv.TEMPORAL_TASK_QUEUE,
+      workflowId: `sync-discord-${input.channelConnectionId}`,
+    });
+  } catch (error: unknown) {
+    if (error instanceof WorkflowExecutionAlreadyStartedError) return;
     _clientPromise = null;
     throw error;
   }

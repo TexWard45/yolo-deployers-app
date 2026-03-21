@@ -113,21 +113,30 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
         <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
           AI Analysis
         </h3>
-        <p className="mb-2 text-xs text-muted-foreground">
-          {loading ? "Checking..." : "Waiting for analysis..."}
-        </p>
-        <p className="mb-2 text-[10px] text-muted-foreground">
-          Auto-refreshing every 10s
-        </p>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-7 text-xs"
-          disabled={triggering}
-          onClick={handleReanalyze}
-        >
-          {triggering ? "Analyzing..." : "Analyze now"}
-        </Button>
+        {triggering ? (
+          <div className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2">
+            <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <span className="text-xs font-medium text-primary">Running analysis...</span>
+          </div>
+        ) : (
+          <>
+            <p className="mb-2 text-xs text-muted-foreground">
+              {loading ? "Checking..." : "No analysis yet."}
+            </p>
+            <Button
+              size="sm"
+              className="h-8 w-full gap-1.5 text-xs"
+              onClick={handleReanalyze}
+            >
+              Trigger Analysis
+            </Button>
+          </>
+        )}
+        {hasAnalysisRef.current === false && !triggering ? (
+          <p className="mt-2 text-[10px] text-muted-foreground">
+            Auto-refreshing every 10s
+          </p>
+        ) : null}
       </div>
     );
   }
@@ -140,12 +149,19 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
         </h3>
         <Button
           size="sm"
-          variant="ghost"
-          className="h-6 text-[10px]"
+          variant="outline"
+          className="h-7 gap-1 text-xs"
           disabled={triggering}
           onClick={handleReanalyze}
         >
-          {triggering ? "..." : "Re-analyze"}
+          {triggering ? (
+            <>
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+              Analyzing...
+            </>
+          ) : (
+            "Re-analyze"
+          )}
         </Button>
       </div>
 

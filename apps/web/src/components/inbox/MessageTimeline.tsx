@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { renderMessageBody, type MentionsMap } from "@/components/inbox/render-message-body";
+import { renderMessageBody, type MentionsMap, type AttachmentInfo } from "@/components/inbox/render-message-body";
 
 interface MessageTimelineItem {
   id: string;
@@ -40,12 +40,13 @@ export function MessageTimeline({ messages }: MessageTimelineProps) {
               {new Date(message.createdAt).toLocaleString()}
             </span>
           </div>
-          <p className="whitespace-pre-wrap text-sm">
+          <div className="whitespace-pre-wrap text-sm">
             {renderMessageBody(
               message.body,
               message.metadata?.mentions as MentionsMap | undefined,
+              message.metadata?.attachments as AttachmentInfo[] | undefined,
             )}
-          </p>
+          </div>
         </div>
       ))}
     </div>

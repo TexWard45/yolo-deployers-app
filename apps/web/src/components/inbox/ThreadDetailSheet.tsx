@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
-import { renderMessageBody, type MentionsMap } from "@/components/inbox/render-message-body";
+import { renderMessageBody, type MentionsMap, type AttachmentInfo } from "@/components/inbox/render-message-body";
 import { getThreadDetail, sendReply } from "@/actions/inbox";
 import { AnalysisPanel, DraftChatBubble, type AnalysisDraft } from "@/components/inbox/AnalysisPanel";
 import {
@@ -52,6 +52,8 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [thread, setThread] = useState<ThreadData | null>(null);
   const [loading, startTransition] = useTransition();
   const [replyBody, setReplyBody] = useState("");
+  const [inlineReplyDrafts, setInlineReplyDrafts] = useState<Record<string, string>>({});
+  const [openInlineReplySegmentId, setOpenInlineReplySegmentId] = useState<string | null>(null);
   const [sending, startSending] = useTransition();
   const [activeReplySegmentId, setActiveReplySegmentId] = useState<string | null>(null);
   const [draft, setDraft] = useState<AnalysisDraft | null>(null);
@@ -113,6 +115,43 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
         setReplyBody("");
         fetchThread(threadId);
       }
+      });
+  }
+
+  function handleOpenInlineReply(segmentId: string) {
+    setActiveReplySegmentId(segmentId);
+    setOpenInlineReplySegmentId(segmentId);
+  }
+
+  function handleInlineDraftChange(segmentId: string, value: string) {
+    setInlineReplyDrafts((prev) => ({
+      ...prev,
+      [segmentId]: value,
+    }));
+  }
+
+  function handleSendInlineReply(segmentId: string) {
+    const segment = segments.find((item) => item.id === segmentId) ?? null;
+    const body = (inlineReplyDrafts[segmentId] ?? "").trim();
+    if (!segment || !body) return;
+
+    const inReplyToExternalMessageId = getReplyToExternalMessageId(segment);
+
+    startSending(async () => {
+      const result = await sendReply({
+        threadId,
+        body,
+        inReplyToExternalMessageId,
+      });
+
+      if (result.success) {
+        setInlineReplyDrafts((prev) => ({
+          ...prev,
+          [segmentId]: "",
+        }));
+        setOpenInlineReplySegmentId(null);
+        fetchThread(threadId);
+      }
     });
   }
 
@@ -169,18 +208,31 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                         : "border-border"
                     }`}
                   >
-                    <button
-                      type="button"
-                      className="flex w-full items-center justify-between border-b px-3 py-2 text-left"
-                      onClick={() => setActiveReplySegmentId(segment.id)}
-                    >
-                      <span className="text-xs font-semibold">
-                        Thread {index + 1}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {segment.messages.length} msgs
-                      </span>
-                    </button>
+                    <div className="flex items-center justify-between border-b px-3 py-2">
+                      <button
+                        type="button"
+                        className="text-left"
+                        onClick={() => setActiveReplySegmentId(segment.id)}
+                      >
+                        <span className="text-xs font-semibold">
+                          Thread {index + 1}
+                        </span>
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-muted-foreground">
+                          {segment.messages.length} msgs
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-[10px]"
+                          onClick={() => handleOpenInlineReply(segment.id)}
+                        >
+                          Reply
+                        </Button>
+                      </div>
+                    </div>
                     <div className="px-3 py-3">
                       {segment.messages.map((msg, msgIdx) => {
                         const isInbound = msg.direction === "INBOUND";
@@ -245,12 +297,13 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                         : "border-l-2 border-l-muted-foreground bg-muted/30"
                                   }`}
                                 >
-                                  <p className="whitespace-pre-wrap text-sm">
+                                  <div className="whitespace-pre-wrap text-sm">
                                     {renderMessageBody(
                                       msg.body,
                                       (msg.metadata as Record<string, unknown> | null)?.mentions as MentionsMap | undefined,
+                                      (msg.metadata as Record<string, unknown> | null)?.attachments as AttachmentInfo[] | undefined,
                                     )}
-                                  </p>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -258,6 +311,48 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                         );
                       })}
                     </div>
+                    {openInlineReplySegmentId === segment.id ? (
+                      <div className="border-t px-3 py-2">
+                        <p className="mb-1 text-[10px] text-muted-foreground">
+                          Reply directly in {segment.label}
+                        </p>
+                        <div className="flex gap-2">
+                          <textarea
+                            className="flex-1 resize-none rounded-md border bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                            placeholder="Write a reply..."
+                            rows={2}
+                            value={inlineReplyDrafts[segment.id] ?? ""}
+                            onChange={(e) => handleInlineDraftChange(segment.id, e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                                handleSendInlineReply(segment.id);
+                              }
+                            }}
+                          />
+                          <div className="flex flex-col gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-7 px-2 text-[10px]"
+                              disabled={sending || !(inlineReplyDrafts[segment.id] ?? "").trim()}
+                              onClick={() => handleSendInlineReply(segment.id)}
+                            >
+                              {sending ? "..." : "Send"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-[10px]"
+                              disabled={sending}
+                              onClick={() => setOpenInlineReplySegmentId(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ))}
                 <div ref={messagesEndRef} />

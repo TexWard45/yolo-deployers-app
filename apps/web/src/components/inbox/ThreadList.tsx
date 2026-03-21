@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ThreadCard } from "@/components/inbox/ThreadCard";
 import { ThreadDetailSheet } from "@/components/inbox/ThreadDetailSheet";
 import { updateThreadStatusAction } from "@/actions/inbox";
@@ -10,6 +18,15 @@ import {
   THREAD_STATUS_LABEL,
   type ThreadStatusValue,
 } from "@/components/inbox/thread-status";
+
+const REFRESH_OPTIONS = [
+  { label: "Off", value: 0 },
+  { label: "5s", value: 5_000 },
+  { label: "10s", value: 10_000 },
+  { label: "30s", value: 30_000 },
+  { label: "1m", value: 60_000 },
+  { label: "5m", value: 300_000 },
+] as const;
 
 interface ThreadListItem {
   id: string;
@@ -44,9 +61,39 @@ const STATUS_COLOR: Record<ThreadStatusValue, string> = {
 
 export function ThreadList({ threads }: ThreadListProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [localThreads, setLocalThreads] = useState(threads);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<ThreadStatusValue | null>(null);
+  const [refreshInterval, setRefreshInterval] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const doRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    router.refresh();
+    // The spinner clears once the new props arrive via the useEffect below
+  }, [router]);
+
+  // Clear refreshing state when new data arrives
+  useEffect(() => {
+    setLocalThreads(threads);
+    setIsRefreshing(false);
+  }, [threads]);
+
+  // Auto-refresh interval
+  useEffect(() => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (refreshInterval > 0) {
+      intervalRef.current = setInterval(doRefresh, refreshInterval);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [refreshInterval, doRefresh]);
+
+  const activeRefreshLabel =
+    REFRESH_OPTIONS.find((o) => o.value === refreshInterval)?.label ?? "Off";
 
   // Derive base inbox path for URL updates (e.g. /workspace/yolo-deployers/inbox or /inbox)
   const inboxBasePath = pathname.replace(/\/[^/]+$/, "").endsWith("/inbox")
@@ -61,11 +108,6 @@ export function ThreadList({ threads }: ThreadListProps) {
       window.history.replaceState(null, "", inboxBasePath);
     }
   }
-
-  // Sync when server re-renders with fresh data
-  useEffect(() => {
-    setLocalThreads(threads);
-  }, [threads]);
 
   function handleDragStart(e: React.DragEvent, threadId: string) {
     e.dataTransfer.setData("text/plain", threadId);
@@ -119,6 +161,38 @@ export function ThreadList({ threads }: ThreadListProps) {
 
   return (
     <>
+      {/* Refresh toolbar — pinned top-right, overlapping the layout header row */}
+      <div className="fixed right-6 top-4 z-10 flex items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger className="inline-flex shrink-0 items-center justify-center rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer">
+            Auto: {activeRefreshLabel}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {REFRESH_OPTIONS.map((opt) => (
+              <DropdownMenuItem
+                key={opt.value}
+                onClick={() => setRefreshInterval(opt.value)}
+                className={refreshInterval === opt.value ? "font-semibold" : ""}
+              >
+                {opt.label === "Off" ? "Off" : `Every ${opt.label}`}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={doRefresh}
+          disabled={isRefreshing}
+          className="gap-1.5"
+        >
+          <RefreshCw
+            className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`}
+          />
+          Refresh
+        </Button>
+      </div>
+
       <div className="flex h-[calc(100vh-6rem)] overflow-x-auto pb-2">
         {THREAD_STATUSES.map((status) => {
           const items = grouped[status];

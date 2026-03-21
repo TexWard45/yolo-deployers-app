@@ -725,3 +725,20 @@ export const SupportPipelineWorkflowResultSchema = z.object({
   reason: z.string().optional(),
 });
 export type SupportPipelineWorkflowResult = z.infer<typeof SupportPipelineWorkflowResultSchema>;
+
+// ── Sync Discord Channels Workflow (Temporal) ──────────────────────
+
+export const SyncDiscordChannelsWorkflowInputSchema = z.object({
+  channelConnectionId: z.string(),
+  workspaceId: z.string(),
+  /** Substring filter for channel names (e.g. "-support"). Empty = all text channels. */
+  nameFilter: z.string().default(""),
+});
+export type SyncDiscordChannelsWorkflowInput = z.infer<typeof SyncDiscordChannelsWorkflowInputSchema>;
+
+export const SyncDiscordChannelsWorkflowResultSchema = z.object({
+  discoveredChannels: z.array(z.object({ id: z.string(), name: z.string() })),
+  addedChannelIds: z.array(z.string()),
+  backfilledMessageCount: z.number(),
+});
+export type SyncDiscordChannelsWorkflowResult = z.infer<typeof SyncDiscordChannelsWorkflowResultSchema>;

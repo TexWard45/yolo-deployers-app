@@ -76,3 +76,30 @@ export async function updateAgentConfigAction(data: {
     return { success: false, error: "Something went wrong" } as const;
   }
 }
+
+export async function syncDiscordChannelsAction(data: {
+  workspaceId: string;
+  channelConnectionId: string;
+  nameFilter?: string;
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { ok: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    await trpc.channelConnection.syncChannels({
+      channelConnectionId: data.channelConnectionId,
+      workspaceId: data.workspaceId,
+      userId: session.id,
+      nameFilter: data.nameFilter ?? "",
+    });
+    return { ok: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { ok: false, error: error.message } as const;
+    }
+    return { ok: false, error: "Something went wrong" } as const;
+  }
+}

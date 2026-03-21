@@ -14,7 +14,7 @@ const {
   retry: { maximumAttempts: 3 },
 });
 
-const QUIET_PERIOD_SECONDS = 120; // 2 minutes debounce
+const QUIET_PERIOD_SECONDS = 30; // 30 seconds debounce
 
 /**
  * Thread review workflow — "group first, eject later" pattern.
