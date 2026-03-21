@@ -9,7 +9,9 @@ import { getSession } from "@/actions/auth";
 export async function createManualInboundMessage(data: {
   workspaceId: string;
   customerName: string;
+  customerExternalId?: string;
   messageBody: string;
+  threadGroupingHint?: string;
 }) {
   const session = await getSession();
   if (!session) {
@@ -18,21 +20,20 @@ export async function createManualInboundMessage(data: {
 
   try {
     const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-    const externalCustomerId = `manual-customer-${data.customerName
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, "-")}-${randomUUID()}`;
-    const externalThreadId = `manual-thread-${randomUUID()}`;
+    const normalizedCustomerName = data.customerName.trim().toLowerCase().replace(/\s+/g, "-");
+    const externalCustomerId = data.customerExternalId?.trim().length
+      ? data.customerExternalId.trim()
+      : `manual-customer-${normalizedCustomerName}`;
     const externalMessageId = `manual-message-${randomUUID()}`;
 
     const result = await trpc.intake.ingestExternalMessage({
       workspaceId: data.workspaceId,
       source: "MANUAL",
       externalCustomerId,
-      externalThreadId,
       customerDisplayName: data.customerName,
       messageBody: data.messageBody,
       externalMessageId,
+      threadGroupingHint: data.threadGroupingHint?.trim() || undefined,
       metadata: { source: "manual-ui-intake" },
     });
 
@@ -59,7 +60,11 @@ export async function getThreadDetail(threadId: string): Promise<Awaited<
   }
 }
 
-export async function sendReply(data: { threadId: string; body: string }) {
+export async function sendReply(data: {
+  threadId: string;
+  body: string;
+  inReplyToExternalMessageId?: string;
+}) {
   const session = await getSession();
   if (!session) {
     return { success: false, error: "Not authenticated" } as const;
@@ -70,6 +75,97 @@ export async function sendReply(data: { threadId: string; body: string }) {
     await trpc.message.createOutgoingDraft({
       threadId: data.threadId,
       body: data.body,
+      inReplyToExternalMessageId: data.inReplyToExternalMessageId,
+    });
+    return { success: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { success: false, error: error.message } as const;
+    }
+    return { success: false, error: "Something went wrong" } as const;
+  }
+}
+
+export async function getThreadAnalysis(threadId: string, workspaceId: string): Promise<Record<string, unknown> | null> {
+  const session = await getSession();
+  if (!session) return null;
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    const result = await trpc.agent.getLatestAnalysis({
+      threadId,
+      workspaceId,
+      userId: session.id,
+    });
+    return result as Record<string, unknown> | null;
+  } catch {
+    return null;
+  }
+}
+
+export async function triggerThreadAnalysis(threadId: string, workspaceId: string) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    await trpc.agent.triggerAnalysis({
+      threadId,
+      workspaceId,
+      userId: session.id,
+    });
+    return { success: true } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { success: false, error: error.message } as const;
+    }
+    return { success: false, error: "Something went wrong" } as const;
+  }
+}
+
+export async function approveDraftAction(data: {
+  draftId: string;
+  workspaceId: string;
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    console.log("[approveDraftAction] calling tRPC approveDraft", { draftId: data.draftId, workspaceId: data.workspaceId });
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    const result = await trpc.agent.approveDraft({
+      draftId: data.draftId,
+      workspaceId: data.workspaceId,
+      userId: session.id,
+    });
+    console.log("[approveDraftAction] success, draft status:", result.status);
+    return { success: true } as const;
+  } catch (error) {
+    const message = error instanceof TRPCError ? error.message : String(error);
+    console.error("[approveDraftAction] FAILED:", message, error);
+    return { success: false, error: message } as const;
+  }
+}
+
+export async function dismissDraftAction(data: {
+  draftId: string;
+  workspaceId: string;
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    await trpc.agent.dismissDraft({
+      draftId: data.draftId,
+      workspaceId: data.workspaceId,
+      userId: session.id,
     });
     return { success: true } as const;
   } catch (error) {

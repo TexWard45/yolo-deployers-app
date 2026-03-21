@@ -1,12 +1,23 @@
+import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import type { Prisma } from "@shared/types/prisma";
+import type { Prisma, PrismaClient } from "@shared/types/prisma";
 import {
   IngestExternalMessageSchema,
+  IngestSupportMessageInputSchema,
   ThreadStatusSchema,
   UpsertExternalCustomerSchema,
   UpsertExternalThreadSchema,
 } from "@shared/types";
-import { createTRPCRouter, protectedProcedure } from "../init";
+import type { IngestExternalMessageInput } from "@shared/types";
+import { createTRPCRouter, publicProcedure, protectedProcedure } from "../init";
+import {
+  buildThreadSummary,
+  decideDeterministicThreadMatch,
+  type ThreadMatchCandidate,
+} from "./helpers/thread-matching";
+import { dispatchThreadReviewWorkflow, dispatchAnalyzeThreadWorkflow } from "../temporal";
+
+const DEFAULT_RECENCY_WINDOW_SECONDS = 50;
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -25,6 +36,283 @@ async function assertWorkspaceMember(params: {
   if (!member) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
   }
+}
+
+/**
+ * Core ingestion logic — group first, review later.
+ *
+ * Deterministic matching only (no LLM at ingestion time):
+ *   external_thread_id → reply_chain → time_proximity → new_thread
+ *
+ * After ingestion, dispatches an async review workflow (debounced by threadId)
+ * that reviews the thread's messages as a batch and ejects outliers.
+ */
+async function performIngestion(
+  prisma: PrismaClient,
+  input: IngestExternalMessageInput,
+) {
+  const result = await prisma.$transaction(async (tx) => {
+    const messageBody = input.messageBody.trim();
+    const now = new Date();
+
+    const customer = await tx.customer.upsert({
+      where: {
+        workspaceId_source_externalCustomerId: {
+          workspaceId: input.workspaceId,
+          source: input.source,
+          externalCustomerId: input.externalCustomerId,
+        },
+      },
+      create: {
+        workspaceId: input.workspaceId,
+        source: input.source,
+        externalCustomerId: input.externalCustomerId,
+        displayName: input.customerDisplayName,
+        avatarUrl: input.customerAvatarUrl,
+        email: input.customerEmail,
+      },
+      update: {
+        displayName: input.customerDisplayName,
+        avatarUrl: input.customerAvatarUrl,
+        email: input.customerEmail,
+      },
+    });
+
+    const existingMessage =
+      input.externalMessageId
+        ? await tx.threadMessage.findFirst({
+            where: {
+              externalMessageId: input.externalMessageId,
+              thread: {
+                workspaceId: input.workspaceId,
+                source: input.source,
+              },
+            },
+            include: { thread: true },
+          })
+        : null;
+
+    if (existingMessage) {
+      return {
+        customer,
+        thread: existingMessage.thread,
+        message: existingMessage,
+        matching: {
+          strategy: "external_thread_id" as const,
+          confidence: 1,
+          issueFingerprint: existingMessage.messageFingerprint ?? "",
+          needsReview: false,
+        },
+      };
+    }
+
+    const existingThreadByExternalId =
+      input.externalThreadId
+        ? await tx.supportThread.findUnique({
+            where: {
+              workspaceId_source_externalThreadId: {
+                workspaceId: input.workspaceId,
+                source: input.source,
+                externalThreadId: input.externalThreadId,
+              },
+            },
+            select: {
+              id: true,
+              customerId: true,
+              externalThreadId: true,
+              issueFingerprint: true,
+              summary: true,
+              lastMessageAt: true,
+              lastInboundAt: true,
+            },
+          })
+        : null;
+
+    const replyChainThread =
+      input.inReplyToExternalMessageId
+        ? await tx.threadMessage.findFirst({
+            where: {
+              externalMessageId: input.inReplyToExternalMessageId,
+              thread: {
+                workspaceId: input.workspaceId,
+                source: input.source,
+              },
+            },
+            orderBy: { createdAt: "desc" },
+            select: {
+              thread: {
+                select: {
+                  id: true,
+                },
+              },
+            },
+          })
+        : null;
+
+    // Workspace-wide candidates for time-proximity matching
+    const candidateThreads = await tx.supportThread.findMany({
+      where: {
+        workspaceId: input.workspaceId,
+        source: input.source,
+        status: { not: "CLOSED" },
+      },
+      orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { updatedAt: "desc" }],
+      take: 20,
+      select: {
+        id: true,
+        customerId: true,
+        externalThreadId: true,
+        issueFingerprint: true,
+        summary: true,
+        lastMessageAt: true,
+        lastInboundAt: true,
+      },
+    });
+
+    // Fetch workspace recency window config
+    const agentConfig = await tx.workspaceAgentConfig.findUnique({
+      where: { workspaceId: input.workspaceId },
+      select: {
+        threadRecencyWindowMinutes: true,
+        enabled: true,
+        analysisEnabled: true,
+        autoDraftOnInbound: true,
+      },
+    });
+    const recencyWindowMs =
+      (agentConfig?.threadRecencyWindowMinutes ?? 0) > 0
+        ? agentConfig!.threadRecencyWindowMinutes * 60 * 1000
+        : DEFAULT_RECENCY_WINDOW_SECONDS * 1000;
+
+    const decision = decideDeterministicThreadMatch({
+      externalThreadId: input.externalThreadId,
+      inReplyToExternalMessageId: input.inReplyToExternalMessageId,
+      threadGroupingHint: input.threadGroupingHint,
+      messageBody,
+      customerId: customer.id,
+      recencyWindowMs,
+      existingThreadByExternalId: existingThreadByExternalId as ThreadMatchCandidate | null,
+      threadIdByReplyChain: replyChainThread?.thread.id ?? null,
+      candidates: candidateThreads as ThreadMatchCandidate[],
+    });
+
+    const threadTitle = input.title ?? messageBody.slice(0, 80);
+    const resolvedExternalThreadId =
+      input.externalThreadId ??
+      `synthetic-${input.source.toLowerCase()}-${randomUUID()}`;
+
+    const thread =
+      decision.threadId
+        ? await tx.supportThread.findUnique({
+            where: { id: decision.threadId },
+          })
+        : null;
+
+    if (!thread && decision.threadId) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Matched thread no longer exists" });
+    }
+
+    const threadRecord =
+      thread ??
+      (await tx.supportThread.create({
+        data: {
+          workspaceId: input.workspaceId,
+          customerId: customer.id,
+          source: input.source,
+          externalThreadId: resolvedExternalThreadId,
+          title: threadTitle,
+          status: "WAITING_REVIEW",
+          lastMessageAt: now,
+          lastInboundAt: now,
+          issueFingerprint: decision.issueFingerprint,
+          summary: buildThreadSummary(null, messageBody),
+          summaryUpdatedAt: now,
+        },
+      }));
+
+    const metadata: Record<string, unknown> = {
+      ...(input.metadata ?? {}),
+      matching: {
+        strategy: decision.strategy,
+        confidence: Number(decision.confidence.toFixed(3)),
+        issueFingerprint: decision.issueFingerprint,
+      },
+    };
+
+    const message = await tx.threadMessage.create({
+      data: {
+        threadId: threadRecord.id,
+        direction: "INBOUND",
+        body: messageBody,
+        externalMessageId: input.externalMessageId,
+        inReplyToExternalMessageId: input.inReplyToExternalMessageId,
+        messageFingerprint: decision.issueFingerprint,
+        senderExternalId: input.externalCustomerId,
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+
+    const updatedThread = await tx.supportThread.update({
+      where: { id: threadRecord.id },
+      data: {
+        customerId: customer.id,
+        title: threadRecord.title ?? threadTitle,
+        status: "WAITING_REVIEW",
+        issueFingerprint: decision.issueFingerprint,
+        lastMessageAt: message.createdAt,
+        lastInboundAt: message.createdAt,
+        summary: buildThreadSummary(threadRecord.summary, messageBody),
+        summaryUpdatedAt: message.createdAt,
+      },
+    });
+
+    // Dispatch review for time_proximity (may have grouped wrong topic) and new_thread (may match existing)
+    const needsReview =
+      decision.strategy === "time_proximity" || decision.strategy === "new_thread";
+
+    return {
+      customer,
+      thread: updatedThread,
+      message,
+      matching: {
+        strategy: decision.strategy,
+        confidence: decision.confidence,
+        issueFingerprint: decision.issueFingerprint,
+        needsReview,
+      },
+      agentConfig: agentConfig
+        ? {
+            enabled: agentConfig.enabled,
+            analysisEnabled: agentConfig.analysisEnabled,
+            autoDraftOnInbound: agentConfig.autoDraftOnInbound,
+          }
+        : null,
+    };
+  }, { timeout: 15000 });
+
+  if (result.matching.needsReview) {
+    void dispatchThreadReviewWorkflow({
+      workspaceId: input.workspaceId,
+      source: input.source,
+      threadId: result.thread.id,
+    }).catch((error: unknown) => {
+      console.error("[intake] Failed to dispatch thread review workflow", error);
+    });
+  }
+
+  // Dispatch AI analysis pipeline (if enabled)
+  if (result.agentConfig?.enabled && result.agentConfig.analysisEnabled && result.agentConfig.autoDraftOnInbound) {
+    void dispatchAnalyzeThreadWorkflow({
+      workspaceId: input.workspaceId,
+      threadId: result.thread.id,
+      source: input.source,
+      triggeredByMessageId: result.message.id,
+    }).catch((error: unknown) => {
+      console.error("[intake] Failed to dispatch analyze thread workflow", error);
+    });
+  }
+
+  return result;
 }
 
 export const intakeRouter = createTRPCRouter({
@@ -109,83 +397,35 @@ export const intakeRouter = createTRPCRouter({
         userId,
       });
 
-      return ctx.prisma.$transaction(async (tx) => {
-        const customer = await tx.customer.upsert({
-          where: {
-            workspaceId_source_externalCustomerId: {
-              workspaceId: input.workspaceId,
-              source: input.source,
-              externalCustomerId: input.externalCustomerId,
-            },
-          },
-          create: {
-            workspaceId: input.workspaceId,
-            source: input.source,
-            externalCustomerId: input.externalCustomerId,
-            displayName: input.customerDisplayName,
-            avatarUrl: input.customerAvatarUrl,
-            email: input.customerEmail,
-          },
-          update: {
-            displayName: input.customerDisplayName,
-            avatarUrl: input.customerAvatarUrl,
-            email: input.customerEmail,
-          },
+      return performIngestion(ctx.prisma, input);
+    }),
+
+  ingestFromChannel: publicProcedure
+    .input(IngestSupportMessageInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const channelConnection = await ctx.prisma.channelConnection.findUnique({
+        where: { id: input.channelConnectionId },
+      });
+
+      if (!channelConnection) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: `Channel connection not found: ${input.channelConnectionId}`,
         });
+      }
 
-        const thread = await tx.supportThread.upsert({
-          where: {
-            workspaceId_source_externalThreadId: {
-              workspaceId: input.workspaceId,
-              source: input.source,
-              externalThreadId: input.externalThreadId,
-            },
-          },
-          create: {
-            workspaceId: input.workspaceId,
-            customerId: customer.id,
-            source: input.source,
-            externalThreadId: input.externalThreadId,
-            title: input.title,
-            status: "WAITING_REVIEW",
-          },
-          update: {
-            customerId: customer.id,
-            title: input.title,
-            status: "WAITING_REVIEW",
-          },
-        });
+      const source = channelConnection.type === "DISCORD" ? "DISCORD" as const : "API" as const;
 
-        const existingMessage =
-          input.externalMessageId
-            ? await tx.threadMessage.findUnique({
-                where: {
-                  threadId_externalMessageId: {
-                    threadId: thread.id,
-                    externalMessageId: input.externalMessageId,
-                  },
-                },
-              })
-            : null;
-
-        const message =
-          existingMessage ??
-          (await tx.threadMessage.create({
-            data: {
-              threadId: thread.id,
-              direction: "INBOUND",
-              body: input.messageBody,
-              externalMessageId: input.externalMessageId,
-              metadata: input.metadata as Prisma.InputJsonValue | undefined,
-            },
-          }));
-
-        const updatedThread = await tx.supportThread.update({
-          where: { id: thread.id },
-          data: { lastMessageAt: message.createdAt },
-        });
-
-        return { customer, thread: updatedThread, message };
+      return performIngestion(ctx.prisma, {
+        workspaceId: channelConnection.workspaceId,
+        source,
+        externalCustomerId: input.externalUserId,
+        customerDisplayName: input.displayName ?? input.username ?? input.externalUserId,
+        messageBody: input.body,
+        externalMessageId: input.externalMessageId,
+        externalThreadId: input.externalThreadId ?? undefined,
+        inReplyToExternalMessageId: input.inReplyToExternalMessageId ?? undefined,
+        metadata: input.rawPayload,
       });
     }),
 

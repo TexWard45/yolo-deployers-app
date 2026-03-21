@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -16,7 +17,14 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
+import { renderMessageBody, type MentionsMap } from "@/components/inbox/render-message-body";
 import { getThreadDetail, sendReply } from "@/actions/inbox";
+import { AnalysisPanel, DraftChatBubble, type AnalysisDraft } from "@/components/inbox/AnalysisPanel";
+import {
+  getDefaultReplySegmentId,
+  getReplyToExternalMessageId,
+  groupMessagesIntoSegments,
+} from "@/components/inbox/message-segments";
 
 type ThreadData = NonNullable<Awaited<ReturnType<typeof getThreadDetail>>>;
 
@@ -45,7 +53,14 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [loading, startTransition] = useTransition();
   const [replyBody, setReplyBody] = useState("");
   const [sending, startSending] = useTransition();
+  const [activeReplySegmentId, setActiveReplySegmentId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AnalysisDraft | null>(null);
+  const analysisRefreshRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleDraftAvailable = useCallback((d: AnalysisDraft | null) => {
+    setDraft(d);
+  }, []);
 
   const fetchThread = useCallback((id: string) => {
     startTransition(async () => {
@@ -62,12 +77,38 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [thread?.messages.length]);
 
+  const segments = useMemo(() => {
+    if (!thread) return [];
+    return groupMessagesIntoSegments(
+      thread.messages.map((message) => ({
+        id: message.id,
+        direction: message.direction,
+        body: message.body,
+        createdAt: new Date(message.createdAt),
+        externalMessageId: message.externalMessageId,
+        inReplyToExternalMessageId: message.inReplyToExternalMessageId,
+        metadata: message.metadata as Record<string, unknown> | null,
+      })),
+    );
+  }, [thread]);
+
+  const effectiveActiveReplySegmentId =
+    activeReplySegmentId ?? getDefaultReplySegmentId(segments);
+
+  const activeSegment =
+    segments.find((segment) => segment.id === effectiveActiveReplySegmentId) ?? null;
+  const replyToExternalMessageId = getReplyToExternalMessageId(activeSegment);
+
   function handleSendReply() {
     const body = replyBody.trim();
     if (!body) return;
 
     startSending(async () => {
-      const result = await sendReply({ threadId, body });
+      const result = await sendReply({
+        threadId,
+        body,
+        inReplyToExternalMessageId: replyToExternalMessageId,
+      });
       if (result.success) {
         setReplyBody("");
         fetchThread(threadId);
@@ -119,66 +160,134 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
               </p>
             ) : (
               <div className="flex flex-col gap-3">
-                {thread.messages.map((msg) => {
-                  const isInbound = msg.direction === "INBOUND";
-                  const isOutbound = msg.direction === "OUTBOUND";
-                  return (
-                    <div key={msg.id} className="flex gap-2.5">
-                      {/* Avatar */}
-                      <span
-                        className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                          isInbound
-                            ? "bg-blue-100 text-blue-700"
-                            : isOutbound
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {isInbound
-                          ? getInitial(thread.customer.displayName)
-                          : isOutbound
-                            ? "T"
-                            : "S"}
+                {segments.map((segment, index) => (
+                  <div
+                    key={segment.id}
+                    className={`rounded-lg border ${
+                      effectiveActiveReplySegmentId === segment.id
+                        ? "border-primary bg-accent/20"
+                        : "border-border"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between border-b px-3 py-2 text-left"
+                      onClick={() => setActiveReplySegmentId(segment.id)}
+                    >
+                      <span className="text-xs font-semibold">
+                        Thread {index + 1}
                       </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {segment.messages.length} msgs
+                      </span>
+                    </button>
+                    <div className="px-3 py-3">
+                      {segment.messages.map((msg, msgIdx) => {
+                        const isInbound = msg.direction === "INBOUND";
+                        const isOutbound = msg.direction === "OUTBOUND";
+                        const isRoot = msgIdx === 0;
+                        const isReply = !isRoot;
+                        const hasReplies = msgIdx === 0 && segment.messages.length > 1;
+                        const isLastReply = msgIdx === segment.messages.length - 1 && isReply;
 
-                      {/* Message bubble */}
-                      <div className="flex-1">
-                        <div className="mb-0.5 flex items-center gap-2">
-                          <span className="text-xs font-semibold">
-                            {isInbound
-                              ? thread.customer.displayName
-                              : isOutbound
-                                ? "Team"
-                                : "System"}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {timeAgo(new Date(msg.createdAt))}
-                          </span>
-                        </div>
-                        <div
-                          className={`rounded-lg border p-3 ${
-                            isInbound
-                              ? "border-l-2 border-l-blue-500"
-                              : isOutbound
-                                ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
-                                : "border-l-2 border-l-muted-foreground bg-muted/30"
-                          }`}
-                        >
-                          <p className="whitespace-pre-wrap text-sm">
-                            {msg.body}
-                          </p>
-                        </div>
-                      </div>
+                        return (
+                          <div key={msg.id} className={isReply ? "relative ml-8" : ""}>
+                            {/* Tree connector line */}
+                            {isReply ? (
+                              <>
+                                {/* Vertical line from parent */}
+                                <div className="absolute -left-4 -top-3 bottom-0 w-px bg-border" style={isLastReply ? { bottom: "50%" } : undefined} />
+                                {/* Horizontal branch */}
+                                <div className="absolute -left-4 top-4 h-px w-4 bg-border" />
+                              </>
+                            ) : null}
+                            {/* Vertical line starter below root avatar */}
+                            {hasReplies ? (
+                              <div className="absolute left-[13px] top-9 h-[calc(100%-36px)] w-px bg-border" style={{ zIndex: 0 }} />
+                            ) : null}
+
+                            <div className={`relative flex gap-2.5 ${isReply ? "pt-3" : ""}`}>
+                              <span
+                                className={`relative z-10 mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                                  isInbound
+                                    ? "bg-blue-100 text-blue-700"
+                                    : isOutbound
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {isInbound
+                                  ? getInitial(thread.customer.displayName)
+                                  : isOutbound
+                                    ? "T"
+                                    : "S"}
+                              </span>
+
+                              <div className="flex-1">
+                                <div className="mb-0.5 flex items-center gap-2">
+                                  <span className="text-xs font-semibold">
+                                    {isInbound
+                                      ? thread.customer.displayName
+                                      : isOutbound
+                                        ? "Team"
+                                        : "System"}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {timeAgo(new Date(msg.createdAt))}
+                                  </span>
+                                </div>
+                                <div
+                                  className={`rounded-lg border p-3 ${
+                                    isInbound
+                                      ? "border-l-2 border-l-blue-500"
+                                      : isOutbound
+                                        ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
+                                        : "border-l-2 border-l-muted-foreground bg-muted/30"
+                                  }`}
+                                >
+                                  <p className="whitespace-pre-wrap text-sm">
+                                    {renderMessageBody(
+                                      msg.body,
+                                      (msg.metadata as Record<string, unknown> | null)?.mentions as MentionsMap | undefined,
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
                 <div ref={messagesEndRef} />
               </div>
             )}
           </div>
 
+          {/* AI Draft suggestion */}
+          {draft && draft.status === "GENERATED" ? (
+            <div className="shrink-0 border-t bg-violet-50/50 px-4 py-3 dark:bg-violet-950/10">
+              <DraftChatBubble
+                draft={draft}
+                workspaceId={thread.workspaceId}
+                onDraftActioned={() => {
+                  setDraft(null);
+                  analysisRefreshRef.current?.();
+                  fetchThread(threadId);
+                }}
+              />
+            </div>
+          ) : null}
+
           {/* Reply bar - pinned at bottom */}
           <div className="shrink-0 border-t p-3">
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              Reply to{" "}
+              <span className="font-semibold text-foreground">
+                {activeSegment?.label ?? "latest thread"}
+              </span>
+            </p>
             <div className="flex gap-2">
               <textarea
                 className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
@@ -244,6 +353,24 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                 : "Unassigned"}
             </p>
           </div>
+
+          {/* Summary */}
+          <div>
+            <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+              Summary
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {thread.summary ?? "No summary yet."}
+            </p>
+          </div>
+
+          {/* AI Analysis */}
+          <AnalysisPanel
+            threadId={thread.id}
+            workspaceId={thread.workspaceId}
+            onDraftAvailable={handleDraftAvailable}
+            refreshRef={analysisRefreshRef}
+          />
 
           {/* Timestamps */}
           <div>

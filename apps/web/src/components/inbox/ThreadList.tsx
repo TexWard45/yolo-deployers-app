@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { ThreadCard } from "@/components/inbox/ThreadCard";
 import { ThreadDetailSheet } from "@/components/inbox/ThreadDetailSheet";
 import { updateThreadStatusAction } from "@/actions/inbox";
@@ -13,6 +14,7 @@ import {
 interface ThreadListItem {
   id: string;
   title: string | null;
+  summary: string | null;
   status: ThreadStatusValue;
   updatedAt: Date;
   customer: {
@@ -41,9 +43,24 @@ const STATUS_COLOR: Record<ThreadStatusValue, string> = {
 };
 
 export function ThreadList({ threads }: ThreadListProps) {
+  const pathname = usePathname();
   const [localThreads, setLocalThreads] = useState(threads);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<ThreadStatusValue | null>(null);
+
+  // Derive base inbox path for URL updates (e.g. /workspace/yolo-deployers/inbox or /inbox)
+  const inboxBasePath = pathname.replace(/\/[^/]+$/, "").endsWith("/inbox")
+    ? pathname.replace(/\/[^/]+$/, "")
+    : pathname;
+
+  function selectThread(threadId: string | null) {
+    setSelectedId(threadId);
+    if (threadId) {
+      window.history.replaceState(null, "", `${inboxBasePath}/${threadId}`);
+    } else {
+      window.history.replaceState(null, "", inboxBasePath);
+    }
+  }
 
   // Sync when server re-renders with fresh data
   useEffect(() => {
@@ -148,15 +165,17 @@ export function ThreadList({ threads }: ThreadListProps) {
                       <ThreadCard
                         id={thread.id}
                         title={thread.title}
+                        summary={thread.summary}
                         customerName={thread.customer.displayName}
                         updatedAt={new Date(thread.updatedAt)}
+                        messageCount={thread._count.messages}
                         assigneeName={
                           thread.assignedTo?.name ??
                           thread.assignedTo?.email ??
                           null
                         }
                         selected={selectedId === thread.id}
-                        onClick={() => setSelectedId(thread.id)}
+                        onClick={() => selectThread(thread.id)}
                       />
                     </div>
                   ))
@@ -169,7 +188,7 @@ export function ThreadList({ threads }: ThreadListProps) {
 
       <ThreadDetailSheet
         threadId={selectedId}
-        onClose={() => setSelectedId(null)}
+        onClose={() => selectThread(null)}
       />
     </>
   );

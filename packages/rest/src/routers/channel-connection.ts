@@ -4,6 +4,7 @@ import { createTRPCRouter, publicProcedure } from "../init";
 import {
   CreateChannelConnectionSchema,
   UpdateChannelConnectionStatusSchema,
+  DiscordChannelConfigSchema,
 } from "@shared/types";
 
 export const channelConnectionRouter = createTRPCRouter({
@@ -34,6 +35,17 @@ export const channelConnectionRouter = createTRPCRouter({
   createDiscordConnection: publicProcedure
     .input(CreateChannelConnectionSchema)
     .mutation(async ({ ctx, input }) => {
+      // Validate Discord-specific configJson when type is DISCORD
+      if (input.type === "DISCORD") {
+        const parsed = DiscordChannelConfigSchema.safeParse(input.configJson);
+        if (!parsed.success) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid Discord config: ${parsed.error.issues.map((i) => i.message).join(", ")}`,
+          });
+        }
+      }
+
       return ctx.prisma.channelConnection.create({
         data: {
           workspaceId: input.workspaceId,

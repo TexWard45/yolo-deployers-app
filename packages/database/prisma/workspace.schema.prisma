@@ -11,15 +11,15 @@ model Workspace {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members        WorkspaceMember[]
-  posts          Post[]
-  customers      Customer[]
-  supportThreads SupportThread[]
+  members            WorkspaceMember[]
+  posts              Post[]
+  codexRepositories  CodexRepository[]
+  customers          Customer[]
+  supportThreads     SupportThread[]
 
   channelConnections ChannelConnection[]
-  customerProfiles   CustomerProfile[]
-  conversations      Conversation[]
   agentConfig        WorkspaceAgentConfig?
+  threadAnalyses     ThreadAnalysis[]
 }
 
 model WorkspaceMember {

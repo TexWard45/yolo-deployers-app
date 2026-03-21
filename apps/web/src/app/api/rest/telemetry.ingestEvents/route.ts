@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
-import { dispatchSessionEnrichment } from "@/lib/temporal";
 
 // App Router uses the native Web API Request.json() which has no body
 // size limit, so large FullSnapshot payloads are handled automatically.
@@ -34,10 +33,10 @@ export async function POST(req: Request) {
       events: payload.events,
     });
 
-    // Fire-and-forget: trigger enrichment workflow; don't block or fail on Temporal errors
-    dispatchSessionEnrichment(result.sessionId).catch((err: unknown) => {
-      console.warn("[Telemetry] Failed to dispatch enrichment workflow:", err);
-    });
+    // TODO: re-enable once enrichment workflow handles already-started gracefully
+    // dispatchSessionEnrichment(result.sessionId).catch((err: unknown) => {
+    //   console.warn("[Telemetry] Failed to dispatch enrichment workflow:", err);
+    // });
 
     return NextResponse.json({ ingested: result.ingested }, { headers: getCorsHeaders() });
   } catch (error) {

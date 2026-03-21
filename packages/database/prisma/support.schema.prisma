@@ -20,6 +20,12 @@ enum DraftStatus {
   FAILED
 }
 
+enum DraftType {
+  RESOLUTION
+  CLARIFICATION
+  MANUAL
+}
+
 // ── Support Domain Models ────────────────────────────────────────────
 
 model ChannelConnection {
@@ -34,88 +40,12 @@ model ChannelConnection {
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId String
-
-  customerIdentities CustomerChannelIdentity[]
-  messages           ConversationMessage[]
-}
-
-model CustomerProfile {
-  id          String  @id @default(cuid())
-  displayName String?
-  email       String?
-  externalRef String?
-  metadataJson Json?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  workspaceId String
-
-  identities    CustomerChannelIdentity[]
-  conversations Conversation[]
-}
-
-model CustomerChannelIdentity {
-  id             String  @id @default(cuid())
-  externalUserId String
-  username       String?
-  displayName    String?
-  createdAt      DateTime @default(now())
-
-  customerProfile   CustomerProfile   @relation(fields: [customerProfileId], references: [id], onDelete: Cascade)
-  customerProfileId String
-  channelConnection ChannelConnection @relation(fields: [channelConnectionId], references: [id], onDelete: Cascade)
-  channelConnectionId String
-
-  @@unique([channelConnectionId, externalUserId])
-}
-
-model Conversation {
-  id                 String             @id @default(cuid())
-  primaryChannelType ChannelType
-  status             ThreadStatus       @default(NEW)
-  subject            String?
-  externalThreadId   String?
-  lastMessageAt      DateTime?
-  lastInboundAt      DateTime?
-  lastOutboundAt     DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-
-  workspace          Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  workspaceId        String
-  customerProfile    CustomerProfile  @relation(fields: [customerProfileId], references: [id])
-  customerProfileId  String
-  assignedTo         User?            @relation(fields: [assignedToUserId], references: [id])
-  assignedToUserId   String?
-
-  messages ConversationMessage[]
-  drafts   ReplyDraft[]
-}
-
-model ConversationMessage {
-  id                  String           @id @default(cuid())
-  direction           MessageDirection
-  senderKind          SenderKind
-  externalMessageId   String?
-  body                String
-  rawPayloadJson      Json?
-  sentAt              DateTime         @default(now())
-  deliveryStatus      String           @default("delivered")
-
-  conversation        Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  conversationId      String
-  channelConnection   ChannelConnection? @relation(fields: [channelConnectionId], references: [id])
-  channelConnectionId String?
-
-  basedOnDrafts ReplyDraft[]
-
-  @@unique([channelConnectionId, externalMessageId])
 }
 
 model ReplyDraft {
   id             String      @id @default(cuid())
   status         DraftStatus @default(GENERATED)
+  draftType      DraftType   @default(RESOLUTION)
   model          String?
   promptVersion  String?
   body           String
@@ -123,26 +53,83 @@ model ReplyDraft {
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
-  conversation      Conversation        @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  conversationId    String
-  basedOnMessage    ConversationMessage? @relation(fields: [basedOnMessageId], references: [id])
-  basedOnMessageId  String?
-  createdByUser     User?               @relation(fields: [createdByUserId], references: [id])
-  createdByUserId   String?
+  thread           SupportThread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  threadId         String
+  basedOnMessage   ThreadMessage?  @relation(fields: [basedOnMessageId], references: [id])
+  basedOnMessageId String?
+  createdByUser    User?           @relation(fields: [createdByUserId], references: [id])
+  createdByUserId  String?
+  analysis         ThreadAnalysis? @relation(fields: [analysisId], references: [id])
+  analysisId       String?
 }
 
 model WorkspaceAgentConfig {
-  id                 String  @id @default(cuid())
-  enabled            Boolean @default(false)
+  id                 String   @id @default(cuid())
+  enabled            Boolean  @default(false)
   systemPrompt       String?
   tone               String?
   replyPolicy        String?
-  autoDraftOnInbound Boolean @default(true)
+  autoDraftOnInbound Boolean  @default(true)
   handoffRulesJson   Json?
   model              String?
+  threadRecencyWindowMinutes Int @default(0)
+
+  // Reply mode: true = auto-send, false = wait for human approval
+  autoReply          Boolean  @default(false)
+
+  // Analysis pipeline settings
+  analysisEnabled    Boolean  @default(true)
+  maxClarifications  Int      @default(2)
+  codexRepositoryIds String[]
+
+  // Sentry integration (per-workspace)
+  sentryDsn          String?
+  sentryOrgSlug      String?
+  sentryProjectSlug  String?
+  sentryAuthToken    String?
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   workspaceId String    @unique
+}
+
+// ── Thread Analysis ─────────────────────────────────────────────────
+
+model ThreadAnalysis {
+  id                String   @id @default(cuid())
+  threadId          String
+  thread            SupportThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  workspaceId       String
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  // Classification
+  issueCategory     String?
+  severity          String?
+  affectedComponent String?
+  summary           String
+
+  // Investigation results
+  codexFindings     Json?
+  sentryFindings    Json?
+  rcaSummary        String?
+
+  // Sufficiency
+  sufficient        Boolean
+  missingContext    String[]
+
+  // Metadata
+  model             String?
+  promptVersion     String?
+  totalTokens       Int?
+  durationMs        Int?
+
+  createdAt         DateTime @default(now())
+
+  drafts            ReplyDraft[]
+  latestForThread   SupportThread? @relation("latestAnalysis")
+
+  @@index([threadId, createdAt])
+  @@index([workspaceId, createdAt])
 }

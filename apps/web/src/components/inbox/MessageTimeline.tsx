@@ -1,10 +1,12 @@
 import { Badge } from "@/components/ui/badge";
+import { renderMessageBody, type MentionsMap } from "@/components/inbox/render-message-body";
 
 interface MessageTimelineItem {
   id: string;
   direction: "INBOUND" | "OUTBOUND" | "SYSTEM";
   body: string;
   createdAt: Date;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface MessageTimelineProps {
@@ -38,7 +40,12 @@ export function MessageTimeline({ messages }: MessageTimelineProps) {
               {new Date(message.createdAt).toLocaleString()}
             </span>
           </div>
-          <p className="whitespace-pre-wrap text-sm">{message.body}</p>
+          <p className="whitespace-pre-wrap text-sm">
+            {renderMessageBody(
+              message.body,
+              message.metadata?.mentions as MentionsMap | undefined,
+            )}
+          </p>
         </div>
       ))}
     </div>

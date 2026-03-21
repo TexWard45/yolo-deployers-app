@@ -8,6 +8,8 @@ import {
   LlmModelDefaultSchema,
   DiscordBotTokenSchema,
   SupportSecretEncryptionKeySchema,
+  WebAppUrlSchema,
+  InternalApiSecretSchema,
 } from "./shared";
 
 export const queueEnv = createEnv({
@@ -20,6 +22,8 @@ export const queueEnv = createEnv({
     LLM_MODEL_DEFAULT: LlmModelDefaultSchema,
     DISCORD_BOT_TOKEN: DiscordBotTokenSchema.optional(),
     SUPPORT_SECRET_ENCRYPTION_KEY: SupportSecretEncryptionKeySchema.optional(),
+    WEB_APP_URL: WebAppUrlSchema,
+    INTERNAL_API_SECRET: InternalApiSecretSchema,
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

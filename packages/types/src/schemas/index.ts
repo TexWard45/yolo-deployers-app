@@ -54,6 +54,9 @@ export const CreatePostSchema = z.object({
 
 export type CreatePostInput = z.infer<typeof CreatePostSchema>;
 
+// ── Codex ──────────────────────────────────────────────────────────
+export * from "./codex";
+
 // ── Inbox / Threads ────────────────────────────────────────────────
 export const ThreadStatusSchema = z.enum([
   "NEW",
@@ -110,6 +113,7 @@ export type ListThreadMessagesInput = z.infer<typeof ListThreadMessagesSchema>;
 export const CreateOutgoingDraftSchema = z.object({
   threadId: z.string(),
   body: z.string().min(1, "Message body is required"),
+  inReplyToExternalMessageId: z.string().optional(),
 });
 
 export type CreateOutgoingDraftInput = z.infer<typeof CreateOutgoingDraftSchema>;
@@ -140,12 +144,14 @@ export const IngestExternalMessageSchema = z.object({
   workspaceId: z.string(),
   source: CustomerSourceSchema,
   externalCustomerId: z.string().min(1),
-  externalThreadId: z.string().min(1),
+  externalThreadId: z.string().min(1).optional(),
   customerDisplayName: z.string().min(1),
   customerAvatarUrl: z.string().url().optional(),
   customerEmail: z.string().email().optional(),
   messageBody: z.string().min(1, "Message is required"),
   externalMessageId: z.string().optional(),
+  inReplyToExternalMessageId: z.string().optional(),
+  threadGroupingHint: z.string().optional(),
   title: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -171,69 +177,9 @@ export const UpdateChannelConnectionStatusSchema = z.object({
 
 export type UpdateChannelConnectionStatusInput = z.infer<typeof UpdateChannelConnectionStatusSchema>;
 
-// ── Conversation ───────────────────────────────────────────────────
-export const ListConversationsSchema = z.object({
-  workspaceId: z.string(),
-  userId: z.string(),
-  status: ThreadStatusSchema.optional(),
-  channelType: z.enum(["DISCORD", "IN_APP"]).optional(),
-  assignedToUserId: z.string().optional(),
-  cursor: z.string().optional(),
-  limit: z.number().min(1).max(100).default(25),
-});
-
-export type ListConversationsInput = z.infer<typeof ListConversationsSchema>;
-
-export const UpdateConversationStatusSchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  status: ThreadStatusSchema,
-});
-
-export type UpdateConversationStatusInput = z.infer<typeof UpdateConversationStatusSchema>;
-
-export const AssignConversationSchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  assignToUserId: z.string().nullable(),
-});
-
-export type AssignConversationInput = z.infer<typeof AssignConversationSchema>;
-
-export const MergeCustomerIdentitySchema = z.object({
-  workspaceId: z.string(),
-  userId: z.string(),
-  sourceCustomerProfileId: z.string(),
-  targetCustomerProfileId: z.string(),
-});
-
-export type MergeCustomerIdentityInput = z.infer<typeof MergeCustomerIdentitySchema>;
-
-// ── Message ────────────────────────────────────────────────────────
-export const ListMessagesByConversationSchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  cursor: z.string().optional(),
-  limit: z.number().min(1).max(100).default(50),
-});
-
-export type ListMessagesByConversationInput = z.infer<typeof ListMessagesByConversationSchema>;
-
-export const SendConversationReplySchema = z.object({
-  conversationId: z.string(),
-  workspaceId: z.string(),
-  userId: z.string(),
-  body: z.string().min(1, "Reply body is required"),
-});
-
-export type SendConversationReplyInput = z.infer<typeof SendConversationReplySchema>;
-
 // ── AI Agent ───────────────────────────────────────────────────────
 export const GenerateReplyDraftSchema = z.object({
-  conversationId: z.string(),
+  threadId: z.string(),
   workspaceId: z.string(),
   userId: z.string(),
 });
@@ -264,8 +210,228 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
   tone: z.string().optional(),
   replyPolicy: z.string().optional(),
   autoDraftOnInbound: z.boolean().optional(),
+  autoReply: z.boolean().optional(),
   handoffRulesJson: z.record(z.string(), z.unknown()).optional(),
   model: z.string().optional(),
+  // Analysis pipeline settings
+  analysisEnabled: z.boolean().optional(),
+  maxClarifications: z.number().int().min(0).max(10).optional(),
+  codexRepositoryIds: z.array(z.string()).optional(),
+  // Sentry integration
+  sentryDsn: z.string().optional(),
+  sentryOrgSlug: z.string().optional(),
+  sentryProjectSlug: z.string().optional(),
+  sentryAuthToken: z.string().optional(),
 });
 
 export type UpdateWorkspaceAgentConfigInput = z.infer<typeof UpdateWorkspaceAgentConfigSchema>;
+
+// ── Discord Channel Config ────────────────────────────────────────
+export const DiscordChannelConfigSchema = z.object({
+  channelIds: z.array(z.string()).min(1, "At least one channel ID required"),
+  listenToThreads: z.boolean().optional().default(true),
+});
+
+export type DiscordChannelConfig = z.infer<typeof DiscordChannelConfigSchema>;
+
+// ── Ingest Support Message (shared between bot, workflow, activity) ─
+export const IngestSupportMessageInputSchema = z.object({
+  channelConnectionId: z.string(),
+  externalMessageId: z.string(),
+  externalUserId: z.string(),
+  username: z.string().nullable(),
+  displayName: z.string().nullable(),
+  body: z.string(),
+  timestamp: z.string(),
+  rawPayload: z.record(z.string(), z.unknown()),
+  externalThreadId: z.string().nullable(),
+  inReplyToExternalMessageId: z.string().nullable().optional(),
+});
+
+export type IngestSupportMessageInput = z.infer<typeof IngestSupportMessageInputSchema>;
+
+// ── Thread Match Decision ─────────────────────────────────────────
+export const ThreadMatchStrategySchema = z.enum([
+  "external_thread_id",
+  "reply_chain",
+  "time_proximity",
+  "new_thread",
+]);
+
+export type ThreadMatchStrategy = z.infer<typeof ThreadMatchStrategySchema>;
+
+export const ThreadMatchDecisionSchema = z.object({
+  threadId: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+  strategy: ThreadMatchStrategySchema,
+  issueFingerprint: z.string(),
+});
+
+export type ThreadMatchDecision = z.infer<typeof ThreadMatchDecisionSchema>;
+
+// ── Thread Review Workflow (group first, eject later) ─────────────
+export const ThreadReviewWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  source: CustomerSourceSchema,
+  threadId: z.string(),
+});
+
+export type ThreadReviewWorkflowInput = z.infer<typeof ThreadReviewWorkflowInputSchema>;
+
+export const ThreadReviewEjectionSchema = z.object({
+  messageId: z.string(),
+  reason: z.string(),
+  targetThreadId: z.string().nullable(),
+});
+
+export type ThreadReviewEjection = z.infer<typeof ThreadReviewEjectionSchema>;
+
+export const ThreadReviewResultSchema = z.object({
+  verdict: z.enum(["keep_all", "eject"]),
+  ejections: z.array(ThreadReviewEjectionSchema),
+});
+
+export type ThreadReviewResult = z.infer<typeof ThreadReviewResultSchema>;
+
+export const ThreadReviewWorkflowResultSchema = z.object({
+  reviewed: z.boolean(),
+  verdict: z.enum(["keep_all", "eject", "skipped"]),
+  ejectionsApplied: z.number(),
+  reason: z.string(),
+});
+
+export type ThreadReviewWorkflowResult = z.infer<typeof ThreadReviewWorkflowResultSchema>;
+
+// ── Legacy types kept for existing activity imports ───────────────
+export const LlmThreadMatchInputSchema = z.object({
+  incomingMessage: z.string().min(1),
+  threadGroupingHint: z.string().optional(),
+  candidates: z.array(
+    z.object({
+      id: z.string(),
+      issueFingerprint: z.string().nullable().optional(),
+      summary: z.string().nullable().optional(),
+    }),
+  ),
+});
+
+export type LlmThreadMatchInput = z.infer<typeof LlmThreadMatchInputSchema>;
+
+export const LlmThreadMatchResultSchema = z.object({
+  matchedThreadId: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+  reason: z.string(),
+});
+
+export type LlmThreadMatchResult = z.infer<typeof LlmThreadMatchResultSchema>;
+
+export const ResolveInboxThreadWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  source: CustomerSourceSchema,
+  customerId: z.string(),
+  threadId: z.string(),
+  messageId: z.string(),
+  messageBody: z.string().min(1),
+  issueFingerprint: z.string().min(1),
+});
+
+export type ResolveInboxThreadWorkflowInput = z.infer<
+  typeof ResolveInboxThreadWorkflowInputSchema
+>;
+
+export const ResolveInboxThreadWorkflowResultSchema = z.object({
+  applied: z.boolean(),
+  matchedThreadId: z.string().nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+  reason: z.string(),
+});
+
+export type ResolveInboxThreadWorkflowResult = z.infer<
+  typeof ResolveInboxThreadWorkflowResultSchema
+>;
+
+// ── Thread Analysis Pipeline ────────────────────────────────────────
+
+export const DraftTypeSchema = z.enum(["RESOLUTION", "CLARIFICATION", "MANUAL"]);
+export type DraftTypeValue = z.infer<typeof DraftTypeSchema>;
+
+export const AnalyzeThreadWorkflowInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  source: CustomerSourceSchema,
+  triggeredByMessageId: z.string(),
+});
+export type AnalyzeThreadWorkflowInput = z.infer<typeof AnalyzeThreadWorkflowInputSchema>;
+
+export const AnalyzeThreadWorkflowResultSchema = z.object({
+  analysisId: z.string().nullable(),
+  draftId: z.string().nullable(),
+  action: z.enum(["clarification", "resolution", "escalated", "skipped"]),
+  reason: z.string().optional(),
+});
+export type AnalyzeThreadWorkflowResult = z.infer<typeof AnalyzeThreadWorkflowResultSchema>;
+
+export const SufficiencyCheckResultSchema = z.object({
+  sufficient: z.boolean(),
+  missingContext: z.array(z.string()),
+  confidence: z.number().min(0).max(1),
+  reasoning: z.string(),
+});
+export type SufficiencyCheckResult = z.infer<typeof SufficiencyCheckResultSchema>;
+
+export const ThreadAnalysisResultSchema = z.object({
+  issueCategory: z.string().nullable(),
+  severity: z.string().nullable(),
+  affectedComponent: z.string().nullable(),
+  summary: z.string(),
+  rcaSummary: z.string().nullable(),
+  confidence: z.number().min(0).max(1),
+});
+export type ThreadAnalysisResult = z.infer<typeof ThreadAnalysisResultSchema>;
+
+export const DraftReplyResultSchema = z.object({
+  body: z.string(),
+  confidence: z.number().min(0).max(1),
+});
+export type DraftReplyResult = z.infer<typeof DraftReplyResultSchema>;
+
+export const SaveAnalysisInputSchema = z.object({
+  workspaceId: z.string(),
+  threadId: z.string(),
+  analysis: z.object({
+    issueCategory: z.string().nullable(),
+    severity: z.string().nullable(),
+    affectedComponent: z.string().nullable(),
+    summary: z.string(),
+    codexFindings: z.unknown().nullable(),
+    sentryFindings: z.unknown().nullable(),
+    rcaSummary: z.string().nullable(),
+    sufficient: z.boolean(),
+    missingContext: z.array(z.string()),
+    model: z.string().nullable(),
+    promptVersion: z.string().nullable(),
+    totalTokens: z.number().nullable(),
+    durationMs: z.number().nullable(),
+  }),
+  draft: z.object({
+    body: z.string(),
+    draftType: DraftTypeSchema,
+    basedOnMessageId: z.string().optional(),
+    model: z.string().nullable(),
+  }),
+});
+export type SaveAnalysisInput = z.infer<typeof SaveAnalysisInputSchema>;
+
+export const TriggerAnalysisInputSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type TriggerAnalysisInput = z.infer<typeof TriggerAnalysisInputSchema>;
+
+export const GetLatestAnalysisInputSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type GetLatestAnalysisInput = z.infer<typeof GetLatestAnalysisInputSchema>;

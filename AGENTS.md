@@ -152,6 +152,31 @@ npm run type-check     # typecheck all packages
 npm test               # run tests
 ```
 
+## Troubleshooting: Missing Activities / Types / Schema
+
+If you hit runtime errors like `Activity function X is not registered` or missing types/columns:
+
+1. **Regenerate Prisma types** — `npm run db:generate` (needed after any `.prisma` schema change)
+2. **Apply schema to DB** — `npm run db:migrate` (for new migrations) or `npm run db:push` (local prototyping only)
+3. **Rebuild the affected app** — `npm run build --workspace @app/queue` (or `@app/web`, `@app/codex`)
+
+The Temporal worker loads **compiled JS**, not source TS. If you add/rename activities or workflows, you **must rebuild** the queue worker before restarting it. Same applies to codex.
+
+**Quick checklist when something is "missing" at runtime:**
+- New activity? → Ensure it's exported from `apps/<app>/src/activities/index.ts`, then rebuild.
+- New workflow? → Ensure it's exported from `apps/<app>/src/workflows/index.ts`, then rebuild.
+- New/changed DB column? → Run `db:generate` + `db:migrate` (or `db:push`), then rebuild.
+- New shared type/schema? → Run `db:generate`, then rebuild any consuming app.
+
+**Running `db:push` locally:**
+Turbo does not forward env vars to sub-processes, and the `.env` file lives in `apps/web/.env` which Prisma can't find when run from `packages/database/`. Run Prisma directly:
+
+```bash
+cd packages/database && DATABASE_URL="postgresql://user:password@localhost:5432/mydb?schema=public" npx prisma db push
+```
+
+Add `--accept-data-loss` if prompted about potential data loss on local dev.
+
 ## CI Workflows
 
 - `build-web.yml` validates web CI.
