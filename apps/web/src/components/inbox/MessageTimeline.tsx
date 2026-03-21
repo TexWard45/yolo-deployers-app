@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { renderMessageBody } from "@/components/inbox/render-message-body";
 
 interface MessageTimelineItem {
   id: string;
@@ -38,7 +39,7 @@ export function MessageTimeline({ messages }: MessageTimelineProps) {
               {new Date(message.createdAt).toLocaleString()}
             </span>
           </div>
-          <p className="whitespace-pre-wrap text-sm">{message.body}</p>
+          <p className="whitespace-pre-wrap text-sm">{renderMessageBody(message.body)}</p>
         </div>
       ))}
     </div>
