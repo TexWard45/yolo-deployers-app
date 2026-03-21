@@ -9,6 +9,12 @@ export const temporalConfig = {
 
 export const codexConfig = {
   cloneBasePath: resolve(codexEnv.CODEX_CLONE_BASE_PATH),
+  llm: {
+    apiKey: codexEnv.LLM_API_KEY,
+    model: codexEnv.LLM_MODEL_DEFAULT,
+  },
+  webAppUrl: codexEnv.WEB_APP_URL,
+  internalApiSecret: codexEnv.INTERNAL_API_SECRET,
   embedding: {
     apiKey: codexEnv.CODEX_EMBEDDING_API_KEY,
     model: codexEnv.CODEX_EMBEDDING_MODEL,

@@ -13,6 +13,14 @@ export async function updateAgentConfigAction(data: {
   maxClarifications?: number;
   tone?: string;
   systemPrompt?: string;
+  githubToken?: string;
+  githubDefaultOwner?: string;
+  githubDefaultRepo?: string;
+  githubBaseBranch?: string;
+  codexFixModel?: string;
+  codexReviewModel?: string;
+  codexFixMaxIterations?: number;
+  codexRequiredCheckNames?: string[];
 }) {
   const session = await getSession();
   if (!session) {

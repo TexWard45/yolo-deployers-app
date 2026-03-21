@@ -5,6 +5,7 @@ import type {
   AnalyzeThreadWorkflowInput,
   TriageThreadWorkflowInput,
   SupportPipelineWorkflowInput,
+  GenerateFixPRWorkflowInput,
 } from "@shared/types";
 
 let _clientPromise: Promise<Client> | null = null;
@@ -133,6 +134,44 @@ export async function dispatchSendOutboundMessageWorkflow(input: {
     });
   } catch (error: unknown) {
     if (error instanceof WorkflowExecutionAlreadyStartedError) return;
+    _clientPromise = null;
+    throw error;
+  }
+}
+
+/**
+ * Dispatch the generate-fix-pr workflow — one per analysis.
+ * Runs on the dedicated Codex task queue.
+ */
+export async function dispatchGenerateFixPRWorkflow(
+  input: GenerateFixPRWorkflowInput,
+): Promise<void> {
+  const client = await getClient();
+
+  try {
+    await client.workflow.start("generateFixPRWorkflow", {
+      args: [input],
+      taskQueue: webEnv.CODEX_TASK_QUEUE,
+      workflowId: `fix-pr-${input.analysisId}`,
+    });
+  } catch (error: unknown) {
+    if (error instanceof WorkflowExecutionAlreadyStartedError) return;
+    _clientPromise = null;
+    throw error;
+  }
+}
+
+export async function cancelGenerateFixPRWorkflow(
+  analysisId: string,
+): Promise<void> {
+  const client = await getClient();
+  const handle = client.workflow.getHandle(`fix-pr-${analysisId}`);
+
+  try {
+    await handle.cancel();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("not found")) return;
     _clientPromise = null;
     throw error;
   }

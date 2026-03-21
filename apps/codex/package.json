@@ -9,12 +9,13 @@
     "start": "tsx src/worker.ts",
     "type-check": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "echo \"No tests configured yet\"",
+    "test": "node --import tsx --test $(find src -type f \\( -name '*.test.ts' -o -name '*.e2e.test.ts' \\))",
     "workflow:start": "tsx src/client.ts"
   },
   "dependencies": {
     "@shared/database": "*",
     "@shared/env": "*",
+    "@shared/rest": "*",
     "@shared/types": "*",
     "@temporalio/client": "^1.11.5",
     "@temporalio/worker": "^1.11.5",

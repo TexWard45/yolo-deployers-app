@@ -6,6 +6,10 @@ import {
   triageToLinearAction,
   getTriageStatusAction,
   generateSpecAction,
+  generateFixPRAction,
+  getFixPRStatusAction,
+  cancelFixPRAction,
+  type FixPRStatusResult,
 } from "@/actions/inbox";
 
 interface TriageHistory {
@@ -13,6 +17,7 @@ interface TriageHistory {
   action: string;
   linearIssueId: string | null;
   linearIssueUrl: string | null;
+  prUrl?: string | null;
   specMarkdown: string | null;
   createdBy: string;
   createdAt: string;
@@ -29,28 +34,57 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
   const [linearIssueUrl, setLinearIssueUrl] = useState<string | null>(null);
   const [history, setHistory] = useState<TriageHistory[]>([]);
   const [specMarkdown, setSpecMarkdown] = useState<string | null>(null);
+  const [fixPrStatus, setFixPrStatus] = useState<FixPRStatusResult | null>(null);
   const [triaging, startTriaging] = useTransition();
   const [generating, startGenerating] = useTransition();
+  const [creatingFixPr, startCreatingFixPr] = useTransition();
+  const [cancellingFixPr, startCancellingFixPr] = useTransition();
   const [copied, setCopied] = useState(false);
+  const isFixRunActive = fixPrStatus ? isActiveFixPrStatus(fixPrStatus.status) : false;
 
   useEffect(() => {
     let cancelled = false;
-    getTriageStatusAction(threadId, workspaceId).then((result) => {
-      if (cancelled || !result) return;
-      setLinearIssueId(result.linearIssueId);
-      setLinearIssueUrl(result.linearIssueUrl);
-      setHistory(result.history);
+    loadTriageSectionState(threadId, workspaceId).then(({ triageResult, fixPrResult }) => {
+      if (cancelled) return;
+      applyTriageSectionState({
+        triageResult,
+        fixPrResult,
+        setLinearIssueId,
+        setLinearIssueUrl,
+        setHistory,
+        setFixPrStatus,
+      });
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [threadId, workspaceId]);
 
-  const refreshStatus = async () => {
-    const result = await getTriageStatusAction(threadId, workspaceId);
-    if (result) {
-      setLinearIssueId(result.linearIssueId);
-      setLinearIssueUrl(result.linearIssueUrl);
-      setHistory(result.history);
+  useEffect(() => {
+    if (!isFixRunActive) {
+      return;
     }
+
+    const interval = setInterval(async () => {
+      const result = await getFixPRStatusAction(threadId, workspaceId);
+      if (result) {
+        setFixPrStatus(result);
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [isFixRunActive, threadId, workspaceId]);
+
+  const refreshStatus = async () => {
+    const { triageResult, fixPrResult } = await loadTriageSectionState(threadId, workspaceId);
+    applyTriageSectionState({
+      triageResult,
+      fixPrResult,
+      setLinearIssueId,
+      setLinearIssueUrl,
+      setHistory,
+      setFixPrStatus,
+    });
   };
 
   const handleTriage = () => {
@@ -79,6 +113,39 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       });
       if (result.success) {
         setSpecMarkdown(result.specMarkdown ?? null);
+        await refreshStatus();
+      } else {
+        alert(result.error);
+      }
+    });
+  };
+
+  const handleGenerateFixPr = () => {
+    startCreatingFixPr(async () => {
+      const result = await generateFixPRAction({
+        threadId,
+        workspaceId,
+        analysisId,
+      });
+
+      if (result.success) {
+        await refreshStatus();
+      } else {
+        alert(result.error);
+      }
+    });
+  };
+
+  const handleCancelFixPr = () => {
+    if (!fixPrStatus) return;
+
+    startCancellingFixPr(async () => {
+      const result = await cancelFixPRAction({
+        runId: fixPrStatus.runId,
+        workspaceId,
+      });
+
+      if (result.success) {
         await refreshStatus();
       } else {
         alert(result.error);
@@ -138,6 +205,63 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
         {generating ? "Generating spec..." : "Generate Spec"}
       </Button>
 
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 w-full text-xs"
+        disabled={creatingFixPr || cancellingFixPr}
+        onClick={handleGenerateFixPr}
+      >
+        {getFixPrButtonLabel({
+          creatingFixPr,
+          fixPrStatus,
+        })}
+      </Button>
+
+      {fixPrStatus ? (
+        <div className="space-y-1 rounded border bg-muted/40 p-2">
+          <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+            Fix Run
+          </p>
+          <p className="text-xs">
+            {fixPrStatus.status} • {fixPrStatus.currentStage}
+          </p>
+          <p className="text-[10px] text-muted-foreground">
+            Iteration {fixPrStatus.iterationCount}/{fixPrStatus.maxIterations}
+          </p>
+          {fixPrStatus.summary ? (
+            <p className="text-[10px] text-muted-foreground">{fixPrStatus.summary}</p>
+          ) : null}
+          {fixPrStatus.rcaSummary ? (
+            <p className="text-[10px] text-muted-foreground">RCA: {fixPrStatus.rcaSummary}</p>
+          ) : null}
+          {fixPrStatus.lastError ? (
+            <p className="text-[10px] text-red-600">{fixPrStatus.lastError}</p>
+          ) : null}
+          {fixPrStatus.prUrl ? (
+            <a
+              href={fixPrStatus.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-xs text-blue-600 hover:underline"
+            >
+              {fixPrStatus.prNumber ? `PR #${fixPrStatus.prNumber}` : "Open PR"}
+            </a>
+          ) : null}
+          {isFixRunActive ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[10px]"
+              disabled={cancellingFixPr}
+              onClick={handleCancelFixPr}
+            >
+              {cancellingFixPr ? "Cancelling..." : "Cancel"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Spec preview */}
       {specMarkdown ? (
         <div className="space-y-2">
@@ -166,11 +290,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
           <div className="space-y-1">
             {history.map((h) => (
               <p key={h.id} className="text-[10px] text-muted-foreground">
-                {h.action === "CREATE_TICKET"
-                  ? `Created ${h.linearIssueId}`
-                  : h.action === "UPDATE_TICKET"
-                    ? `Updated ${h.linearIssueId}`
-                    : "Generated spec"}{" "}
+                {getTriageHistoryLabel(h)}{" "}
                 by {h.createdBy} — {timeAgo(h.createdAt)}
               </p>
             ))}
@@ -179,6 +299,67 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       ) : null}
     </div>
   );
+}
+
+async function loadTriageSectionState(threadId: string, workspaceId: string) {
+  const [triageResult, fixPrResult] = await Promise.all([
+    getTriageStatusAction(threadId, workspaceId),
+    getFixPRStatusAction(threadId, workspaceId),
+  ]);
+
+  return { triageResult, fixPrResult };
+}
+
+function applyTriageSectionState(params: {
+  triageResult: Awaited<ReturnType<typeof getTriageStatusAction>>;
+  fixPrResult: FixPRStatusResult | null;
+  setLinearIssueId: (value: string | null) => void;
+  setLinearIssueUrl: (value: string | null) => void;
+  setHistory: (value: TriageHistory[]) => void;
+  setFixPrStatus: (value: FixPRStatusResult | null) => void;
+}) {
+  if (params.triageResult) {
+    params.setLinearIssueId(params.triageResult.linearIssueId);
+    params.setLinearIssueUrl(params.triageResult.linearIssueUrl);
+    params.setHistory(params.triageResult.history);
+  }
+
+  params.setFixPrStatus(params.fixPrResult);
+}
+
+function isActiveFixPrStatus(status: string): boolean {
+  return status === "QUEUED" || status === "RUNNING";
+}
+
+function getFixPrButtonLabel(params: {
+  creatingFixPr: boolean;
+  fixPrStatus: FixPRStatusResult | null;
+}): string {
+  if (params.creatingFixPr) {
+    return "Starting fix...";
+  }
+
+  if (params.fixPrStatus && isActiveFixPrStatus(params.fixPrStatus.status)) {
+    return `Fix Run: ${params.fixPrStatus.currentStage}`;
+  }
+
+  return "Generate Fix PR";
+}
+
+function getTriageHistoryLabel(historyItem: TriageHistory): string {
+  if (historyItem.action === "CREATE_TICKET") {
+    return `Created ${historyItem.linearIssueId}`;
+  }
+
+  if (historyItem.action === "UPDATE_TICKET") {
+    return `Updated ${historyItem.linearIssueId}`;
+  }
+
+  if (historyItem.action === "GENERATE_FIX_PR") {
+    return historyItem.prUrl ? "Generated fix PR" : "Recorded fix run";
+  }
+
+  return "Generated spec";
 }
 
 function timeAgo(dateStr: string): string {

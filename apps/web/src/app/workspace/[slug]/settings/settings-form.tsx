@@ -16,6 +16,14 @@ interface SettingsFormProps {
     maxClarifications: number;
     tone: string | null;
     systemPrompt: string | null;
+    githubToken: string | null;
+    githubDefaultOwner: string | null;
+    githubDefaultRepo: string | null;
+    githubBaseBranch: string | null;
+    codexFixModel: string | null;
+    codexReviewModel: string | null;
+    codexFixMaxIterations: number;
+    codexRequiredCheckNames: string[];
   };
 }
 
@@ -27,6 +35,16 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
   const [maxClarifications, setMaxClarifications] = useState(config.maxClarifications);
   const [tone, setTone] = useState(config.tone ?? "");
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt ?? "");
+  const [githubToken, setGitHubToken] = useState(config.githubToken ?? "");
+  const [githubDefaultOwner, setGitHubDefaultOwner] = useState(config.githubDefaultOwner ?? "");
+  const [githubDefaultRepo, setGitHubDefaultRepo] = useState(config.githubDefaultRepo ?? "");
+  const [githubBaseBranch, setGitHubBaseBranch] = useState(config.githubBaseBranch ?? "main");
+  const [codexFixModel, setCodexFixModel] = useState(config.codexFixModel ?? "");
+  const [codexReviewModel, setCodexReviewModel] = useState(config.codexReviewModel ?? "");
+  const [codexFixMaxIterations, setCodexFixMaxIterations] = useState(config.codexFixMaxIterations);
+  const [codexRequiredCheckNames, setCodexRequiredCheckNames] = useState(
+    config.codexRequiredCheckNames.join(", "),
+  );
   const [saving, startSaving] = useTransition();
   const [saved, setSaved] = useState(false);
 
@@ -42,6 +60,17 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
         maxClarifications,
         tone: tone || undefined,
         systemPrompt: systemPrompt || undefined,
+        githubToken: githubToken || undefined,
+        githubDefaultOwner: githubDefaultOwner || undefined,
+        githubDefaultRepo: githubDefaultRepo || undefined,
+        githubBaseBranch: githubBaseBranch || undefined,
+        codexFixModel: codexFixModel || undefined,
+        codexReviewModel: codexReviewModel || undefined,
+        codexFixMaxIterations,
+        codexRequiredCheckNames: codexRequiredCheckNames
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean),
       });
       if (result.success) {
         setSaved(true);
@@ -194,6 +223,118 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
             rows={3}
             placeholder="You are a helpful support agent for..."
             className="w-full resize-none rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-4">
+        <div>
+          <Label className="text-sm font-semibold">GitHub Integration</Label>
+          <p className="text-xs text-muted-foreground">
+            Optional for draft PR creation. Leave blank to run the local fix loop without GitHub.
+          </p>
+        </div>
+
+        <div>
+          <Label className="text-sm">GitHub Token</Label>
+          <input
+            type="password"
+            value={githubToken}
+            onChange={(e) => setGitHubToken(e.target.value)}
+            placeholder="ghp_..."
+            className="w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label className="text-sm">Owner</Label>
+            <input
+              type="text"
+              value={githubDefaultOwner}
+              onChange={(e) => setGitHubDefaultOwner(e.target.value)}
+              placeholder="TexWard45"
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Repo</Label>
+            <input
+              type="text"
+              value={githubDefaultRepo}
+              onChange={(e) => setGitHubDefaultRepo(e.target.value)}
+              placeholder="yolo-deployers-app"
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label className="text-sm">Base Branch</Label>
+          <input
+            type="text"
+            value={githubBaseBranch}
+            onChange={(e) => setGitHubBaseBranch(e.target.value)}
+            placeholder="main"
+            className="w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      <div className="rounded-lg border p-4 space-y-4">
+        <div>
+          <Label className="text-sm font-semibold">Codex Fix Loop</Label>
+          <p className="text-xs text-muted-foreground">
+            Configure the fixer/reviewer models and validation thresholds.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label className="text-sm">Fix Model</Label>
+            <input
+              type="text"
+              value={codexFixModel}
+              onChange={(e) => setCodexFixModel(e.target.value)}
+              placeholder="gpt-5.4-codex"
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Review Model</Label>
+            <input
+              type="text"
+              value={codexReviewModel}
+              onChange={(e) => setCodexReviewModel(e.target.value)}
+              placeholder="gpt-5.4-codex"
+              className="w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        <div>
+          <Label className="text-sm">Max Iterations</Label>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            value={codexFixMaxIterations}
+            onChange={(e) => setCodexFixMaxIterations(Number(e.target.value))}
+            className="w-20 rounded-md border px-2 py-1 text-sm"
+          />
+        </div>
+
+        <div>
+          <Label className="text-sm">Required Checks</Label>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Comma-separated check names that must pass before the run can finish.
+          </p>
+          <input
+            type="text"
+            value={codexRequiredCheckNames}
+            onChange={(e) => setCodexRequiredCheckNames(e.target.value)}
+            placeholder="build-web, build-queue"
+            className="w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
       </div>

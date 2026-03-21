@@ -30,6 +30,7 @@ export const webEnv = createEnv({
     TEMPORAL_ADDRESS: TemporalAddressSchema,
     TEMPORAL_NAMESPACE: TemporalNamespaceSchema,
     TEMPORAL_TASK_QUEUE: TemporalTaskQueueSchema,
+    CODEX_TASK_QUEUE: z.string().default("codex-sync-queue"),
     INTERNAL_API_SECRET: InternalApiSecretSchema,
   },
   runtimeEnv: process.env,

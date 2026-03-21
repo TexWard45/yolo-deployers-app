@@ -21,6 +21,7 @@ model Workspace {
   agentConfig        WorkspaceAgentConfig?
   threadAnalyses     ThreadAnalysis[]
   triageActions      TriageAction[]
+  fixPrRuns          FixPrRun[]
 }
 
 model WorkspaceMember {

@@ -40,6 +40,14 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           maxClarifications: config.maxClarifications,
           tone: config.tone,
           systemPrompt: config.systemPrompt,
+          githubToken: config.githubToken,
+          githubDefaultOwner: config.githubDefaultOwner,
+          githubDefaultRepo: config.githubDefaultRepo,
+          githubBaseBranch: config.githubBaseBranch,
+          codexFixModel: config.codexFixModel,
+          codexReviewModel: config.codexReviewModel,
+          codexFixMaxIterations: config.codexFixMaxIterations,
+          codexRequiredCheckNames: config.codexRequiredCheckNames,
         }}
       />
     </div>
