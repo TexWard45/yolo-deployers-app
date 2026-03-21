@@ -148,7 +148,74 @@ export async function searchCodebaseActivity(params: {
 }): Promise<unknown | null> {
   if (params.codexRepositoryIds.length === 0) return null;
 
-  // Build query from last 3 messages + fingerprint
+  // Build task description from last 3 messages + fingerprint
+  const recentBodies = params.messages
+    .slice(-3)
+    .map((m) => m.body)
+    .join("\n");
+  const taskDescription = [recentBodies, params.issueFingerprint ? `Keywords: ${params.issueFingerprint}` : null]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const agentGrepUrl = `${queueEnv.WEB_APP_URL}/api/rest/codex/agent/grep`;
+
+  try {
+    // Call agent-grep for each repository in parallel
+    const results = await Promise.all(
+      params.codexRepositoryIds.map(async (repositoryId) => {
+        const response = await fetch(agentGrepUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspaceId: params.workspaceId,
+            repositoryId,
+            taskDescription,
+            maxResults: 5,
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn(`[analyze-thread] agent-grep failed for repo ${repositoryId} (${response.status})`);
+          return null;
+        }
+
+        return (await response.json()) as { chunks?: Array<{ id: string; score: number }> };
+      }),
+    );
+
+    // Merge chunks from all repos, deduplicate by chunk ID, keep top 5 by score
+    const chunkMap = new Map<string, unknown>();
+    for (const result of results) {
+      if (!result?.chunks || !Array.isArray(result.chunks)) continue;
+      for (const chunk of result.chunks) {
+        const existing = chunkMap.get(chunk.id) as { score: number } | undefined;
+        if (!existing || chunk.score > existing.score) {
+          chunkMap.set(chunk.id, chunk);
+        }
+      }
+    }
+
+    const mergedChunks = [...chunkMap.values()]
+      .sort((a, b) => (b as { score: number }).score - (a as { score: number }).score)
+      .slice(0, 5);
+
+    // Return in the same shape as before (chunks array) so downstream consumers don't break
+    return { chunks: mergedChunks };
+  } catch (error) {
+    console.warn("[analyze-thread] agent-grep error, falling back to direct search:", error);
+
+    // Fallback to old /codex/search
+    return searchCodebaseFallback(params);
+  }
+}
+
+/** Fallback to the old direct search endpoint */
+async function searchCodebaseFallback(params: {
+  workspaceId: string;
+  codexRepositoryIds: string[];
+  messages: Array<{ body: string }>;
+  issueFingerprint: string | null;
+}): Promise<unknown | null> {
   const recentBodies = params.messages
     .slice(-3)
     .map((m) => m.body)
@@ -171,13 +238,13 @@ export async function searchCodebaseActivity(params: {
     });
 
     if (!response.ok) {
-      console.warn(`[analyze-thread] codex search failed (${response.status})`);
+      console.warn(`[analyze-thread] fallback search failed (${response.status})`);
       return null;
     }
 
     return await response.json();
   } catch (error) {
-    console.error("[analyze-thread] codex search error:", error);
+    console.error("[analyze-thread] fallback search error:", error);
     return null;
   }
 }

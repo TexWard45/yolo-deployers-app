@@ -94,9 +94,19 @@ function buildUserMessage(input: ThreadAnalysisInput): string {
   }
 
   if (input.sentryFindings && Array.isArray(input.sentryFindings) && (input.sentryFindings as unknown[]).length > 0) {
-    const sentryList = (input.sentryFindings as Array<{ title?: string; count?: number; lastSeen?: string }>)
+    const sentryList = (input.sentryFindings as Array<{ title?: string; culprit?: string | null; count?: number; firstSeen?: string; lastSeen?: string; level?: string; stackTrace?: string | null }>)
       .slice(0, 5)
-      .map((e, i) => `${i + 1}. ${e.title ?? "unknown"} (${e.count ?? 0} occurrences, last seen: ${e.lastSeen ?? "unknown"})`)
+      .map((e, i) => {
+        const parts = [`${i + 1}. ${e.title ?? "unknown"} (${e.count ?? 0} occurrences, level: ${e.level ?? "unknown"}, last seen: ${e.lastSeen ?? "unknown"})`];
+        if (e.culprit) {
+          parts.push(`   Culprit: ${e.culprit}`);
+        }
+        if (e.stackTrace) {
+          const truncated = e.stackTrace.length > 200 ? e.stackTrace.slice(0, 200) + "..." : e.stackTrace;
+          parts.push(`   Stack: ${truncated}`);
+        }
+        return parts.join("\n");
+      })
       .join("\n");
     lines.push("", "Error tracking data:", sentryList);
   }

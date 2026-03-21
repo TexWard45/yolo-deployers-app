@@ -374,9 +374,11 @@ export const agentRouter = createTRPCRouter({
         },
       });
 
-      // Update thread with latest analysis + increment clarification count if needed
+      // Update thread with latest analysis + summary + increment clarification count if needed
       const updateData: Record<string, unknown> = {
         lastAnalysisId: analysis.id,
+        summary: input.analysis.summary,
+        summaryUpdatedAt: new Date(),
       };
       if (input.draft.draftType === "CLARIFICATION") {
         updateData.clarificationCount = { increment: 1 };
