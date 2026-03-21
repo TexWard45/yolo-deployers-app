@@ -46,8 +46,8 @@ const EMPTY_FILTERS: SessionFilters = {
   hasError: false,
 };
 
-export function useReplayExplorer(): ReplayExplorerReturn {
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+export function useReplayExplorer(initialSessionId?: string | null): ReplayExplorerReturn {
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(initialSessionId ?? null);
   const [filters, setFilters] = useState<SessionFilters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
 

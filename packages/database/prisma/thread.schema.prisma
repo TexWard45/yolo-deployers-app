@@ -36,6 +36,9 @@ model SupportThread {
   lastAnalysisId     String?        @unique
   lastAnalysis       ThreadAnalysis? @relation("latestAnalysis", fields: [lastAnalysisId], references: [id])
 
+  // Telemetry replay link
+  telemetrySessionId String?
+
   // Linear integration
   linearIssueId  String? @unique
   linearIssueUrl String?

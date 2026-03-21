@@ -245,6 +245,7 @@ async function performIngestion(
           issueFingerprint: decision.issueFingerprint,
           summary: buildThreadSummary(null, messageBody),
           summaryUpdatedAt: now,
+          telemetrySessionId: input.telemetrySessionId,
         },
       }));
 
@@ -281,6 +282,7 @@ async function performIngestion(
         lastInboundAt: message.createdAt,
         summary: buildThreadSummary(threadRecord.summary, messageBody),
         summaryUpdatedAt: message.createdAt,
+        ...(input.telemetrySessionId ? { telemetrySessionId: input.telemetrySessionId } : {}),
       },
     });
 
@@ -444,6 +446,7 @@ export const intakeRouter = createTRPCRouter({
         externalThreadId: input.externalThreadId ?? undefined,
         inReplyToExternalMessageId: input.inReplyToExternalMessageId ?? undefined,
         metadata: input.rawPayload,
+        telemetrySessionId: input.telemetrySessionId ?? undefined,
       });
     }),
 

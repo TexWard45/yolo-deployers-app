@@ -154,6 +154,7 @@ export const IngestExternalMessageSchema = z.object({
   threadGroupingHint: z.string().optional(),
   title: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  telemetrySessionId: z.string().optional(),
 });
 
 export type IngestExternalMessageInput = z.infer<typeof IngestExternalMessageSchema>;
@@ -273,6 +274,7 @@ export const IngestSupportMessageInputSchema = z.object({
   rawPayload: z.record(z.string(), z.unknown()),
   externalThreadId: z.string().nullable(),
   inReplyToExternalMessageId: z.string().nullable().optional(),
+  telemetrySessionId: z.string().nullable().optional(),
 });
 
 export type IngestSupportMessageInput = z.infer<typeof IngestSupportMessageInputSchema>;

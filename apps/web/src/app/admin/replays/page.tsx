@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { ReplayViewer } from "@/components/telemetry/ReplayViewer";
 import { useReplayExplorer } from "@/hooks/useReplayExplorer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -22,6 +23,9 @@ const INVESTIGATOR_DEFAULTS = {
 };
 
 export default function ReplaysPage() {
+  const searchParams = useSearchParams();
+  const initialId = searchParams.get("id");
+
   /* ── Investigator state ── */
   const [investigatorOpen, setInvestigatorOpen] = useState(false);
   const [investigatorFields, setInvestigatorFields] = useState(INVESTIGATOR_DEFAULTS);
@@ -72,7 +76,18 @@ export default function ReplaysPage() {
     replayLoading,
     timelineData,
     errorTimestamps,
-  } = useReplayExplorer();
+  } = useReplayExplorer(initialId);
+
+  // Sync URL bar when selected session changes
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (selectedSessionId) {
+      url.searchParams.set("id", selectedSessionId);
+    } else {
+      url.searchParams.delete("id");
+    }
+    window.history.replaceState({}, "", url.toString());
+  }, [selectedSessionId]);
 
   const hasActiveFilters = Object.values(filters).some(Boolean) || filters.hasError;
 

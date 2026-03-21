@@ -6,6 +6,7 @@ import { z } from "zod";
 const InAppChatPayloadSchema = z.object({
   workspaceId: z.string(),
   sessionId: z.string(),
+  telemetrySessionId: z.string().optional(),
   sender: z.object({
     id: z.string(),
     displayName: z.string().optional(),
@@ -61,9 +62,11 @@ export async function POST(request: NextRequest) {
       rawPayload: {
         senderId: payload.sender.id,
         sessionId: payload.sessionId,
+        telemetrySessionId: payload.telemetrySessionId,
       },
       externalThreadId: payload.sessionId,
       inReplyToExternalMessageId: null,
+      telemetrySessionId: payload.telemetrySessionId ?? null,
     });
 
     return NextResponse.json({ ok: true, threadId: result.thread.id });
