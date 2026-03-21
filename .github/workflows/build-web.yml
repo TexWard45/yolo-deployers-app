@@ -25,13 +25,13 @@ jobs:
         run: npm run db:generate
 
       - name: Type Check
-        run: npm run type-check
+        run: npx turbo type-check --filter=@app/web...
 
       - name: Lint
-        run: npm run lint
+        run: npx turbo lint --filter=@app/web...
 
       - name: Build Web
-        run: npm run build
+        run: npm run build --workspace @app/web
 
       - name: Unit Tests (Web)
         run: npm run test -w @app/web

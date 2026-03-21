@@ -322,6 +322,9 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
             </p>
           </div>
 
+          {/* AI Analysis */}
+          <AnalysisPanel threadId={thread.id} workspaceId={thread.workspaceId} />
+
           {/* Timestamps */}
           <div>
             <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
