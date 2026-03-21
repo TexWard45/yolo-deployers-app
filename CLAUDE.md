@@ -116,17 +116,19 @@ Single source of truth for all support/inbox data:
 Customer (who — one per workspace + source + externalCustomerId)
   └── SupportThread[] (one per issue)
         ├── ThreadMessage[] (flat — visual sub-threads computed client-side)
-        └── ReplyDraft[] (AI drafts, FK to SupportThread)
+        ├── ReplyDraft[] (AI drafts, FK to SupportThread)
+        └── ThreadAnalysis[] (AI investigation results)
 
 ChannelConnection (channel config: Discord, IN_APP)
 WorkspaceAgentConfig (AI agent settings per workspace)
 ```
 
-- **`SupportThread`** = one issue container. Shown as a page at `/inbox/[threadId]`. One thread = one issue, regardless of how many users report it.
+- **`SupportThread`** = one issue container. Shown as a page at `/inbox/[threadId]`. One thread = one issue, regardless of how many users report it. Has `clarificationCount` (how many times AI asked for more info) and `lastAnalysisId` (FK to most recent `ThreadAnalysis`).
 - **`ThreadMessage`** = all messages (inbound + outbound) in flat list. Visual sub-thread grouping ("Thread 1", "Thread 2") is computed client-side by `groupMessagesIntoSegments()` using `inReplyToExternalMessageId` chains — no DB model for sub-threads.
 - **`Customer`** = identity via `(workspaceId, source, externalCustomerId)` unique constraint. No separate CustomerProfile or channel identity tables.
-- **`ReplyDraft`** = AI-generated reply draft, FK'd to `SupportThread` + optional `ThreadMessage`.
-- All ingestion paths (Discord bot, Discord webhook, in-app chat webhook) go through `performIngestion()` in the intake router, which upserts `Customer`, matches/creates `SupportThread`, and creates `ThreadMessage`.
+- **`ReplyDraft`** = AI-generated reply draft, FK'd to `SupportThread` + optional `ThreadMessage`. Has `draftType` (RESOLUTION | CLARIFICATION | MANUAL) and optional `analysisId` FK to the `ThreadAnalysis` that produced it.
+- **`ThreadAnalysis`** = AI investigation result for a thread. Stores classification (issueCategory, severity, affectedComponent), summary, codexFindings (JSON), sentryFindings (JSON), rcaSummary, sufficiency status, and LLM metadata. One thread can have multiple analyses over time.
+- All ingestion paths (Discord bot, Discord webhook, in-app chat webhook) go through `performIngestion()` in the intake router, which upserts `Customer`, matches/creates `SupportThread`, creates `ThreadMessage`, and dispatches the AI analysis pipeline.
 
 ### Thread Matching Rules
 
@@ -157,6 +159,55 @@ Thread matching determines which `SupportThread` an incoming message belongs to.
 - `packages/rest/src/routers/intake.ts` — `performIngestion()` orchestrates the full flow
 - `apps/queue/src/activities/llm-thread-match.activity.ts` — Temporal activity wrapper (imports shared prompt)
 - `apps/queue/src/workflows/resolve-inbox-thread.workflow.ts` — async resolution workflow
+
+### AI Analysis Pipeline
+
+After every inbound message, if the workspace has AI enabled (`WorkspaceAgentConfig.enabled + analysisEnabled + autoDraftOnInbound`), the `analyzeThreadWorkflow` Temporal workflow is dispatched. One workflow per thread (idempotent by `analyze-thread-{threadId}`).
+
+**Pipeline flow:**
+
+```
+1. Debounce (30s)         → wait for rapid messages to settle
+2. Fetch context          → last 20 messages, customer, agent config from DB
+3. Sufficiency check      → LLM evaluates if messages have enough context
+   ├── INSUFFICIENT       → generate CLARIFICATION draft (ask targeted questions)
+   │   └── if clarificationCount >= maxClarifications → escalate thread
+   └── SUFFICIENT         → continue to investigation
+4. Parallel investigation
+   ├── Codex search       → hybrid search (semantic + keyword + symbol) against configured repos
+   └── Sentry lookup      → fetch matching errors (MVP: stubbed, returns [])
+5. Generate analysis      → LLM produces: issueCategory, severity, component, summary, RCA
+6. Generate draft         → LLM writes RESOLUTION reply using analysis + agent tone/prompt
+7. Save                   → POST /api/rest/analysis/save creates ThreadAnalysis + ReplyDraft
+```
+
+**How sufficiency is assessed:** The sufficiency check is a single LLM call (GPT-4.1) that evaluates ALL messages in the thread against a decision framework: bugs need 2+ of {error message, repro steps, affected feature, environment}; feature requests need what + why; how-to needs a clear question. It does NOT check the codebase first — Codex search only runs after sufficiency passes.
+
+**How Codex search works in the pipeline:** The activity builds a search query from the last 3 message bodies + `issueFingerprint`, calls `POST /api/rest/codex/search` with the workspace's configured `codexRepositoryIds`, and gets back top 5 code chunks (file paths, symbols, content). These are fed into the analysis LLM prompt so it can connect customer symptoms to actual code paths.
+
+**Escalation safety valve:** After `maxClarifications` (default 2) auto-clarifications with no useful response, the thread status is set to `ESCALATED` and no more auto-drafts are generated.
+
+**Key design decisions:**
+- **Sufficiency gates investigation** — don't waste Codex/Sentry calls on vague messages. Ask the customer first.
+- **Codex search is optional** — only runs if `codexRepositoryIds` is configured on the workspace. Without it, analysis still works (just no code context).
+- **Sentry is per-workspace config** — credentials stored on `WorkspaceAgentConfig`, not global env vars.
+- **Human-in-the-loop** — all drafts require human approval via `approveDraft`/`dismissDraft`. No auto-send.
+- **Queue writes via REST** — `saveAnalysisAndDraftActivity` calls `POST /api/rest/analysis/save` (queue → web pattern).
+- **Outbound send is direct (no Temporal)** — `approveDraft` tRPC mutation sends to Discord + records outbound message in one call. Creates Discord threads under customer's first message for synthetic threads, sends into existing threads otherwise.
+
+**Files:**
+- `packages/rest/src/routers/helpers/sufficiency-check.prompt.ts` — sufficiency LLM prompt
+- `packages/rest/src/routers/helpers/thread-analysis.prompt.ts` — analysis + RCA LLM prompt
+- `packages/rest/src/routers/helpers/draft-reply.prompt.ts` — draft reply LLM prompt
+- `packages/rest/src/routers/helpers/sentry-client.ts` — Sentry API client (MVP stub)
+- `packages/rest/src/routers/agent.ts` — tRPC: `approveDraft` (send to Discord + DB), `dismissDraft`, `getLatestAnalysis`, `triggerAnalysis`, `saveAnalysis`
+- `packages/rest/src/temporal.ts` — `dispatchAnalyzeThreadWorkflow()`
+- `apps/queue/src/workflows/analyze-thread.workflow.ts` — Temporal workflow orchestration
+- `apps/queue/src/activities/analyze-thread.activity.ts` — 8 activity functions
+- `apps/web/src/app/api/rest/analysis/save/route.ts` — REST endpoint for queue saves
+- `apps/web/src/actions/inbox.ts` — server actions: `approveDraftAction`, `dismissDraftAction`
+- `apps/web/src/components/inbox/AnalysisPanel.tsx` — AI Analysis sidebar + DraftChatBubble component
+- `apps/web/src/components/inbox/ThreadDetailSheet.tsx` — thread detail with tree layout + draft suggestion area
 
 ### Environment Management
 
@@ -252,6 +303,31 @@ npm run db:migrate     # create + apply migration
 npm run type-check     # typecheck all packages
 npm test               # run tests
 ```
+
+## Troubleshooting: Missing Activities / Types / Schema
+
+If you hit runtime errors like `Activity function X is not registered` or missing types/columns:
+
+1. **Regenerate Prisma types** — `npm run db:generate` (needed after any `.prisma` schema change)
+2. **Apply schema to DB** — `npm run db:migrate` (for new migrations) or `npm run db:push` (local prototyping only)
+3. **Rebuild the affected app** — `npm run build --workspace @app/queue` (or `@app/web`, `@app/codex`)
+
+The Temporal worker loads **compiled JS**, not source TS. If you add/rename activities or workflows, you **must rebuild** the queue worker before restarting it. Same applies to codex.
+
+**Quick checklist when something is "missing" at runtime:**
+- New activity? → Ensure it's exported from `apps/<app>/src/activities/index.ts`, then rebuild.
+- New workflow? → Ensure it's exported from `apps/<app>/src/workflows/index.ts`, then rebuild.
+- New/changed DB column? → Run `db:generate` + `db:migrate` (or `db:push`), then rebuild.
+- New shared type/schema? → Run `db:generate`, then rebuild any consuming app.
+
+**Running `db:push` locally:**
+Turbo does not forward env vars to sub-processes, and the `.env` file lives in `apps/web/.env` which Prisma can't find when run from `packages/database/`. Run Prisma directly:
+
+```bash
+cd packages/database && DATABASE_URL="postgresql://user:password@localhost:5432/mydb?schema=public" npx prisma db push
+```
+
+Add `--accept-data-loss` if prompted about potential data loss on local dev.
 
 ## CI Workflows
 

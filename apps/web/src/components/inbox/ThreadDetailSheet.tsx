@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
-import { renderMessageBody } from "@/components/inbox/render-message-body";
+import { renderMessageBody, type MentionsMap } from "@/components/inbox/render-message-body";
 import { getThreadDetail, sendReply } from "@/actions/inbox";
+import { AnalysisPanel, DraftChatBubble, type AnalysisDraft } from "@/components/inbox/AnalysisPanel";
 import {
   getDefaultReplySegmentId,
   getReplyToExternalMessageId,
@@ -53,7 +54,13 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [replyBody, setReplyBody] = useState("");
   const [sending, startSending] = useTransition();
   const [activeReplySegmentId, setActiveReplySegmentId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<AnalysisDraft | null>(null);
+  const analysisRefreshRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleDraftAvailable = useCallback((d: AnalysisDraft | null) => {
+    setDraft(d);
+  }, []);
 
   const fetchThread = useCallback((id: string) => {
     startTransition(async () => {
@@ -80,6 +87,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
         createdAt: new Date(message.createdAt),
         externalMessageId: message.externalMessageId,
         inReplyToExternalMessageId: message.inReplyToExternalMessageId,
+        metadata: message.metadata as Record<string, unknown> | null,
       })),
     );
   }, [thread]);
@@ -173,53 +181,77 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                         {segment.messages.length} msgs
                       </span>
                     </button>
-                    <div className="space-y-3 px-3 py-3">
-                      {segment.messages.map((msg) => {
+                    <div className="px-3 py-3">
+                      {segment.messages.map((msg, msgIdx) => {
                         const isInbound = msg.direction === "INBOUND";
                         const isOutbound = msg.direction === "OUTBOUND";
-                        return (
-                          <div key={msg.id} className="flex gap-2.5">
-                            <span
-                              className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                                isInbound
-                                  ? "bg-blue-100 text-blue-700"
-                                  : isOutbound
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : "bg-muted text-muted-foreground"
-                              }`}
-                            >
-                              {isInbound
-                                ? getInitial(thread.customer.displayName)
-                                : isOutbound
-                                  ? "T"
-                                  : "S"}
-                            </span>
+                        const isRoot = msgIdx === 0;
+                        const isReply = !isRoot;
+                        const hasReplies = msgIdx === 0 && segment.messages.length > 1;
+                        const isLastReply = msgIdx === segment.messages.length - 1 && isReply;
 
-                            <div className="flex-1">
-                              <div className="mb-0.5 flex items-center gap-2">
-                                <span className="text-xs font-semibold">
-                                  {isInbound
-                                    ? thread.customer.displayName
-                                    : isOutbound
-                                      ? "Team"
-                                      : "System"}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {timeAgo(new Date(msg.createdAt))}
-                                </span>
-                              </div>
-                              <div
-                                className={`rounded-lg border p-3 ${
+                        return (
+                          <div key={msg.id} className={isReply ? "relative ml-8" : ""}>
+                            {/* Tree connector line */}
+                            {isReply ? (
+                              <>
+                                {/* Vertical line from parent */}
+                                <div className="absolute -left-4 -top-3 bottom-0 w-px bg-border" style={isLastReply ? { bottom: "50%" } : undefined} />
+                                {/* Horizontal branch */}
+                                <div className="absolute -left-4 top-4 h-px w-4 bg-border" />
+                              </>
+                            ) : null}
+                            {/* Vertical line starter below root avatar */}
+                            {hasReplies ? (
+                              <div className="absolute left-[13px] top-9 h-[calc(100%-36px)] w-px bg-border" style={{ zIndex: 0 }} />
+                            ) : null}
+
+                            <div className={`relative flex gap-2.5 ${isReply ? "pt-3" : ""}`}>
+                              <span
+                                className={`relative z-10 mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
                                   isInbound
-                                    ? "border-l-2 border-l-blue-500"
+                                    ? "bg-blue-100 text-blue-700"
                                     : isOutbound
-                                      ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
-                                      : "border-l-2 border-l-muted-foreground bg-muted/30"
+                                      ? "bg-emerald-100 text-emerald-700"
+                                      : "bg-muted text-muted-foreground"
                                 }`}
                               >
-                                <p className="whitespace-pre-wrap text-sm">
-                                  {renderMessageBody(msg.body)}
-                                </p>
+                                {isInbound
+                                  ? getInitial(thread.customer.displayName)
+                                  : isOutbound
+                                    ? "T"
+                                    : "S"}
+                              </span>
+
+                              <div className="flex-1">
+                                <div className="mb-0.5 flex items-center gap-2">
+                                  <span className="text-xs font-semibold">
+                                    {isInbound
+                                      ? thread.customer.displayName
+                                      : isOutbound
+                                        ? "Team"
+                                        : "System"}
+                                  </span>
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {timeAgo(new Date(msg.createdAt))}
+                                  </span>
+                                </div>
+                                <div
+                                  className={`rounded-lg border p-3 ${
+                                    isInbound
+                                      ? "border-l-2 border-l-blue-500"
+                                      : isOutbound
+                                        ? "border-l-2 border-l-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20"
+                                        : "border-l-2 border-l-muted-foreground bg-muted/30"
+                                  }`}
+                                >
+                                  <p className="whitespace-pre-wrap text-sm">
+                                    {renderMessageBody(
+                                      msg.body,
+                                      (msg.metadata as Record<string, unknown> | null)?.mentions as MentionsMap | undefined,
+                                    )}
+                                  </p>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -232,6 +264,21 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
               </div>
             )}
           </div>
+
+          {/* AI Draft suggestion */}
+          {draft && draft.status === "GENERATED" ? (
+            <div className="shrink-0 border-t bg-violet-50/50 px-4 py-3 dark:bg-violet-950/10">
+              <DraftChatBubble
+                draft={draft}
+                workspaceId={thread.workspaceId}
+                onDraftActioned={() => {
+                  setDraft(null);
+                  analysisRefreshRef.current?.();
+                  fetchThread(threadId);
+                }}
+              />
+            </div>
+          ) : null}
 
           {/* Reply bar - pinned at bottom */}
           <div className="shrink-0 border-t p-3">
@@ -316,6 +363,14 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
               {thread.summary ?? "No summary yet."}
             </p>
           </div>
+
+          {/* AI Analysis */}
+          <AnalysisPanel
+            threadId={thread.id}
+            workspaceId={thread.workspaceId}
+            onDraftAvailable={handleDraftAvailable}
+            refreshRef={analysisRefreshRef}
+          />
 
           {/* Timestamps */}
           <div>

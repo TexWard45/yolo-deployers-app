@@ -9,6 +9,7 @@ import {
   DiscordBotTokenSchema,
   SupportSecretEncryptionKeySchema,
   WebAppUrlSchema,
+  InternalApiSecretSchema,
 } from "./shared";
 
 export const queueEnv = createEnv({
@@ -22,6 +23,7 @@ export const queueEnv = createEnv({
     DISCORD_BOT_TOKEN: DiscordBotTokenSchema.optional(),
     SUPPORT_SECRET_ENCRYPTION_KEY: SupportSecretEncryptionKeySchema.optional(),
     WEB_APP_URL: WebAppUrlSchema,
+    INTERNAL_API_SECRET: InternalApiSecretSchema,
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

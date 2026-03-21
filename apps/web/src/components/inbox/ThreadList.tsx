@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ThreadCard } from "@/components/inbox/ThreadCard";
 import { ThreadDetailSheet } from "@/components/inbox/ThreadDetailSheet";
 import { updateThreadStatusAction } from "@/actions/inbox";
@@ -43,7 +43,6 @@ const STATUS_COLOR: Record<ThreadStatusValue, string> = {
 };
 
 export function ThreadList({ threads }: ThreadListProps) {
-  const router = useRouter();
   const pathname = usePathname();
   const [localThreads, setLocalThreads] = useState(threads);
   const [selectedId, setSelectedId] = useState<string | null>(null);
