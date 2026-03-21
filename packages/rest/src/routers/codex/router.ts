@@ -11,10 +11,15 @@ import {
   CodexChunkContextSchema,
   CodexSyncLogsQuerySchema,
   CodexStatsQuerySchema,
+  AgentGrepSummarizeInputSchema,
+  AgentGrepContextCheckInputSchema,
+  AgentGrepInputSchema,
 } from "@shared/types";
 import { hybridSearch } from "./search";
 import type { EmbedQueryFn } from "./search";
 import { createCronSchedule, updateCronSchedule, deleteCronSchedule } from "./schedule";
+import { llmSummarizeTask } from "./agent-grep.prompt";
+import { checkRepositoryContext, grepRelevantCode } from "./agent-grep";
 import { randomBytes } from "node:crypto";
 
 function generateWebhookSecret(): string {
@@ -306,12 +311,44 @@ const syncRouter = createTRPCRouter({
     }),
 });
 
+// ── Agent Sub-Router ────────────────────────────────────────────────
+
+const agentRouter = createTRPCRouter({
+  summarize: publicProcedure
+    .input(AgentGrepSummarizeInputSchema)
+    .mutation(async ({ input }) => {
+      const { client } = getEmbedClient();
+      const result = await llmSummarizeTask(input.taskDescription, client);
+      if (!result) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to summarize task — LLM call timed out or failed",
+        });
+      }
+      return result;
+    }),
+
+  checkContext: publicProcedure
+    .input(AgentGrepContextCheckInputSchema)
+    .query(({ ctx, input }) => {
+      return checkRepositoryContext(ctx.prisma, input);
+    }),
+
+  grepRelevantCode: publicProcedure
+    .input(AgentGrepInputSchema)
+    .mutation(({ ctx, input }) => {
+      const { client } = getEmbedClient();
+      return grepRelevantCode(ctx.prisma, input, embedQuery, client);
+    }),
+});
+
 // ── Main Codex Router ────────────────────────────────────────────────
 
 export const codexRouter = createTRPCRouter({
   repository: repositoryRouter,
   chunk: chunkRouter,
   sync: syncRouter,
+  agent: agentRouter,
 
   search: publicProcedure
     .input(CodexSearchSchema)
