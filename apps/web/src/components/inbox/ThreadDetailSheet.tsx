@@ -58,6 +58,10 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const analysisRefreshRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const handleDraftAvailable = useCallback((d: AnalysisDraft | null) => {
+    setDraft(d);
+  }, []);
+
   const fetchThread = useCallback((id: string) => {
     startTransition(async () => {
       const data = await getThreadDetail(id);
@@ -240,6 +244,20 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
             )}
           </div>
 
+          {/* AI Draft suggestion */}
+          {draft && draft.status === "GENERATED" ? (
+            <div className="shrink-0 border-t bg-violet-50/50 px-4 py-3 dark:bg-violet-950/10">
+              <DraftChatBubble
+                draft={draft}
+                workspaceId={thread.workspaceId}
+                onDraftActioned={() => {
+                  setDraft(null);
+                  analysisRefreshRef.current?.();
+                }}
+              />
+            </div>
+          ) : null}
+
           {/* Reply bar - pinned at bottom */}
           <div className="shrink-0 border-t p-3">
             <p className="mb-2 text-[11px] text-muted-foreground">
@@ -325,7 +343,12 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
           </div>
 
           {/* AI Analysis */}
-          <AnalysisPanel threadId={thread.id} workspaceId={thread.workspaceId} />
+          <AnalysisPanel
+            threadId={thread.id}
+            workspaceId={thread.workspaceId}
+            onDraftAvailable={handleDraftAvailable}
+            refreshRef={analysisRefreshRef}
+          />
 
           {/* Timestamps */}
           <div>

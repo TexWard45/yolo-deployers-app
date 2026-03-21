@@ -11,7 +11,7 @@ import {
   SaveAnalysisInputSchema,
 } from "@shared/types";
 import type { Prisma } from "@shared/types/prisma";
-import { dispatchAnalyzeThreadWorkflow, dispatchSendOutboundMessageWorkflow } from "../temporal";
+import { dispatchAnalyzeThreadWorkflow } from "../temporal";
 
 export const agentRouter = createTRPCRouter({
   /** Get workspace AI agent config */
@@ -154,7 +154,7 @@ export const agentRouter = createTRPCRouter({
       return updatedDraft;
     }),
 
-  /** Approve a draft (marks it ready for sending) */
+  /** Approve a draft, send to channel, and record outbound message */
   approveDraft: publicProcedure
     .input(ApproveDraftSchema)
     .mutation(async ({ ctx, input }) => {
@@ -173,7 +173,18 @@ export const agentRouter = createTRPCRouter({
 
       const draft = await ctx.prisma.replyDraft.findUnique({
         where: { id: input.draftId },
-        include: { thread: true },
+        include: {
+          thread: {
+            include: {
+              messages: {
+                where: { direction: "INBOUND" },
+                orderBy: { createdAt: "desc" },
+                take: 1,
+                select: { metadata: true },
+              },
+            },
+          },
+        },
       });
 
       if (!draft || draft.thread.workspaceId !== input.workspaceId) {
@@ -184,21 +195,75 @@ export const agentRouter = createTRPCRouter({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Draft is not in GENERATED state" });
       }
 
-      const updated = await ctx.prisma.replyDraft.update({
+      // 1. Send to external channel (Discord)
+      let externalMessageId: string | null = null;
+
+      if (draft.thread.source === "DISCORD") {
+        const lastInbound = draft.thread.messages[0];
+        const rawPayload = (lastInbound?.metadata as Record<string, unknown> | null)?.rawPayload as Record<string, unknown> | null;
+        const channelId = (rawPayload?.channelId as string) ?? null;
+        const targetChannelId = draft.thread.externalThreadId.startsWith("synthetic-")
+          ? channelId
+          : draft.thread.externalThreadId;
+
+        if (targetChannelId) {
+          const botToken = process.env.DISCORD_BOT_TOKEN;
+          if (botToken) {
+            try {
+              const response = await fetch(
+                `https://discord.com/api/v10/channels/${targetChannelId}/messages`,
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization: `Bot ${botToken}`,
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({ content: draft.body }),
+                },
+              );
+
+              if (response.ok) {
+                const data = (await response.json()) as { id: string };
+                externalMessageId = data.id;
+                console.log(`[approveDraft] sent message ${data.id} to channel ${targetChannelId}`);
+              } else {
+                const error = await response.text().catch(() => "");
+                console.error(`[approveDraft] Discord API error (${response.status}): ${error}`);
+              }
+            } catch (error) {
+              console.error("[approveDraft] Discord send failed:", error);
+            }
+          }
+        }
+      }
+
+      // 2. Record outbound message
+      await ctx.prisma.threadMessage.create({
+        data: {
+          threadId: draft.threadId,
+          direction: "OUTBOUND",
+          body: draft.body,
+          externalMessageId,
+          metadata: { source: "ai-draft-approved", draftId: input.draftId },
+        },
+      });
+
+      // 3. Update thread status + timestamps
+      const now = new Date();
+      await ctx.prisma.supportThread.update({
+        where: { id: draft.threadId },
+        data: {
+          lastMessageAt: now,
+          lastOutboundAt: now,
+          status: "WAITING_CUSTOMER",
+        },
+      });
+
+      // 4. Mark draft as SENT
+      return ctx.prisma.replyDraft.update({
         where: { id: input.draftId },
-        data: { status: "APPROVED" },
+        data: { status: "SENT" },
       });
-
-      // Dispatch outbound send workflow — sends the message to Discord/channel
-      void dispatchSendOutboundMessageWorkflow({
-        draftId: input.draftId,
-        threadId: draft.threadId,
-        workspaceId: input.workspaceId,
-      }).catch((error: unknown) => {
-        console.error("[agent] Failed to dispatch send outbound workflow", error);
-      });
-
-      return updated;
     }),
 
   /** Dismiss a draft */

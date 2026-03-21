@@ -34,6 +34,7 @@ interface AnalysisPanelProps {
   threadId: string;
   workspaceId: string;
   onDraftAvailable?: (draft: AnalysisDraft | null) => void;
+  refreshRef?: React.RefObject<(() => void) | null>;
 }
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -43,7 +44,7 @@ const SEVERITY_STYLES: Record<string, string> = {
   low: "bg-blue-100 text-blue-800 hover:bg-blue-100",
 };
 
-export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable }: AnalysisPanelProps) {
+export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refreshRef }: AnalysisPanelProps) {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [loading, startTransition] = useTransition();
   const [triggering, startTriggering] = useTransition();
@@ -59,6 +60,13 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable }: Analy
       onDraftAvailable?.(draft);
     });
   }, [threadId, workspaceId, onDraftAvailable]);
+
+  // Expose refresh to parent
+  useEffect(() => {
+    if (refreshRef) {
+      refreshRef.current = fetchAnalysis;
+    }
+  }, [refreshRef, fetchAnalysis]);
 
   // Fetch on mount + poll every 10s until analysis arrives
   useEffect(() => {
@@ -209,6 +217,9 @@ export function DraftChatBubble({ draft, workspaceId, onDraftActioned }: DraftCh
       });
       if (result.success) {
         onDraftActioned();
+      } else {
+        console.error("[DraftChatBubble] send failed:", result.error);
+        alert(`Failed to send: ${result.error}`);
       }
     });
   };
