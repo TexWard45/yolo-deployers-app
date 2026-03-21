@@ -230,8 +230,8 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
       <div className="flex min-h-0 flex-1">
         {/* Left: Chat panel */}
         <div className="flex flex-1 flex-col border-r">
-          {/* Messages - scrollable */}
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          {/* ── Thread messages — ~65% height, scrolls independently ── */}
+          <div className="min-h-0 flex-[7] overflow-y-auto px-4 py-3">
             {thread.messages.length === 0 ? (
               <p className="py-12 text-center text-xs text-muted-foreground">
                 No messages yet.
@@ -243,11 +243,11 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                     key={segment.id}
                     className={`rounded-lg border ${
                       effectiveActiveReplySegmentId === segment.id
-                        ? "border-primary bg-accent/20"
+                        ? "border-primary/40 bg-primary/5"
                         : "border-border"
                     }`}
                   >
-                    <div className="flex items-center justify-between border-b px-3 py-2">
+                    <div className="flex items-center justify-between border-b px-3 py-1.5">
                       <button
                         type="button"
                         className="text-left"
@@ -258,21 +258,21 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                         </span>
                       </button>
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[10px] tabular-nums text-muted-foreground">
                           {segment.messages.length} msgs
                         </span>
                         <Button
                           type="button"
-                          size="sm"
+                          size="xs"
                           variant="ghost"
-                          className="h-6 px-2 text-[10px]"
+                          className="h-5 px-1.5 text-[10px]"
                           onClick={() => handleOpenInlineReply(segment.id)}
                         >
                           Reply
                         </Button>
                       </div>
                     </div>
-                    <div className="px-3 py-3">
+                    <div className="px-3 py-2.5">
                       {segment.messages.map((msg, msgIdx) => {
                         const isInbound = msg.direction === "INBOUND";
                         const isOutbound = msg.direction === "OUTBOUND";
@@ -283,23 +283,19 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
 
                         return (
                           <div key={msg.id} className={isReply ? "relative ml-8" : ""}>
-                            {/* Tree connector line */}
                             {isReply ? (
                               <>
-                                {/* Vertical line from parent */}
                                 <div className="absolute -left-4 -top-3 bottom-0 w-px bg-border" style={isLastReply ? { bottom: "50%" } : undefined} />
-                                {/* Horizontal branch */}
                                 <div className="absolute -left-4 top-4 h-px w-4 bg-border" />
                               </>
                             ) : null}
-                            {/* Vertical line starter below root avatar */}
                             {hasReplies ? (
                               <div className="absolute left-[13px] top-9 h-[calc(100%-36px)] w-px bg-border" style={{ zIndex: 0 }} />
                             ) : null}
 
-                            <div className={`relative flex gap-2.5 ${isReply ? "pt-3" : ""}`}>
+                            <div className={`relative flex gap-2.5 ${isReply ? "pt-2.5" : ""}`}>
                               <span
-                                className={`relative z-10 mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                                className={`relative z-10 mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                                   isInbound
                                     ? "bg-primary/10 text-primary"
                                     : isOutbound
@@ -314,9 +310,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                     : "S"}
                               </span>
 
-
-
-                              <div className="flex-1">
+                              <div className="flex-1 min-w-0">
                                 <div className="mb-0.5 flex items-center gap-2">
                                   <span className="text-xs font-semibold">
                                     {isInbound
@@ -330,7 +324,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                   </span>
                                 </div>
                                 <div
-                                  className={`rounded-lg border p-3 ${
+                                  className={`rounded-lg border p-2.5 ${
                                     isInbound
                                       ? "border-l-2 border-l-primary"
                                       : isOutbound
@@ -338,7 +332,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                         : "border-l-2 border-l-muted-foreground bg-muted/30"
                                   }`}
                                 >
-                                  <div className="whitespace-pre-wrap text-sm">
+                                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
                                     {renderMessageBody(
                                       msg.body,
                                       (msg.metadata as Record<string, unknown> | null)?.mentions as MentionsMap | undefined,
@@ -359,7 +353,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                         </p>
                         <div className="flex gap-2">
                           <textarea
-                            className="flex-1 resize-none rounded-md border bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                            className="flex-1 resize-none rounded-md border bg-background/50 px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
                             placeholder="Write a reply..."
                             rows={2}
                             value={inlineReplyDrafts[segment.id] ?? ""}
@@ -373,8 +367,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                           <div className="flex flex-col gap-1">
                             <Button
                               type="button"
-                              size="sm"
-                              className="h-7 px-2 text-[10px]"
+                              size="xs"
                               disabled={sending || !(inlineReplyDrafts[segment.id] ?? "").trim()}
                               onClick={() => handleSendInlineReply(segment.id)}
                             >
@@ -382,9 +375,8 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                             </Button>
                             <Button
                               type="button"
-                              size="sm"
+                              size="xs"
                               variant="ghost"
-                              className="h-7 px-2 text-[10px]"
                               disabled={sending}
                               onClick={() => setOpenInlineReplySegmentId(null)}
                             >
@@ -401,54 +393,53 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
             )}
           </div>
 
-          {/* AI Draft suggestion */}
-          {draft && draft.status === "GENERATED" ? (
-            <div className="shrink-0 border-t bg-violet-500/5 px-4 py-3">
-              <DraftChatBubble
-                draft={draft}
-                workspaceId={thread.workspaceId}
-                onDraftActioned={() => {
-                  setDraft(null);
-                  analysisRefreshRef.current?.();
-                  fetchThread(threadId);
-                }}
-              />
-            </div>
-          ) : null}
+          {/* ── Bottom panel: AI Draft + Reply — ~35% max, pinned at bottom ── */}
+          <div className="flex shrink-0 flex-col border-t bg-muted/20" style={{ maxHeight: "35%" }}>
+            {/* AI Draft suggestion — collapsible, scrollable if long */}
+            {draft && draft.status === "GENERATED" ? (
+              <div className="max-h-40 overflow-y-auto border-b bg-violet-500/5 px-4 py-2.5">
+                <DraftChatBubble
+                  draft={draft}
+                  workspaceId={thread.workspaceId}
+                  onDraftActioned={() => {
+                    setDraft(null);
+                    analysisRefreshRef.current?.();
+                    fetchThread(threadId);
+                  }}
+                />
+              </div>
+            ) : null}
 
-          {/* Reply bar - pinned at bottom */}
-          <div className="shrink-0 border-t p-3">
-            <p className="mb-2 text-[11px] text-muted-foreground">
-              Reply to{" "}
-              <span className="font-semibold text-foreground">
-                {activeSegment?.label ?? "latest thread"}
-              </span>
-            </p>
-            <div className="flex gap-2">
-              <textarea
-                className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="Write a reply..."
-                rows={2}
-                value={replyBody}
-                onChange={(e) => setReplyBody(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    handleSendReply();
-                  }
-                }}
-              />
-              <Button
-                size="sm"
-                className="self-end"
-                disabled={sending || !replyBody.trim()}
-                onClick={handleSendReply}
-              >
-                {sending ? "Sending..." : "Send"}
-              </Button>
+            {/* Reply bar — compact, always visible */}
+            <div className="px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <textarea
+                    className="w-full resize-none rounded-lg border bg-background/50 px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+                    placeholder={`Reply to ${activeSegment?.label ?? "latest thread"}...`}
+                    rows={1}
+                    value={replyBody}
+                    onChange={(e) => setReplyBody(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        handleSendReply();
+                      }
+                    }}
+                    style={{ fieldSizing: "content", maxHeight: "6rem" } as React.CSSProperties}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  disabled={sending || !replyBody.trim()}
+                  onClick={handleSendReply}
+                >
+                  {sending ? "..." : "Send"}
+                </Button>
+              </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                <kbd className="rounded border px-1 py-0.5 text-[9px]">Cmd+Enter</kbd> to send
+              </p>
             </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              Press Cmd+Enter to send
-            </p>
           </div>
         </div>
 
