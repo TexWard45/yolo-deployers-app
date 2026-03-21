@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { flushSync } from "react-dom";
 import { Telemetry } from "@shared/telemetry";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -80,6 +81,8 @@ export default function CustomerDemoPage() {
   const [jsError, setJsError] = useState<string | null>(null);
   const [flickerCount, setFlickerCount] = useState(0);
   const [isFlickering, setIsFlickering] = useState(false);
+  const [isCrashed, setIsCrashed] = useState(false);
+  const [crashMessage, setCrashMessage] = useState("");
 
   /* ── session id ── */
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -143,18 +146,21 @@ export default function CustomerDemoPage() {
 
   /* ── BUG #4: UI flicker simulation ── */
   const triggerFlicker = useCallback(() => {
-    setIsFlickering(true);
     setFlickerCount((c) => c + 1);
-    // rapid DOM updates visible in replay
+    // Use flushSync + recursive setTimeout so each DOM mutation is visible to
+    // rrweb's MutationObserver — React 18 batches setState in setInterval,
+    // which would collapse all updates into one and produce no visible flicker.
     let i = 0;
-    const interval = setInterval(() => {
-      setIsFlickering((v) => !v);
-      i++;
-      if (i > 6) {
-        clearInterval(interval);
-        setIsFlickering(false);
+    const step = () => {
+      if (i >= 10) {
+        flushSync(() => setIsFlickering(false));
+        return;
       }
-    }, 80);
+      flushSync(() => setIsFlickering((v) => !v));
+      i++;
+      setTimeout(step, 200);
+    };
+    setTimeout(step, 0);
   }, []);
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
@@ -242,7 +248,34 @@ export default function CustomerDemoPage() {
         </Card>
 
         {/* ── Step 2: Browse & Cart ── */}
-        <Card className="border-2 border-slate-200">
+        <Card className="border-2 border-slate-200 relative overflow-hidden">
+          {/* Crash overlay — visible in replay as a clear visual break */}
+          {isCrashed && (
+            <div className="absolute inset-0 z-20 bg-red-50 border-2 border-red-400 flex flex-col items-center justify-center gap-4 p-8 text-center">
+              <div className="w-14 h-14 rounded-full bg-red-100 border-2 border-red-400 flex items-center justify-center">
+                <Bug className="w-7 h-7 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-red-700 mb-1">Unhandled TypeError</h3>
+                <p className="font-mono text-sm text-red-600 bg-red-100 px-3 py-1 rounded border border-red-300 inline-block mb-3">
+                  {crashMessage}
+                </p>
+                <p className="text-xs text-red-500">
+                  at applyDiscount (customer-demo/page.tsx:43)<br />
+                  at handleApplyCoupon (customer-demo/page.tsx:133)<br />
+                  at HTMLButtonElement.onClick
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-400 text-red-600 hover:bg-red-100"
+                onClick={() => { setIsCrashed(false); setCrashMessage(""); }}
+              >
+                Dismiss Error
+              </Button>
+            </div>
+          )}
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
               <ShoppingCart className="w-5 h-5 text-violet-500" />
@@ -428,23 +461,19 @@ export default function CustomerDemoPage() {
                   <p className="font-semibold text-sm">Runtime Crash</p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Add items to cart then type coupon code &quot;CRASH&quot; and apply.
+                  Simulates an unhandled TypeError that breaks the checkout flow visually.
                 </p>
                 <Button
                   size="sm"
                   variant="destructive"
                   className="w-full"
                   onClick={() => {
-                    setCouponCode("CRASH");
-                    setActiveTab("cart");
-                    // auto-trigger after short delay so user sees it
-                    setTimeout(() => {
-                      try {
-                        applyDiscount(100, "CRASH");
-                      } catch (err: any) {
-                        setJsError(`💥 Runtime Error: ${err.message}`);
-                      }
-                    }, 300);
+                    try {
+                      applyDiscount(100, "CRASH");
+                    } catch (err: any) {
+                      setCrashMessage(err.message);
+                      setIsCrashed(true);
+                    }
                   }}
                 >
                   <Zap className="w-3 h-3 mr-1" /> Trigger Crash
