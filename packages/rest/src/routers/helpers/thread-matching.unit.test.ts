@@ -230,8 +230,10 @@ test("time-proximity: disabled when recencyWindowMs is 0", () => {
         externalThreadId: "ext-1",
         issueFingerprint: "who write trash code setting page",
         summary: null,
+        status: "WAITING_REVIEW",
         lastMessageAt: new Date(),
         lastInboundAt: new Date(Date.now() - 3 * 60 * 1000),
+        lastOutboundAt: null,
       },
     ],
   });
