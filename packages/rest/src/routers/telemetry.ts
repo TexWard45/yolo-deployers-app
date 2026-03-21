@@ -3,6 +3,16 @@ import { TRPCError } from "@trpc/server";
 import { createTRPCRouter, publicProcedure, protectedProcedure } from "../init";
 import type { Prisma } from "@shared/types/prisma";
 
+/** Safely extract the error message from an rrweb Custom Event payload. */
+function extractErrorMessage(payload: Record<string, unknown>): string {
+  const msg = (payload as any)?.data?.payload?.message;
+  return typeof msg === "string" && msg.length > 0 ? msg : "System Error";
+}
+
+/** Maximum number of session IDs resolved from identity lookup.
+ *  Prevents unbounded Prisma IN clauses for high-volume customers. */
+const IDENTITY_SESSION_CAP = 500;
+
 const ReplayEventSchema = z.object({
   type: z.string(),
   timestamp: z.coerce.date(),
@@ -35,11 +45,28 @@ export const telemetryRouter = createTRPCRouter({
         });
       }
 
+      // rrweb Custom Events have numeric type 5 in the raw payload.
+      const isRrwebCustomError = (payload: Record<string, unknown>) =>
+        (payload as any)?.type === 5 && (payload as any)?.data?.tag === "system_error";
+
+      const errorEvents = events.filter(
+        (e) => e.type === "rrweb" && isRrwebCustomError(e.payload)
+      );
+
       await ctx.prisma.$transaction([
         ctx.prisma.session.upsert({
           where: { id: sessionId },
-          update: {},
-          create: { id: sessionId, userId: resolvedUserId, userAgent },
+          update:
+            errorEvents.length > 0
+              ? { hasError: true, errorCount: { increment: errorEvents.length } }
+              : {},
+          create: {
+            id: sessionId,
+            userId: resolvedUserId,
+            userAgent,
+            hasError: errorEvents.length > 0,
+            errorCount: errorEvents.length,
+          },
         }),
         ctx.prisma.replayEvent.createMany({
           data: events.map((event) => ({
@@ -52,6 +79,19 @@ export const telemetryRouter = createTRPCRouter({
             route: event.route,
           })),
         }),
+        ...(errorEvents.length > 0
+          ? [
+              ctx.prisma.sessionTimeline.createMany({
+                data: errorEvents.map((e) => ({
+                  sessionId,
+                  type: "ERROR",
+                  content: extractErrorMessage(e.payload),
+                  metadata: e.payload as Prisma.InputJsonValue,
+                  timestamp: e.timestamp,
+                })),
+              }),
+            ]
+          : []),
       ]);
 
       return { ingested: events.length, sessionId };
@@ -60,17 +100,18 @@ export const telemetryRouter = createTRPCRouter({
   listSessions: protectedProcedure
     .input(
       z.object({
+        page: z.number().int().min(1).default(1),
         limit: z.number().int().min(1).max(100).default(20),
-        cursor: z.string().optional(),
         customerId: z.string().optional(),
         customerEmail: z.string().optional(),
         customerPhone: z.string().optional(),
         startDate: z.coerce.date().optional(),
         endDate: z.coerce.date().optional(),
+        hasError: z.boolean().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { limit, cursor, customerId, customerEmail, customerPhone, startDate, endDate } = input;
+      const { page, limit, customerId, customerEmail, customerPhone, startDate, endDate, hasError } = input;
 
       // Resolve session IDs by searching user.identify event payloads
       let sessionIdFilter: string[] | undefined;
@@ -86,36 +127,34 @@ export const telemetryRouter = createTRPCRouter({
           distinct: ["sessionId"],
         });
         sessionIdFilter = matchingEvents.map((e) => e.sessionId);
-        if (sessionIdFilter.length === 0) return { sessions: [], nextCursor: undefined };
+        if (sessionIdFilter.length === 0) return { sessions: [], total: 0, page, totalPages: 0 };
       }
 
-      const sessions = await ctx.prisma.session.findMany({
-        take: limit + 1,
-        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-        where: {
-          ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
-          ...(startDate ?? endDate
-            ? {
-                createdAt: {
-                  ...(startDate ? { gte: startDate } : {}),
-                  ...(endDate ? { lte: endDate } : {}),
-                },
-              }
-            : {}),
-        },
-        orderBy: { createdAt: "desc" },
-        include: {
-          _count: { select: { events: true } },
-        },
-      });
+      const where = {
+        ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
+        ...(hasError !== undefined ? { hasError } : {}),
+        ...(startDate ?? endDate
+          ? {
+              createdAt: {
+                ...(startDate ? { gte: startDate } : {}),
+                ...(endDate ? { lte: endDate } : {}),
+              },
+            }
+          : {}),
+      };
 
-      let nextCursor: string | undefined;
-      if (sessions.length > limit) {
-        const last = sessions.pop();
-        nextCursor = last?.id;
-      }
+      const [total, sessions] = await ctx.prisma.$transaction([
+        ctx.prisma.session.count({ where }),
+        ctx.prisma.session.findMany({
+          where,
+          skip: (page - 1) * limit,
+          take: limit,
+          orderBy: { createdAt: "desc" },
+          include: { _count: { select: { events: true } } },
+        }),
+      ]);
 
-      return { sessions, nextCursor };
+      return { sessions, total, page, totalPages: Math.ceil(total / limit) };
     }),
 
   getSessionReplay: protectedProcedure
@@ -173,5 +212,110 @@ export const telemetryRouter = createTRPCRouter({
         : [];
 
       return { sessions: [...sessions, ...additionalSessions] };
+    }),
+
+  getExactErrorMoment: protectedProcedure
+    .input(
+      z.object({
+        userId: z.string().optional(),
+        customerEmail: z.string().optional(),
+        customerPhone: z.string().optional(),
+        startTime: z.coerce.date().optional(),
+        endTime: z.coerce.date().optional(),
+      }).refine(
+        (d) => d.userId ?? d.customerEmail ?? d.customerPhone,
+        { message: "Provide at least one of: userId, customerEmail, customerPhone" }
+      )
+    )
+    .query(async ({ ctx, input }) => {
+      const now = new Date();
+      const {
+        userId,
+        customerEmail,
+        customerPhone,
+        startTime = new Date(now.getTime() - 86_400_000),
+        endTime = now,
+      } = input;
+
+      // ── Step 1: resolve all identity fields via user.identify event payloads ──
+      // Session.userId is null for anonymous SDK sessions (the SDK doesn't send
+      // userId in the ingest payload — identity lives only in user.identify events).
+      // So we treat userId, customerEmail, and customerPhone identically: all are
+      // matched against the user.identify ReplayEvent payload JSON.
+      const identityConditions: { payload: { path: string[]; string_contains: string } }[] = [];
+      if (userId)        identityConditions.push({ payload: { path: ["id"],    string_contains: userId } });
+      if (customerEmail) identityConditions.push({ payload: { path: ["email"], string_contains: customerEmail } });
+      if (customerPhone) identityConditions.push({ payload: { path: ["phone"], string_contains: customerPhone } });
+
+      // Cap at IDENTITY_SESSION_CAP to prevent unbounded Prisma IN clauses.
+      // Note: no workspace-level tenancy is available on ctx yet — this is a
+      // known limitation. Add ctx.workspaceId scoping here once the context
+      // exposes it.
+      const identityEvents = await ctx.prisma.replayEvent.findMany({
+        where: { type: "user.identify", OR: identityConditions },
+        select: { sessionId: true },
+        distinct: ["sessionId"],
+        take: IDENTITY_SESSION_CAP,
+      });
+
+      // Also include sessions where Session.userId directly matches (authenticated flows).
+      let sessionIdFilter: string[] = identityEvents.map((e) => e.sessionId);
+      if (userId) {
+        const directMatches = await ctx.prisma.session.findMany({
+          where: { userId },
+          select: { id: true },
+          take: IDENTITY_SESSION_CAP,
+        });
+        sessionIdFilter = [...new Set([...sessionIdFilter, ...directMatches.map((s) => s.id)])];
+      }
+
+      if (sessionIdFilter.length === 0) return { found: false as const };
+
+      // ── Steps 2+3 combined: find the target error timeline and its session in one query ──
+      // Filter on SessionTimeline.timestamp (the actual error moment), not session.createdAt,
+      // so sessions that started before the window but errored inside it are matched.
+      // Include the session + first ReplayEvent in the same round-trip to avoid a 3rd query.
+      const errorTimeline = await ctx.prisma.sessionTimeline.findFirst({
+        where: {
+          sessionId: { in: sessionIdFilter },
+          type: "ERROR",
+          timestamp: { gte: startTime, lte: endTime },
+        },
+        orderBy: { timestamp: "desc" },
+        select: {
+          timestamp: true,
+          content: true,
+          session: {
+            select: {
+              id: true,
+              errorCount: true,
+              createdAt: true,
+              // First ReplayEvent anchors the rrweb-player 0:00 mark (client-side timestamp,
+              // not server ingestion time — used for sub-second offset calculation).
+              events: {
+                orderBy: { sequence: "asc" },
+                take: 1,
+                select: { timestamp: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!errorTimeline?.session) return { found: false as const };
+
+      const { session } = errorTimeline;
+      const firstEventTime =
+        session.events[0]?.timestamp.getTime() ?? session.createdAt.getTime();
+      // Use the exact errorTimeline found above — not the first error in the session.
+      const offsetMs = Math.max(0, errorTimeline.timestamp.getTime() - firstEventTime);
+
+      return {
+        found:        true as const,
+        sessionId:    session.id,
+        offsetMs,
+        errorContent: errorTimeline.content,
+        errorCount:   session.errorCount,
+      };
     }),
 });
