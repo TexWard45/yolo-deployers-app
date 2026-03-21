@@ -222,6 +222,9 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
   sentryOrgSlug: z.string().optional(),
   sentryProjectSlug: z.string().optional(),
   sentryAuthToken: z.string().optional(),
+  sentryProjectSlugs: z.array(z.string()).optional(),
+  // A/B testing
+  investigationABEnabled: z.boolean().optional(),
   // Linear integration
   linearApiKey: z.string().optional(),
   linearTeamId: z.string().optional(),
@@ -229,6 +232,16 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
 });
 
 export type UpdateWorkspaceAgentConfigInput = z.infer<typeof UpdateWorkspaceAgentConfigSchema>;
+
+export const TestSentryConnectionSchema = z.object({
+  workspaceId: z.string(),
+  userId: z.string(),
+  sentryOrgSlug: z.string().min(1),
+  sentryProjectSlug: z.string().min(1),
+  sentryAuthToken: z.string().min(1),
+});
+
+export type TestSentryConnectionInput = z.infer<typeof TestSentryConnectionSchema>;
 
 // ── Discord Channel Config ────────────────────────────────────────
 export const DiscordChannelConfigSchema = z.object({

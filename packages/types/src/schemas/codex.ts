@@ -98,6 +98,13 @@ export const CodexChunkContextSchema = z.object({
 
 export type CodexChunkContextInput = z.infer<typeof CodexChunkContextSchema>;
 
+export const CodexBatchContextSchema = z.object({
+  chunkIds: z.array(z.string()).min(1).max(10),
+  maxSiblings: z.number().int().min(0).max(5).default(3),
+});
+
+export type CodexBatchContextInput = z.infer<typeof CodexBatchContextSchema>;
+
 // ── Sync Logs ───────────────────────────────────────────────────────
 
 export const CodexSyncLogsQuerySchema = z.object({
@@ -114,3 +121,85 @@ export const CodexStatsQuerySchema = z.object({
 });
 
 export type CodexStatsQueryInput = z.infer<typeof CodexStatsQuerySchema>;
+
+// ── Agent Grep ─────────────────────────────────────────────────────
+
+export const AgentGrepSummarizeInputSchema = z.object({
+  taskDescription: z.string().min(1).max(5000),
+});
+
+export type AgentGrepSummarizeInput = z.infer<typeof AgentGrepSummarizeInputSchema>;
+
+export const AgentGrepSummarizeResultSchema = z.object({
+  summary: z.string(),
+  semanticQueries: z.array(z.string()).min(1).max(5),
+  keywords: z.array(z.string()).max(10),
+  symbolNames: z.array(z.string()).max(10),
+  languages: z.array(z.string()).optional(),
+  chunkTypes: z.array(CodexChunkTypeSchema).optional(),
+});
+
+export type AgentGrepSummarizeResult = z.infer<typeof AgentGrepSummarizeResultSchema>;
+
+export const AgentGrepContextCheckInputSchema = z.object({
+  workspaceId: z.string(),
+  repositoryId: z.string(),
+});
+
+export type AgentGrepContextCheckInput = z.infer<typeof AgentGrepContextCheckInputSchema>;
+
+export const AgentGrepContextCheckResultSchema = z.object({
+  ready: z.boolean(),
+  repositoryExists: z.boolean(),
+  displayName: z.string().nullable(),
+  totalChunks: z.number(),
+  embeddedChunks: z.number(),
+  embeddingCoverage: z.number(),
+  syncStatus: z.string().nullable(),
+});
+
+export type AgentGrepContextCheckResult = z.infer<typeof AgentGrepContextCheckResultSchema>;
+
+export const AgentGrepInputSchema = z.object({
+  workspaceId: z.string(),
+  repositoryId: z.string(),
+  taskDescription: z.string().min(1).max(5000),
+  maxResults: z.number().int().min(1).max(100).default(20),
+  rerank: z.boolean().default(false),
+});
+
+export type AgentGrepInput = z.infer<typeof AgentGrepInputSchema>;
+
+export const AgentGrepResultSchema = z.object({
+  summary: AgentGrepSummarizeResultSchema,
+  context: AgentGrepContextCheckResultSchema,
+  chunks: z.array(
+    z.object({
+      id: z.string(),
+      content: z.string(),
+      symbolName: z.string().nullable(),
+      chunkType: z.string(),
+      lineStart: z.number(),
+      lineEnd: z.number(),
+      filePath: z.string(),
+      language: z.string(),
+      lastAuthor: z.string().nullable(),
+      lastCommitSha: z.string().nullable(),
+      lastCommitAt: z.coerce.date().nullable(),
+      repoId: z.string(),
+      displayName: z.string(),
+      sourceType: z.string(),
+      score: z.number(),
+      matchChannel: z.string(),
+    }),
+  ),
+  totalFound: z.number(),
+  timing: z.object({
+    summarizeMs: z.number(),
+    contextCheckMs: z.number(),
+    searchMs: z.number(),
+    totalMs: z.number(),
+  }),
+});
+
+export type AgentGrepResult = z.infer<typeof AgentGrepResultSchema>;

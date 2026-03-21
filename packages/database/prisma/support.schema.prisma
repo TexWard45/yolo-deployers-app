@@ -87,6 +87,10 @@ model WorkspaceAgentConfig {
   sentryOrgSlug      String?
   sentryProjectSlug  String?
   sentryAuthToken    String?
+  sentryProjectSlugs String[]       // multi-project support (takes precedence over sentryProjectSlug)
+
+  // A/B testing for investigation quality
+  investigationABEnabled Boolean @default(false)
 
   // Linear integration (per-workspace)
   linearApiKey        String?
@@ -168,4 +172,26 @@ model TriageAction {
 
   @@index([threadId])
   @@index([workspaceId, createdAt])
+}
+
+// ── A/B Testing for Investigation Quality ──────────────────────────
+
+model AnalysisABLog {
+  id              String   @id @default(cuid())
+  threadId        String
+  analysisId      String
+  workspaceId     String
+  phase           String   // "sentry" | "rerank" | "context_expansion" | "combined"
+
+  controlResult   Json?    // result without the feature
+  variantResult   Json?    // result with the feature
+
+  latencyMs       Int?     // feature-specific latency
+  tokenDelta      Int?     // token count difference (Phase 3)
+  chunkOverlap    Float?   // % overlap between control/variant top-5 (Phase 2)
+
+  createdAt       DateTime @default(now())
+
+  @@index([workspaceId, phase, createdAt])
+  @@index([threadId])
 }

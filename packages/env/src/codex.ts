@@ -20,7 +20,8 @@ export const codexEnv = createEnv({
       .enum(["true", "false"])
       .default("false")
       .transform((v) => v === "true"),
-    CODEX_RERANKER_MODEL: z.string().optional(),
+    CODEX_RERANKER_MODEL: z.string().default("rerank-v3.5"),
+    COHERE_API_KEY: z.string().optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

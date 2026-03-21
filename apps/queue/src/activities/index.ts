@@ -9,6 +9,7 @@ export {
   getThreadAnalysisContext,
   checkSufficiencyActivity,
   searchCodebaseActivity,
+  expandChunkContextActivity,
   fetchSentryErrorsActivity,
   generateAnalysisActivity,
   generateDraftReplyActivity,

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { updateAgentConfigAction } from "@/actions/agent-settings";
+import { updateAgentConfigAction, testSentryConnectionAction } from "@/actions/agent-settings";
 
 interface SettingsFormProps {
   workspaceId: string;
@@ -16,6 +16,11 @@ interface SettingsFormProps {
     maxClarifications: number;
     tone: string | null;
     systemPrompt: string | null;
+    sentryOrgSlug: string | null;
+    sentryProjectSlug: string | null;
+    hasSentryToken: boolean;
+    linearTeamId: string | null;
+    hasLinearKey: boolean;
   };
 }
 
@@ -27,13 +32,42 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
   const [maxClarifications, setMaxClarifications] = useState(config.maxClarifications);
   const [tone, setTone] = useState(config.tone ?? "");
   const [systemPrompt, setSystemPrompt] = useState(config.systemPrompt ?? "");
+
+  // Sentry
+  const [sentryOrgSlug, setSentryOrgSlug] = useState(config.sentryOrgSlug ?? "");
+  const [sentryProjectSlug, setSentryProjectSlug] = useState(config.sentryProjectSlug ?? "");
+  const [sentryAuthToken, setSentryAuthToken] = useState("");
+  const [sentryConnected, setSentryConnected] = useState(config.hasSentryToken);
+  const [sentryTesting, startSentryTest] = useTransition();
+  const [sentryTestResult, setSentryTestResult] = useState<{ ok: boolean; projectName?: string; error?: string } | null>(null);
+
+  // Linear
+  const [linearApiKey, setLinearApiKey] = useState("");
+  const [linearTeamId, setLinearTeamId] = useState(config.linearTeamId ?? "");
+  const [linearConnected] = useState(config.hasLinearKey);
+
   const [saving, startSaving] = useTransition();
   const [saved, setSaved] = useState(false);
+
+  const handleTestSentry = () => {
+    if (!sentryOrgSlug || !sentryProjectSlug || (!sentryAuthToken && !sentryConnected)) return;
+
+    setSentryTestResult(null);
+    startSentryTest(async () => {
+      const result = await testSentryConnectionAction({
+        workspaceId,
+        sentryOrgSlug,
+        sentryProjectSlug,
+        sentryAuthToken: sentryAuthToken || "existing",
+      });
+      setSentryTestResult(result);
+    });
+  };
 
   const handleSave = () => {
     setSaved(false);
     startSaving(async () => {
-      const result = await updateAgentConfigAction({
+      const updates: Parameters<typeof updateAgentConfigAction>[0] = {
         workspaceId,
         enabled,
         autoReply,
@@ -42,9 +76,19 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
         maxClarifications,
         tone: tone || undefined,
         systemPrompt: systemPrompt || undefined,
-      });
+        sentryOrgSlug: sentryOrgSlug || undefined,
+        sentryProjectSlug: sentryProjectSlug || undefined,
+      };
+
+      // Only send tokens if user entered new ones
+      if (sentryAuthToken) updates.sentryAuthToken = sentryAuthToken;
+      if (linearApiKey) updates.linearApiKey = linearApiKey;
+      if (linearTeamId) updates.linearTeamId = linearTeamId;
+
+      const result = await updateAgentConfigAction(updates);
       if (result.success) {
         setSaved(true);
+        if (sentryAuthToken) setSentryConnected(true);
         setTimeout(() => setSaved(false), 2000);
       }
     });
@@ -194,6 +238,129 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
             rows={3}
             placeholder="You are a helpful support agent for..."
             className="w-full resize-none rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Sentry Integration */}
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm font-semibold">Sentry Integration</Label>
+            <p className="text-xs text-muted-foreground">
+              Connect your Sentry project so the AI can reference runtime errors when investigating issues
+            </p>
+          </div>
+          {sentryConnected ? (
+            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">Not configured</Badge>
+          )}
+        </div>
+
+        <div>
+          <Label className="text-sm">Organization Slug</Label>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Found in your Sentry URL: sentry.io/organizations/<strong>your-org</strong>/
+          </p>
+          <input
+            type="text"
+            value={sentryOrgSlug}
+            onChange={(e) => setSentryOrgSlug(e.target.value)}
+            placeholder="my-org"
+            className="w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <Label className="text-sm">Project Slug</Label>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Found in Settings &gt; Projects &gt; your project name
+          </p>
+          <input
+            type="text"
+            value={sentryProjectSlug}
+            onChange={(e) => setSentryProjectSlug(e.target.value)}
+            placeholder="my-nextjs-app"
+            className="w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <Label className="text-sm">Auth Token</Label>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Create at Settings &gt; Auth Tokens. Needs project:read, event:read scopes.
+            {sentryConnected ? " Leave blank to keep existing token." : ""}
+          </p>
+          <input
+            type="password"
+            value={sentryAuthToken}
+            onChange={(e) => setSentryAuthToken(e.target.value)}
+            placeholder={sentryConnected ? "********** (saved)" : "sntrys_xxx..."}
+            className="w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleTestSentry}
+            disabled={sentryTesting || !sentryOrgSlug || !sentryProjectSlug || (!sentryAuthToken && !sentryConnected)}
+          >
+            {sentryTesting ? "Testing..." : "Test Connection"}
+          </Button>
+          {sentryTestResult?.ok ? (
+            <span className="text-sm text-emerald-600">
+              Connected to &quot;{sentryTestResult.projectName}&quot;
+            </span>
+          ) : sentryTestResult ? (
+            <span className="text-sm text-red-600">{sentryTestResult.error}</span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Linear Integration */}
+      <div className="rounded-lg border p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <Label className="text-sm font-semibold">Linear Integration</Label>
+            <p className="text-xs text-muted-foreground">
+              Connect Linear so the AI can automatically triage issues into your project board
+            </p>
+          </div>
+          {linearConnected ? (
+            <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+          ) : (
+            <Badge variant="outline" className="text-muted-foreground">Not configured</Badge>
+          )}
+        </div>
+
+        <div>
+          <Label className="text-sm">Team ID</Label>
+          <p className="mb-1 text-xs text-muted-foreground">
+            The Linear team ID where issues will be created
+          </p>
+          <input
+            type="text"
+            value={linearTeamId}
+            onChange={(e) => setLinearTeamId(e.target.value)}
+            placeholder="TEAM-123"
+            className="w-full rounded-md border px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div>
+          <Label className="text-sm">API Key</Label>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Create at linear.app &gt; Settings &gt; API. {linearConnected ? "Leave blank to keep existing key." : ""}
+          </p>
+          <input
+            type="password"
+            value={linearApiKey}
+            onChange={(e) => setLinearApiKey(e.target.value)}
+            placeholder={linearConnected ? "********** (saved)" : "lin_api_xxx..."}
+            className="w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
       </div>

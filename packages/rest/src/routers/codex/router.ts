@@ -9,12 +9,18 @@ import {
   CodexSearchSchema,
   CodexChunkQuerySchema,
   CodexChunkContextSchema,
+  CodexBatchContextSchema,
   CodexSyncLogsQuerySchema,
   CodexStatsQuerySchema,
+  AgentGrepSummarizeInputSchema,
+  AgentGrepContextCheckInputSchema,
+  AgentGrepInputSchema,
 } from "@shared/types";
 import { hybridSearch } from "./search";
 import type { EmbedQueryFn } from "./search";
 import { createCronSchedule, updateCronSchedule, deleteCronSchedule } from "./schedule";
+import { llmSummarizeTask } from "./agent-grep.prompt";
+import { checkRepositoryContext, grepRelevantCode } from "./agent-grep";
 import { randomBytes } from "node:crypto";
 
 function generateWebhookSecret(): string {
@@ -290,6 +296,102 @@ const chunkRouter = createTRPCRouter({
         after: surrounding.slice(currentIndex + 1, endIdx + 1),
       };
     }),
+
+  batchContext: publicProcedure
+    .input(CodexBatchContextSchema)
+    .query(async ({ ctx, input }) => {
+      // Fetch all requested chunks with their parent info in one query
+      const chunks = await ctx.prisma.codexChunk.findMany({
+        where: { id: { in: input.chunkIds } },
+        select: {
+          id: true,
+          parentChunkId: true,
+          fileId: true,
+          symbolName: true,
+          chunkType: true,
+          content: true,
+          lineStart: true,
+          lineEnd: true,
+          file: { select: { filePath: true, language: true } },
+        },
+      });
+
+      // Collect all parent chunk IDs + file IDs for batch fetching
+      const parentIds = new Set<string>();
+      const fileIds = new Set<string>();
+      for (const chunk of chunks) {
+        if (chunk.parentChunkId) parentIds.add(chunk.parentChunkId);
+        fileIds.add(chunk.fileId);
+      }
+
+      // Batch fetch parents + siblings in parallel
+      const [parents, siblings] = await Promise.all([
+        parentIds.size > 0
+          ? ctx.prisma.codexChunk.findMany({
+              where: { id: { in: [...parentIds] } },
+              select: {
+                id: true,
+                symbolName: true,
+                chunkType: true,
+                content: true,
+                lineStart: true,
+                lineEnd: true,
+                file: { select: { filePath: true, language: true } },
+              },
+            })
+          : Promise.resolve([]),
+        parentIds.size > 0
+          ? ctx.prisma.codexChunk.findMany({
+              where: {
+                parentChunkId: { in: [...parentIds] },
+                id: { notIn: input.chunkIds },
+              },
+              select: {
+                id: true,
+                parentChunkId: true,
+                symbolName: true,
+                chunkType: true,
+                content: true,
+                lineStart: true,
+                lineEnd: true,
+                file: { select: { filePath: true, language: true } },
+              },
+              orderBy: { lineStart: "asc" },
+            })
+          : Promise.resolve([]),
+      ]);
+
+      const parentMap = new Map(parents.map((p) => [p.id, p]));
+      const siblingsByParent = new Map<string, typeof siblings>();
+      for (const sib of siblings) {
+        if (!sib.parentChunkId) continue;
+        const list = siblingsByParent.get(sib.parentChunkId) ?? [];
+        list.push(sib);
+        siblingsByParent.set(sib.parentChunkId, list);
+      }
+
+      // Build result per chunk
+      const result: Record<string, {
+        parent: typeof parents[number] | null;
+        siblings: typeof siblings;
+      }> = {};
+
+      for (const chunk of chunks) {
+        if (!chunk.parentChunkId) {
+          result[chunk.id] = { parent: null, siblings: [] };
+          continue;
+        }
+
+        const parent = parentMap.get(chunk.parentChunkId) ?? null;
+        const allSiblings = siblingsByParent.get(chunk.parentChunkId) ?? [];
+        result[chunk.id] = {
+          parent,
+          siblings: allSiblings.slice(0, input.maxSiblings),
+        };
+      }
+
+      return result;
+    }),
 });
 
 // ── Sync Sub-Router ──────────────────────────────────────────────────
@@ -306,12 +408,44 @@ const syncRouter = createTRPCRouter({
     }),
 });
 
+// ── Agent Sub-Router ────────────────────────────────────────────────
+
+const agentRouter = createTRPCRouter({
+  summarize: publicProcedure
+    .input(AgentGrepSummarizeInputSchema)
+    .mutation(async ({ input }) => {
+      const { client } = getEmbedClient();
+      const result = await llmSummarizeTask(input.taskDescription, client);
+      if (!result) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to summarize task — LLM call timed out or failed",
+        });
+      }
+      return result;
+    }),
+
+  checkContext: publicProcedure
+    .input(AgentGrepContextCheckInputSchema)
+    .query(({ ctx, input }) => {
+      return checkRepositoryContext(ctx.prisma, input);
+    }),
+
+  grepRelevantCode: publicProcedure
+    .input(AgentGrepInputSchema)
+    .mutation(({ ctx, input }) => {
+      const { client } = getEmbedClient();
+      return grepRelevantCode(ctx.prisma, input, embedQuery, client);
+    }),
+});
+
 // ── Main Codex Router ────────────────────────────────────────────────
 
 export const codexRouter = createTRPCRouter({
   repository: repositoryRouter,
   chunk: chunkRouter,
   sync: syncRouter,
+  agent: agentRouter,
 
   search: publicProcedure
     .input(CodexSearchSchema)
