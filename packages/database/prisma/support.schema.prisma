@@ -26,6 +26,23 @@ enum DraftType {
   MANUAL
 }
 
+enum FixPrRunStatus {
+  QUEUED
+  RUNNING
+  WAITING_REVIEW
+  PASSED
+  FAILED
+  CANCELLED
+}
+
+enum FixPrIterationStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+  CANCELLED
+}
+
 // ── Support Domain Models ────────────────────────────────────────────
 
 model ChannelConnection {
@@ -87,11 +104,27 @@ model WorkspaceAgentConfig {
   sentryOrgSlug      String?
   sentryProjectSlug  String?
   sentryAuthToken    String?
+  sentryProjectSlugs String[]       // multi-project support (takes precedence over sentryProjectSlug)
+
+  // A/B testing for investigation quality
+  investigationABEnabled Boolean @default(false)
 
   // Linear integration (per-workspace)
   linearApiKey        String?
   linearTeamId        String?
   linearDefaultLabels String[]
+
+  // GitHub integration (per-workspace)
+  githubToken         String?
+  githubDefaultOwner  String?
+  githubDefaultRepo   String?
+  githubBaseBranch    String?  @default("main")
+
+  // Codex fix loop settings
+  codexFixModel           String?
+  codexReviewModel        String?
+  codexFixMaxIterations   Int      @default(3)
+  codexRequiredCheckNames String[] @default([])
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -134,6 +167,7 @@ model ThreadAnalysis {
 
   drafts            ReplyDraft[]
   triageActions     TriageAction[]
+  fixPrRun          FixPrRun?
   latestForThread   SupportThread? @relation("latestAnalysis")
 
   @@index([threadId, createdAt])
@@ -146,6 +180,7 @@ enum TriageActionType {
   CREATE_TICKET
   UPDATE_TICKET
   GENERATE_SPEC
+  GENERATE_FIX_PR
 }
 
 model TriageAction {
@@ -168,4 +203,79 @@ model TriageAction {
 
   @@index([threadId])
   @@index([workspaceId, createdAt])
+}
+
+model FixPrRun {
+  id                String         @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  threadId          String
+  thread            SupportThread  @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  analysisId        String         @unique
+  analysis          ThreadAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  createdById       String
+  createdBy         User           @relation(fields: [createdById], references: [id])
+  status            FixPrRunStatus @default(QUEUED)
+  currentStage      String         @default("QUEUED")
+  parentThreadId    String?
+  prUrl             String?
+  prNumber          Int?
+  branchName        String?
+  headSha           String?
+  iterationCount    Int            @default(0)
+  maxIterations     Int            @default(3)
+  lastError         String?
+  summary           String?
+  rcaSummary        String?
+  rcaConfidence     Float?
+  rcaSignals        Json?
+  metadata          Json?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  iterations        FixPrIteration[]
+
+  @@index([workspaceId, createdAt])
+  @@index([threadId])
+}
+
+model FixPrIteration {
+  id              String               @id @default(cuid())
+  runId           String
+  run             FixPrRun             @relation(fields: [runId], references: [id], onDelete: Cascade)
+  iteration       Int
+  status          FixPrIterationStatus @default(QUEUED)
+  fixPlan         Json?
+  reviewFindings  Json?
+  checkResults    Json?
+  appliedFiles    Json?
+  startedAt       DateTime             @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([runId, iteration])
+  @@index([runId, createdAt])
+}
+
+// ── A/B Testing for Investigation Quality ──────────────────────────
+
+model AnalysisABLog {
+  id              String   @id @default(cuid())
+  threadId        String
+  analysisId      String
+  workspaceId     String
+  phase           String   // "sentry" | "rerank" | "context_expansion" | "combined"
+
+  controlResult   Json?    // result without the feature
+  variantResult   Json?    // result with the feature
+
+  latencyMs       Int?     // feature-specific latency
+  tokenDelta      Int?     // token count difference (Phase 3)
+  chunkOverlap    Float?   // % overlap between control/variant top-5 (Phase 2)
+
+  createdAt       DateTime @default(now())
+
+  @@index([workspaceId, phase, createdAt])
+  @@index([threadId])
 }

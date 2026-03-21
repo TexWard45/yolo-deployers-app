@@ -53,6 +53,7 @@ model SupportThread {
   drafts        ReplyDraft[]
   analyses      ThreadAnalysis[]
   triageActions TriageAction[]
+  fixPrRuns     FixPrRun[]
 
   @@unique([workspaceId, source, externalThreadId])
   @@index([workspaceId, status, updatedAt])

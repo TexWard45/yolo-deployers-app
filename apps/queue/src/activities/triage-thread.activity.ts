@@ -75,11 +75,12 @@ export async function getTriageContext(
   });
 
   const sentryConfig: SentryConfig | null =
-    config?.sentryOrgSlug && config.sentryProjectSlug && config.sentryAuthToken
+    config?.sentryOrgSlug && (config.sentryProjectSlug || (config.sentryProjectSlugs && config.sentryProjectSlugs.length > 0)) && config.sentryAuthToken
       ? {
           orgSlug: config.sentryOrgSlug,
-          projectSlug: config.sentryProjectSlug,
+          projectSlug: config.sentryProjectSlug ?? config.sentryProjectSlugs[0]!,
           authToken: config.sentryAuthToken,
+          projectSlugs: config.sentryProjectSlugs.length > 0 ? config.sentryProjectSlugs : undefined,
         }
       : null;
 
@@ -130,30 +131,74 @@ export async function triageSearchCodebaseActivity(params: {
 }): Promise<unknown | null> {
   if (params.codexRepositoryIds.length === 0) return null;
 
-  const url = `${queueEnv.WEB_APP_URL}/api/rest/codex/search`;
+  const agentGrepUrl = `${queueEnv.WEB_APP_URL}/api/rest/codex/agent/grep`;
 
   try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        workspaceId: params.workspaceId,
-        query: params.analysisQuery.slice(0, 500),
-        repositoryIds: params.codexRepositoryIds,
-        limit: 5,
-        channels: { semantic: true, keyword: true, symbol: true },
-      }),
-    });
+    // Call agent-grep for each repository in parallel
+    const results = await Promise.all(
+      params.codexRepositoryIds.map(async (repositoryId) => {
+        const response = await fetch(agentGrepUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workspaceId: params.workspaceId,
+            repositoryId,
+            taskDescription: params.analysisQuery,
+            maxResults: 5,
+          }),
+          signal: AbortSignal.timeout(30_000),
+        });
 
-    if (!response.ok) {
-      console.warn(`[triage] codex search failed (${response.status})`);
-      return null;
+        if (!response.ok) {
+          console.warn(`[triage] agent-grep failed for repo ${repositoryId} (${response.status})`);
+          return null;
+        }
+
+        return (await response.json()) as { chunks?: Array<{ id: string; score: number; filePath: string; content: string; symbolName: string | null; chunkType: string }> };
+      }),
+    );
+
+    // Merge chunks from all repos, deduplicate by chunk ID, keep top 5 by score
+    type GrepChunk = { id: string; score: number; filePath: string; content: string; symbolName: string | null; chunkType: string };
+    const chunkMap = new Map<string, GrepChunk>();
+    for (const result of results) {
+      if (!result?.chunks || !Array.isArray(result.chunks)) continue;
+      for (const chunk of result.chunks) {
+        const existing = chunkMap.get(chunk.id);
+        if (!existing || chunk.score > existing.score) {
+          chunkMap.set(chunk.id, chunk);
+        }
+      }
     }
 
-    return await response.json();
+    const mergedChunks = [...chunkMap.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    return { chunks: mergedChunks };
   } catch (error) {
-    console.error("[triage] codex search error:", error);
-    return null;
+    console.warn("[triage] agent-grep error, falling back to direct search:", error);
+
+    // Fallback to old /codex/search
+    const url = `${queueEnv.WEB_APP_URL}/api/rest/codex/search`;
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: params.workspaceId,
+          query: params.analysisQuery.slice(0, 500),
+          repositoryIds: params.codexRepositoryIds,
+          limit: 5,
+          channels: { semantic: true, keyword: true, symbol: true },
+        }),
+      });
+
+      if (!response.ok) return null;
+      return await response.json();
+    } catch {
+      return null;
+    }
   }
 }
 

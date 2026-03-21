@@ -6,14 +6,21 @@ export interface MentionInfo {
 
 export type MentionsMap = Record<string, MentionInfo>;
 
+export interface AttachmentInfo {
+  url: string;
+  name?: string;
+  contentType?: string;
+}
+
 const MENTION_RE = /(@[\w.]+|#[\w-]+)/g;
 
 export function renderMessageBody(
   body: string,
   mentions?: MentionsMap,
+  attachments?: AttachmentInfo[],
 ): ReactNode[] {
   const parts = body.split(MENTION_RE);
-  return parts.map((part, i) => {
+  const nodes: ReactNode[] = parts.map((part, i) => {
     if (part.startsWith("@")) {
       const name = part.slice(1);
       const mention = mentions?.[name];
@@ -45,4 +52,22 @@ export function renderMessageBody(
     }
     return part;
   });
+
+  if (attachments && attachments.length > 0) {
+    nodes.push(
+      <span key="attachments" className="mt-2 flex flex-wrap gap-2">
+        {attachments.map((att, i) => (
+          <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+            <img
+              src={att.url}
+              alt={att.name ?? "attachment"}
+              className="max-h-60 max-w-full rounded-md border"
+            />
+          </a>
+        ))}
+      </span>,
+    );
+  }
+
+  return nodes;
 }

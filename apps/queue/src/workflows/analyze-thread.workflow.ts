@@ -10,6 +10,7 @@ const {
   getThreadAnalysisContext,
   checkSufficiencyActivity,
   searchCodebaseActivity,
+  expandChunkContextActivity,
   fetchSentryErrorsActivity,
   generateDraftReplyActivity,
   saveAnalysisAndDraftActivity,
@@ -25,7 +26,7 @@ const { generateAnalysisActivity } = proxyActivities<typeof activities>({
   retry: { maximumAttempts: 2 },
 });
 
-const DEBOUNCE_SECONDS = 60;
+const DEBOUNCE_SECONDS = 30;
 
 /**
  * AI Thread Analysis & Auto-Response Pipeline.
@@ -113,21 +114,44 @@ export async function analyzeThreadWorkflow(
           codexRepositoryIds: context.codexRepositoryIds,
           messages: context.messages,
           issueFingerprint: context.issueFingerprint,
+          rerank: true,
+          investigationABEnabled: context.investigationABEnabled,
+          threadId: input.threadId,
         })
       : Promise.resolve(null),
     context.sentryConfig
       ? fetchSentryErrorsActivity({
           sentryConfig: context.sentryConfig,
           messageBodies: context.messages.map((m) => m.body),
+          investigationABEnabled: context.investigationABEnabled,
+          threadId: input.threadId,
+          workspaceId: input.workspaceId,
         })
       : Promise.resolve([]),
   ]);
+
+  // 5b. Expand chunk context (parent class + siblings)
+  let expandedContext: unknown = null;
+  if (codexResults) {
+    const codex = codexResults as { chunks?: Array<{ id: string }> };
+    const chunkIds = codex.chunks?.map((c) => c.id) ?? [];
+    if (chunkIds.length > 0) {
+      expandedContext = await expandChunkContextActivity({
+        chunkIds,
+        maxSiblings: 3,
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        investigationABEnabled: context.investigationABEnabled,
+      });
+    }
+  }
 
   // 6. Generate structured analysis
   const analysisResult = await generateAnalysisActivity({
     context,
     codexFindings: codexResults,
     sentryFindings: sentryResults,
+    expandedContext,
   });
 
   if (!analysisResult) {
@@ -151,6 +175,7 @@ export async function analyzeThreadWorkflow(
     workspaceId: input.workspaceId,
     threadId: input.threadId,
     analysis: {
+      threadLabel: analysisResult.threadLabel ?? null,
       issueCategory: analysisResult.issueCategory,
       severity: analysisResult.severity,
       affectedComponent: analysisResult.affectedComponent,

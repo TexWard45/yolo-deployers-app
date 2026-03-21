@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx src/worker.ts",
+    "dev": "tsx watch src/worker.ts",
     "dev:doppler": "doppler run -- tsx src/worker.ts",
     "build": "tsc --build",
     "build:doppler": "doppler run -- tsc --build",

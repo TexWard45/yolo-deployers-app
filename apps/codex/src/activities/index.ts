@@ -5,3 +5,15 @@ export { cleanupDeletedFiles, cleanupStaleFiles } from "./cleanup.activity.js";
 export { listRepositoryFiles } from "./list-files.activity.js";
 export { updateSyncStatus, createSyncLog, updateSyncLog } from "./sync-status.activity.js";
 export { embedChunksActivity } from "./embed.activity.js";
+export {
+  getFixRunContext,
+  startParentCodexThread,
+  runRcaAgent,
+  runCodeContextAgent,
+  runTestAgent,
+  runFixerAgent,
+  applyWorkspacePatch,
+  runReviewerAgent,
+  runChecksAgent,
+  saveFixRunProgress,
+} from "./generate-fix-pr.activity.js";

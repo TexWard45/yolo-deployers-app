@@ -4,6 +4,10 @@ import {
   NodeEnvSchema,
   TemporalAddressSchema,
   TemporalNamespaceSchema,
+  LlmApiKeySchema,
+  LlmModelDefaultSchema,
+  WebAppUrlSchema,
+  InternalApiSecretSchema,
 } from "./shared";
 
 export const codexEnv = createEnv({
@@ -12,6 +16,10 @@ export const codexEnv = createEnv({
     TEMPORAL_ADDRESS: TemporalAddressSchema,
     TEMPORAL_NAMESPACE: TemporalNamespaceSchema,
     CODEX_TASK_QUEUE: z.string().default("codex-sync-queue"),
+    LLM_API_KEY: LlmApiKeySchema.optional(),
+    LLM_MODEL_DEFAULT: LlmModelDefaultSchema,
+    WEB_APP_URL: WebAppUrlSchema,
+    INTERNAL_API_SECRET: InternalApiSecretSchema,
     CODEX_EMBEDDING_API_KEY: z.string().min(1),
     CODEX_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
     CODEX_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
@@ -20,7 +28,8 @@ export const codexEnv = createEnv({
       .enum(["true", "false"])
       .default("false")
       .transform((v) => v === "true"),
-    CODEX_RERANKER_MODEL: z.string().optional(),
+    CODEX_RERANKER_MODEL: z.string().default("rerank-v3.5"),
+    COHERE_API_KEY: z.string().optional(),
   },
   runtimeEnv: process.env,
   emptyStringAsUndefined: true,

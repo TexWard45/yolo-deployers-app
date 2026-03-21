@@ -1,3 +1,10 @@
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "bg-red-100 text-red-700",
+  high: "bg-orange-100 text-orange-700",
+  medium: "bg-yellow-100 text-yellow-700",
+  low: "bg-blue-100 text-blue-700",
+};
+
 interface ThreadCardProps {
   id: string;
   title: string | null;
@@ -8,6 +15,8 @@ interface ThreadCardProps {
   assigneeName: string | null;
   trackerIssueIdentifier?: string | null;
   trackerIssueUrl?: string | null;
+  severity: string | null;
+  issueCategory: string | null;
   selected: boolean;
   onClick: () => void;
 }
@@ -38,6 +47,8 @@ export function ThreadCard({
   assigneeName,
   trackerIssueIdentifier,
   trackerIssueUrl,
+  severity,
+  issueCategory,
   selected,
   onClick,
 }: ThreadCardProps) {
@@ -61,6 +72,23 @@ export function ThreadCard({
       <p className="mt-1.5 text-sm leading-snug line-clamp-2">
         {title ?? `Thread with ${customerName}`}
       </p>
+
+      {/* Analysis labels */}
+      {(severity || issueCategory) ? (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {severity ? (
+            <span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${SEVERITY_COLORS[severity] ?? "bg-gray-100 text-gray-700"}`}>
+              {severity}
+            </span>
+          ) : null}
+          {issueCategory ? (
+            <span className="inline-block rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+              {issueCategory}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       {summary ? (
         <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
           {summary}

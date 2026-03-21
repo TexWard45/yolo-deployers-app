@@ -6,3 +6,4 @@ export { analyzeThreadWorkflow } from "./analyze-thread.workflow.js";
 export { sendOutboundMessageWorkflow } from "./send-outbound-message.workflow.js";
 export { triageThreadWorkflow } from "./triage-thread.workflow.js";
 export { supportPipelineWorkflow } from "./support-pipeline.workflow.js";
+export { syncDiscordChannelsWorkflow } from "./sync-discord-channels.workflow.js";

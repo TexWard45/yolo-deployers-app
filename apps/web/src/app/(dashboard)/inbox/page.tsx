@@ -24,5 +24,5 @@ export default async function InboxPage() {
     workspaceId: workspace.id,
   });
 
-  return <ThreadList threads={threads} />;
+  return <ThreadList threads={threads} currentUserId={session.id} />;
 }

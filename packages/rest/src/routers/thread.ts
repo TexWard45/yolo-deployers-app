@@ -47,6 +47,13 @@ export const threadRouter = createTRPCRouter({
         include: {
           customer: true,
           assignedTo: { omit: { password: true } },
+          lastAnalysis: {
+            select: {
+              severity: true,
+              issueCategory: true,
+              sufficient: true,
+            },
+          },
           _count: { select: { messages: true } },
         },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],

@@ -144,15 +144,22 @@ function buildTriageUserMessage(input: TriagePromptInput): string {
   if (input.analysis.sentryFindings && Array.isArray(input.analysis.sentryFindings)) {
     const sentry = input.analysis.sentryFindings as Array<{
       title?: string;
+      culprit?: string | null;
       count?: number;
+      firstSeen?: string;
+      lastSeen?: string;
+      level?: string;
       stackTrace?: string | null;
     }>;
     if (sentry.length > 0) {
       lines.push("", "Sentry errors:");
       for (const e of sentry.slice(0, 5)) {
-        lines.push(`  - ${e.title ?? "unknown"} (${e.count ?? 0}x)`);
+        lines.push(`  - ${e.title ?? "unknown"} (${e.count ?? 0}x, level: ${e.level ?? "unknown"})`);
+        if (e.culprit) {
+          lines.push(`    Culprit: ${e.culprit}`);
+        }
         if (e.stackTrace) {
-          lines.push(`    ${e.stackTrace.slice(0, 200)}`);
+          lines.push(`    Stack: ${e.stackTrace.slice(0, 200)}`);
         }
       }
     }

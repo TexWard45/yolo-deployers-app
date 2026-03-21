@@ -222,13 +222,36 @@ export const UpdateWorkspaceAgentConfigSchema = z.object({
   sentryOrgSlug: z.string().optional(),
   sentryProjectSlug: z.string().optional(),
   sentryAuthToken: z.string().optional(),
+  sentryProjectSlugs: z.array(z.string()).optional(),
+  // A/B testing
+  investigationABEnabled: z.boolean().optional(),
   // Linear integration
   linearApiKey: z.string().optional(),
   linearTeamId: z.string().optional(),
   linearDefaultLabels: z.array(z.string()).optional(),
+  // GitHub integration
+  githubToken: z.string().optional(),
+  githubDefaultOwner: z.string().optional(),
+  githubDefaultRepo: z.string().optional(),
+  githubBaseBranch: z.string().optional(),
+  // Codex fix loop settings
+  codexFixModel: z.string().optional(),
+  codexReviewModel: z.string().optional(),
+  codexFixMaxIterations: z.number().int().min(1).max(10).optional(),
+  codexRequiredCheckNames: z.array(z.string()).optional(),
 });
 
 export type UpdateWorkspaceAgentConfigInput = z.infer<typeof UpdateWorkspaceAgentConfigSchema>;
+
+export const TestSentryConnectionSchema = z.object({
+  workspaceId: z.string(),
+  userId: z.string(),
+  sentryOrgSlug: z.string().min(1),
+  sentryProjectSlug: z.string().min(1),
+  sentryAuthToken: z.string().min(1),
+});
+
+export type TestSentryConnectionInput = z.infer<typeof TestSentryConnectionSchema>;
 
 // ── Discord Channel Config ────────────────────────────────────────
 export const DiscordChannelConfigSchema = z.object({
@@ -431,6 +454,7 @@ export const SufficiencyCheckResultSchema = z.object({
 export type SufficiencyCheckResult = z.infer<typeof SufficiencyCheckResultSchema>;
 
 export const ThreadAnalysisResultSchema = z.object({
+  threadLabel: z.string().nullable().optional(),
   issueCategory: z.string().nullable(),
   severity: z.string().nullable(),
   affectedComponent: z.string().nullable(),
@@ -450,6 +474,7 @@ export const SaveAnalysisInputSchema = z.object({
   workspaceId: z.string(),
   threadId: z.string(),
   analysis: z.object({
+    threadLabel: z.string().nullable().optional(),
     issueCategory: z.string().nullable(),
     severity: z.string().nullable(),
     affectedComponent: z.string().nullable(),
@@ -518,6 +543,185 @@ export const GenerateSpecSchema = z.object({
 });
 export type GenerateSpecInput = z.infer<typeof GenerateSpecSchema>;
 
+export const FixPrRunStatusSchema = z.enum([
+  "QUEUED",
+  "RUNNING",
+  "WAITING_REVIEW",
+  "PASSED",
+  "FAILED",
+  "CANCELLED",
+]);
+export type FixPrRunStatusValue = z.infer<typeof FixPrRunStatusSchema>;
+
+export const FixPrIterationStatusSchema = z.enum([
+  "QUEUED",
+  "RUNNING",
+  "PASSED",
+  "FAILED",
+  "CANCELLED",
+]);
+export type FixPrIterationStatusValue = z.infer<typeof FixPrIterationStatusSchema>;
+
+export const FixPrReviewSeveritySchema = z.enum(["blocker", "warning", "note"]);
+export type FixPrReviewSeverity = z.infer<typeof FixPrReviewSeveritySchema>;
+
+export const FixPrRcaEvidenceSchema = z.object({
+  issueId: z.string().optional(),
+  title: z.string().optional(),
+  culprit: z.string().nullable().optional(),
+  filePath: z.string().optional(),
+  stackTrace: z.string().nullable().optional(),
+});
+export type FixPrRcaEvidence = z.infer<typeof FixPrRcaEvidenceSchema>;
+
+export const FixPrRcaHypothesisSchema = z.object({
+  summary: z.string(),
+  confidence: z.number().min(0).max(1),
+  likelyFiles: z.array(z.string()),
+  evidence: z.array(FixPrRcaEvidenceSchema),
+});
+export type FixPrRcaHypothesis = z.infer<typeof FixPrRcaHypothesisSchema>;
+
+export const FixPrRcaOutputSchema = z.object({
+  summary: z.string(),
+  hypotheses: z.array(FixPrRcaHypothesisSchema),
+  confidence: z.number().min(0).max(1),
+  likelyFiles: z.array(z.string()),
+  evidence: z.array(FixPrRcaEvidenceSchema),
+  insufficientEvidence: z.boolean().default(false),
+});
+export type FixPrRcaOutput = z.infer<typeof FixPrRcaOutputSchema>;
+
+export const FixPrCodeContextFileSchema = z.object({
+  filePath: z.string(),
+  symbolNames: z.array(z.string()),
+  chunkIds: z.array(z.string()),
+});
+export type FixPrCodeContextFile = z.infer<typeof FixPrCodeContextFileSchema>;
+
+export const FixPrCodeContextOutputSchema = z.object({
+  files: z.array(FixPrCodeContextFileSchema),
+  symbols: z.array(z.string()),
+  relatedChunks: z.array(z.string()),
+  editScope: z.array(z.string()),
+});
+export type FixPrCodeContextOutput = z.infer<typeof FixPrCodeContextOutputSchema>;
+
+export const FixPrTestPlanSchema = z.object({
+  commands: z.array(z.string()),
+  requiredChecks: z.array(z.string()),
+  rationale: z.string(),
+});
+export type FixPrTestPlan = z.infer<typeof FixPrTestPlanSchema>;
+
+export const FixPrFileChangeSchema = z.object({
+  filePath: z.string(),
+  original: z.string(),
+  updated: z.string(),
+  explanation: z.string(),
+});
+export type FixPrFileChange = z.infer<typeof FixPrFileChangeSchema>;
+
+export const FixPrFixerOutputSchema = z.object({
+  summary: z.string(),
+  changedFiles: z.array(FixPrFileChangeSchema),
+  patchPlan: z.string(),
+  riskNotes: z.array(z.string()),
+  cannotFixSafely: z.boolean().default(false),
+});
+export type FixPrFixerOutput = z.infer<typeof FixPrFixerOutputSchema>;
+
+export const FixPrReviewFindingSchema = z.object({
+  severity: FixPrReviewSeveritySchema,
+  message: z.string(),
+  filePath: z.string().optional(),
+});
+export type FixPrReviewFinding = z.infer<typeof FixPrReviewFindingSchema>;
+
+export const FixPrReviewerOutputSchema = z.object({
+  approved: z.boolean(),
+  blockers: z.array(FixPrReviewFindingSchema),
+  warnings: z.array(FixPrReviewFindingSchema),
+  notes: z.array(FixPrReviewFindingSchema),
+  missingTests: z.array(z.string()),
+});
+export type FixPrReviewerOutput = z.infer<typeof FixPrReviewerOutputSchema>;
+
+export const FixPrChecksCommandResultSchema = z.object({
+  command: z.string(),
+  exitCode: z.number(),
+  stdout: z.string(),
+  stderr: z.string(),
+});
+export type FixPrChecksCommandResult = z.infer<typeof FixPrChecksCommandResultSchema>;
+
+export const FixPrChecksOutputSchema = z.object({
+  passed: z.boolean(),
+  commandsRun: z.array(FixPrChecksCommandResultSchema),
+  failures: z.array(z.string()),
+  logs: z.array(z.string()),
+});
+export type FixPrChecksOutput = z.infer<typeof FixPrChecksOutputSchema>;
+
+export const GenerateFixPRSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  analysisId: z.string(),
+  userId: z.string(),
+});
+export type GenerateFixPRInput = z.infer<typeof GenerateFixPRSchema>;
+
+export const GenerateFixPRWorkflowInputSchema = z.object({
+  runId: z.string(),
+  threadId: z.string(),
+  workspaceId: z.string(),
+  analysisId: z.string(),
+  triggeredByUserId: z.string(),
+});
+export type GenerateFixPRWorkflowInput = z.infer<typeof GenerateFixPRWorkflowInputSchema>;
+
+export const GetFixPRStatusSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type GetFixPRStatusInput = z.infer<typeof GetFixPRStatusSchema>;
+
+export const CancelFixPRSchema = z.object({
+  runId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string(),
+});
+export type CancelFixPRInput = z.infer<typeof CancelFixPRSchema>;
+
+export const SaveFixPRProgressSchema = z.object({
+  runId: z.string(),
+  status: FixPrRunStatusSchema.optional(),
+  currentStage: z.string().optional(),
+  parentThreadId: z.string().optional(),
+  summary: z.string().nullable().optional(),
+  lastError: z.string().nullable().optional(),
+  branchName: z.string().nullable().optional(),
+  prUrl: z.string().nullable().optional(),
+  prNumber: z.number().int().nullable().optional(),
+  headSha: z.string().nullable().optional(),
+  rcaSummary: z.string().nullable().optional(),
+  rcaConfidence: z.number().min(0).max(1).nullable().optional(),
+  rcaSignals: z.unknown().optional(),
+  metadata: z.unknown().optional(),
+  incrementIterationCount: z.boolean().optional(),
+  iteration: z.object({
+    iteration: z.number().int().positive(),
+    status: FixPrIterationStatusSchema,
+    fixPlan: FixPrFixerOutputSchema.nullable().optional(),
+    reviewFindings: FixPrReviewerOutputSchema.nullable().optional(),
+    checkResults: FixPrChecksOutputSchema.nullable().optional(),
+    appliedFiles: z.array(z.string()).nullable().optional(),
+    completed: z.boolean().optional(),
+  }).optional(),
+});
+export type SaveFixPRProgressInput = z.infer<typeof SaveFixPRProgressSchema>;
+
 // ── Triage Workflow (Temporal) ─────────────────────────────────────
 
 export const TriageThreadWorkflowInputSchema = z.object({
@@ -570,3 +774,20 @@ export const SupportPipelineWorkflowResultSchema = z.object({
   reason: z.string().optional(),
 });
 export type SupportPipelineWorkflowResult = z.infer<typeof SupportPipelineWorkflowResultSchema>;
+
+// ── Sync Discord Channels Workflow (Temporal) ──────────────────────
+
+export const SyncDiscordChannelsWorkflowInputSchema = z.object({
+  channelConnectionId: z.string(),
+  workspaceId: z.string(),
+  /** Substring filter for channel names (e.g. "-support"). Empty = all text channels. */
+  nameFilter: z.string().default(""),
+});
+export type SyncDiscordChannelsWorkflowInput = z.infer<typeof SyncDiscordChannelsWorkflowInputSchema>;
+
+export const SyncDiscordChannelsWorkflowResultSchema = z.object({
+  discoveredChannels: z.array(z.object({ id: z.string(), name: z.string() })),
+  addedChannelIds: z.array(z.string()),
+  backfilledMessageCount: z.number(),
+});
+export type SyncDiscordChannelsWorkflowResult = z.infer<typeof SyncDiscordChannelsWorkflowResultSchema>;

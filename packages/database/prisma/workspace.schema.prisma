@@ -22,6 +22,7 @@ model Workspace {
   threadAnalyses     ThreadAnalysis[]
   triageActions      TriageAction[]
   trackerConnections TrackerConnection[]
+  fixPrRuns          FixPrRun[]
 }
 
 model WorkspaceMember {

@@ -11,9 +11,17 @@ const CONTROLLER_HEIGHT = 80;
 
 interface ReplayViewerProps {
   events: Array<{ type: string | number; payload: unknown }>;
+  /** Absolute Unix timestamps (ms) of error events — used for timeline markers and auto-seek */
+  errorTimestamps?: number[];
+  /**
+   * Backend-computed offset (ms from first rrweb event) to seek to on load.
+   * When provided, takes priority over the errorTimestamps-derived seek position.
+   * Comes from telemetry.getExactErrorMoment — already anchored to the first ReplayEvent.
+   */
+  initialOffsetMs?: number;
 }
 
-export function ReplayViewer({ events }: ReplayViewerProps) {
+export function ReplayViewer({ events, errorTimestamps, initialOffsetMs }: ReplayViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<rrwebPlayer | null>(null);
 
@@ -49,8 +57,22 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
           showController: true,
           autoPlay: false,
           speed: 1,
+          ...(errorTimestamps && errorTimestamps.length > 0
+            ? { tags: { "Error": errorTimestamps } }
+            : {}),
         },
       });
+
+      // Seek priority:
+      //   1. initialOffsetMs — backend-computed precise offset (from getExactErrorMoment)
+      //   2. errorTimestamps — derived from SessionTimeline, computed client-side
+      if (initialOffsetMs !== undefined) {
+        const seekTime = Math.max(0, initialOffsetMs - 3000);
+        setTimeout(() => playerRef.current?.goto(seekTime, true), 500);
+      } else if (errorTimestamps && errorTimestamps.length > 0 && rrwebEvents[0]) {
+        const offset = Math.max(0, errorTimestamps[0]! - rrwebEvents[0].timestamp - 3000);
+        setTimeout(() => playerRef.current?.goto(offset, true), 500);
+      }
     });
 
     return () => {
@@ -61,7 +83,7 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
       }
       if (el) el.innerHTML = "";
     };
-  }, [events]);
+  }, [events, errorTimestamps, initialOffsetMs]);
 
   const rrwebCount = events.filter((e) => e.type === "rrweb" || e.type === 2).length;
   if (rrwebCount < 2) {

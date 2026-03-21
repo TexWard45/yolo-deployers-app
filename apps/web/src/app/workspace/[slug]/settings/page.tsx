@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSession } from "@/actions/auth";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { SettingsForm } from "./settings-form";
+import { SyncDiscordChannels } from "./sync-discord-channels";
 
 interface SettingsPageProps {
   params: Promise<{ slug: string }>;
@@ -16,10 +17,18 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
   if (!workspace) redirect("/");
 
   const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-  const config = await trpc.agent.getWorkspaceConfig({
-    workspaceId: workspace.id,
-    userId: session.id,
-  });
+  const [config, connections] = await Promise.all([
+    trpc.agent.getWorkspaceConfig({
+      workspaceId: workspace.id,
+      userId: session.id,
+    }),
+    trpc.channelConnection.listByWorkspace({
+      workspaceId: workspace.id,
+      userId: session.id,
+    }),
+  ]);
+
+  const discordConnections = connections.filter((c) => c.type === "DISCORD");
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -29,6 +38,18 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           Configure how the AI agent handles customer support for this workspace.
         </p>
       </div>
+
+      {discordConnections.length > 0 && (
+        <SyncDiscordChannels
+          workspaceId={workspace.id}
+          connections={discordConnections.map((c) => ({
+            id: c.id,
+            name: c.name,
+            status: c.status,
+            configJson: c.configJson as Record<string, unknown> | null,
+          }))}
+        />
+      )}
 
       <SettingsForm
         workspaceId={workspace.id}
@@ -40,6 +61,19 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           maxClarifications: config.maxClarifications,
           tone: config.tone,
           systemPrompt: config.systemPrompt,
+          githubToken: config.githubToken,
+          githubDefaultOwner: config.githubDefaultOwner,
+          githubDefaultRepo: config.githubDefaultRepo,
+          githubBaseBranch: config.githubBaseBranch,
+          codexFixModel: config.codexFixModel,
+          codexReviewModel: config.codexReviewModel,
+          codexFixMaxIterations: config.codexFixMaxIterations,
+          codexRequiredCheckNames: config.codexRequiredCheckNames,
+          sentryOrgSlug: config.sentryOrgSlug,
+          sentryProjectSlug: config.sentryProjectSlug,
+          hasSentryToken: config.sentryAuthToken === "***",
+          linearTeamId: config.linearTeamId,
+          hasLinearKey: config.linearApiKey === "***",
         }}
       />
     </div>

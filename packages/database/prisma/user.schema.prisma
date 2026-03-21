@@ -15,4 +15,5 @@ model User {
   replyDrafts            ReplyDraft[]
   assignedSupportThreads SupportThread[] @relation("AssignedSupportThreads")
   triageActions          TriageAction[]
+  fixPrRuns              FixPrRun[]
 }

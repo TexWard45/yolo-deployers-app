@@ -128,11 +128,27 @@ async function performIngestion(
           })
         : null;
 
+    // If the channel integration sends a stable external thread id but no explicit
+    // in-reply-to pointer, chain this message to the latest known external message
+    // in the same support thread to keep timeline segments connected.
+    let linkedInReplyToExternalMessageId = input.inReplyToExternalMessageId ?? null;
+    if (!linkedInReplyToExternalMessageId && existingThreadByExternalId) {
+      const latestThreadMessage = await tx.threadMessage.findFirst({
+        where: {
+          threadId: existingThreadByExternalId.id,
+          externalMessageId: { not: null },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { externalMessageId: true },
+      });
+      linkedInReplyToExternalMessageId = latestThreadMessage?.externalMessageId ?? null;
+    }
+
     const replyChainThread =
-      input.inReplyToExternalMessageId
+      linkedInReplyToExternalMessageId
         ? await tx.threadMessage.findFirst({
             where: {
-              externalMessageId: input.inReplyToExternalMessageId,
+              externalMessageId: linkedInReplyToExternalMessageId,
               thread: {
                 workspaceId: input.workspaceId,
                 source: input.source,
@@ -188,7 +204,7 @@ async function performIngestion(
 
     const decision = decideDeterministicThreadMatch({
       externalThreadId: input.externalThreadId,
-      inReplyToExternalMessageId: input.inReplyToExternalMessageId,
+      inReplyToExternalMessageId: linkedInReplyToExternalMessageId,
       threadGroupingHint: input.threadGroupingHint,
       messageBody,
       customerId: customer.id,
@@ -247,7 +263,7 @@ async function performIngestion(
         direction: "INBOUND",
         body: messageBody,
         externalMessageId: input.externalMessageId,
-        inReplyToExternalMessageId: input.inReplyToExternalMessageId,
+        inReplyToExternalMessageId: linkedInReplyToExternalMessageId ?? undefined,
         messageFingerprint: decision.issueFingerprint,
         senderExternalId: input.externalCustomerId,
         metadata: metadata as Prisma.InputJsonValue,

@@ -147,13 +147,18 @@ function discordMessageToInput(
   connectionId: string,
   message: Message,
 ): IngestSupportMessageInput {
+  const imageAttachments = message.attachments.filter((a) => a.contentType?.startsWith("image/"));
+  const body = message.cleanContent || (imageAttachments.size > 0
+    ? `[${imageAttachments.size} image${imageAttachments.size > 1 ? "s" : ""} attached]`
+    : "[empty message]");
+
   return {
     channelConnectionId: connectionId,
     externalMessageId: message.id,
     externalUserId: message.author.id,
     username: message.author.username,
     displayName: message.author.globalName ?? message.author.username,
-    body: message.cleanContent,
+    body,
     timestamp: message.createdAt.toISOString(),
     rawPayload: {
       originalContent: message.content,
@@ -168,6 +173,9 @@ function discordMessageToInput(
           return [displayName, { avatarUrl: user.displayAvatarURL({ size: 32 }) }];
         }),
       ),
+      attachments: message.attachments
+        .filter((a) => a.contentType?.startsWith("image/"))
+        .map((a) => ({ url: a.url, name: a.name, contentType: a.contentType })),
     },
     externalThreadId: message.channel.isThread() ? message.channelId : null,
     inReplyToExternalMessageId: message.reference?.messageId ?? null,
