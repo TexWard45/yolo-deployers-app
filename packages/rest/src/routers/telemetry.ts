@@ -276,14 +276,16 @@ export const telemetryRouter = createTRPCRouter({
       if (!errorTimeline) return { found: false as const };
 
       // ── Step 3: load the session + first event for precise offset calculation ──
+      // We already know which error to seek to (errorTimeline from step 2).
+      // We only need the session for errorCount and the first ReplayEvent timestamp
+      // to anchor the offset. Do NOT re-query timelines with orderBy:asc — that
+      // would return the first error in the session, not the one we found.
       const session = await ctx.prisma.session.findUnique({
         where: { id: errorTimeline.sessionId },
-        include: {
-          timelines: {
-            where: { type: "ERROR" },
-            orderBy: { timestamp: "asc" },
-            take: 1,
-          },
+        select: {
+          id: true,
+          errorCount: true,
+          createdAt: true,
           events: {
             orderBy: { sequence: "asc" },
             take: 1,
@@ -292,18 +294,18 @@ export const telemetryRouter = createTRPCRouter({
         },
       });
 
-      if (!session || session.timelines.length === 0) return { found: false as const };
+      if (!session) return { found: false as const };
 
       const firstEventTime =
         session.events[0]?.timestamp.getTime() ?? session.createdAt.getTime();
-      const errorTime = session.timelines[0]!.timestamp.getTime();
-      const offsetMs = Math.max(0, errorTime - firstEventTime);
+      // Use the exact errorTimeline found in step 2 — not the first error in the session.
+      const offsetMs = Math.max(0, errorTimeline.timestamp.getTime() - firstEventTime);
 
       return {
         found: true as const,
         sessionId: session.id,
         offsetMs,
-        errorContent: session.timelines[0]!.content,
+        errorContent: errorTimeline.content,
         errorCount: session.errorCount,
       };
     }),

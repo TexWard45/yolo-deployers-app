@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ReplayViewer } from "@/components/telemetry/ReplayViewer";
 import { useReplayExplorer } from "@/hooks/useReplayExplorer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -66,17 +66,20 @@ export default function ReplaysPage() {
 
   const hasActiveFilters = Object.values(filters).some(Boolean) || filters.hasError;
 
-  // When investigator finds a result, auto-select the session and store the precise offset
   const handleInvestigatorSearch = () => {
     setInvestigatorEnabled(true);
     setInvestigatorOffsetMs(undefined);
   };
 
-  if (investigatorResult?.found && investigatorResult.sessionId !== selectedSessionId) {
-    setSelectedSessionId(investigatorResult.sessionId ?? null);
-    setInvestigatorOffsetMs(investigatorResult.offsetMs);
-    setInvestigatorEnabled(false);
-  }
+  // Auto-select session when investigator returns a result.
+  // Must be in useEffect — calling setState during render causes infinite loops in Strict Mode.
+  useEffect(() => {
+    if (investigatorResult?.found && investigatorResult.sessionId !== selectedSessionId) {
+      setSelectedSessionId(investigatorResult.sessionId ?? null);
+      setInvestigatorOffsetMs(investigatorResult.offsetMs);
+      setInvestigatorEnabled(false);
+    }
+  }, [investigatorResult]);
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">

@@ -15,6 +15,7 @@ model Session {
   traceLinks  SessionTraceLink[]
 
   @@index([userId])
+  @@index([hasError])
 }
 
 model ReplayEvent {
