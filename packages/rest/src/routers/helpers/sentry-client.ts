@@ -62,9 +62,25 @@ export async function fetchSentryContext(
   _messageBodies: string[],
 ): Promise<SentryFinding[]> {
   // TODO: Phase 2 — implement Sentry Web API integration
-  // 1. Extract error signals from messages
-  // 2. Search issues: GET /api/0/projects/{org}/{project}/issues/?query=...
-  // 3. Get latest event: GET /api/0/issues/{issueId}/events/latest/
-  // 4. Format into SentryFinding[]
+  // The plumbing is fully wired — this function is called by fetchSentryErrorsActivity
+  // in apps/queue/src/activities/analyze-thread.activity.ts, which runs in parallel
+  // with Codex search during step 4 of the analyzeThreadWorkflow.
+  //
+  // To implement:
+  // 1. const signals = extractErrorSignals(messageBodies)  ← already works
+  // 2. For each signal, search Sentry:
+  //    GET https://sentry.io/api/0/projects/{config.orgSlug}/{config.projectSlug}/issues/
+  //    Headers: { Authorization: "Bearer ${config.authToken}" }
+  //    Query: ?query={signal}&sort=date&limit=5
+  // 3. For each matched issue, get latest event:
+  //    GET https://sentry.io/api/0/issues/{issueId}/events/latest/
+  // 4. Extract: error type, message, stack trace frames, occurrence count, first/last seen
+  // 5. Return as SentryFinding[]
+  //
+  // Results flow into the analysis LLM prompt (thread-analysis.prompt.ts)
+  // which already formats Sentry findings in its buildUserMessage().
+  //
+  // Config (orgSlug, projectSlug, authToken) comes from WorkspaceAgentConfig
+  // and is passed through the activity. No global env vars needed.
   return [];
 }

@@ -63,3 +63,27 @@ export async function dispatchAnalyzeThreadWorkflow(
     throw error;
   }
 }
+
+/**
+ * Dispatch the send-outbound-message workflow for an approved draft.
+ * Unique per draft ID — each draft sends exactly once.
+ */
+export async function dispatchSendOutboundMessageWorkflow(input: {
+  draftId: string;
+  threadId: string;
+  workspaceId: string;
+}): Promise<void> {
+  const client = await getClient();
+
+  try {
+    await client.workflow.start("sendOutboundMessageWorkflow", {
+      args: [input],
+      taskQueue: webEnv.TEMPORAL_TASK_QUEUE,
+      workflowId: `send-outbound-${input.draftId}`,
+    });
+  } catch (error: unknown) {
+    if (error instanceof WorkflowExecutionAlreadyStartedError) return;
+    _clientPromise = null;
+    throw error;
+  }
+}

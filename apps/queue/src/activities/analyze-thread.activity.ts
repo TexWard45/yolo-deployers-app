@@ -183,6 +183,16 @@ export async function searchCodebaseActivity(params: {
 }
 
 // ── Activity 4: Sentry error lookup ─────────────────────────────────
+// TODO: Phase 2 — plug in real Sentry Web API integration here.
+// Currently returns [] via the stub in sentry-client.ts.
+// When implementing:
+//   1. Fill in fetchSentryContext() in packages/rest/src/routers/helpers/sentry-client.ts
+//      - extractErrorSignals() from message bodies (already implemented)
+//      - GET /api/0/projects/{org}/{project}/issues/?query=... to search issues
+//      - GET /api/0/issues/{issueId}/events/latest/ to get stack traces
+//   2. This activity is already wired into the workflow (step 4, parallel with Codex)
+//   3. Results flow into generateAnalysisActivity as sentryFindings
+//   4. The analysis LLM prompt already handles Sentry data in its buildUserMessage()
 
 export async function fetchSentryErrorsActivity(params: {
   sentryConfig: SentryConfig;

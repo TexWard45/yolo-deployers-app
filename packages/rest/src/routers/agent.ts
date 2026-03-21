@@ -11,7 +11,7 @@ import {
   SaveAnalysisInputSchema,
 } from "@shared/types";
 import type { Prisma } from "@shared/types/prisma";
-import { dispatchAnalyzeThreadWorkflow } from "../temporal";
+import { dispatchAnalyzeThreadWorkflow, dispatchSendOutboundMessageWorkflow } from "../temporal";
 
 export const agentRouter = createTRPCRouter({
   /** Get workspace AI agent config */
@@ -184,10 +184,21 @@ export const agentRouter = createTRPCRouter({
         throw new TRPCError({ code: "BAD_REQUEST", message: "Draft is not in GENERATED state" });
       }
 
-      return ctx.prisma.replyDraft.update({
+      const updated = await ctx.prisma.replyDraft.update({
         where: { id: input.draftId },
         data: { status: "APPROVED" },
       });
+
+      // Dispatch outbound send workflow — sends the message to Discord/channel
+      void dispatchSendOutboundMessageWorkflow({
+        draftId: input.draftId,
+        threadId: draft.threadId,
+        workspaceId: input.workspaceId,
+      }).catch((error: unknown) => {
+        console.error("[agent] Failed to dispatch send outbound workflow", error);
+      });
+
+      return updated;
     }),
 
   /** Dismiss a draft */
