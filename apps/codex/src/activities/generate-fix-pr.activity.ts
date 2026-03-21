@@ -1,6 +1,6 @@
 import { promisify } from "node:util";
 import { exec as execCallback, execFile as execFileCallback } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, lstatSync, type Dirent } from "node:fs";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { createHash } from "node:crypto";
@@ -27,8 +27,20 @@ import type {
 } from "@shared/types";
 import { codexConfig } from "../config.js";
 
+const FIX_PR_DEBUG_LOGS =
+  process.env.CODEX_FIX_DEBUG_LOGS === "1"
+  || process.env.CODEX_FIX_DEBUG_LOGS?.toLowerCase() === "true"
+  || process.env.CODEX_DEBUG_LOGS === "1"
+  || process.env.CODEX_DEBUG_LOGS?.toLowerCase() === "true";
+
+function debugLog(message: string, ...rest: unknown[]) {
+  if (!FIX_PR_DEBUG_LOGS) return;
+  console.log(`[fix-pr][activity] ${message}`, ...rest);
+}
+
 const exec = promisify(execCallback);
 const execFile = promisify(execFileCallback);
+const codexCloneBasePath = path.resolve(codexConfig.cloneBasePath);
 // Commands and file edits operate on repo-relative paths, so activities anchor
 // all filesystem work at the monorepo root instead of the app package directory.
 export const repoRootDir = path.resolve(
@@ -127,6 +139,7 @@ export async function getFixRunContext(
   });
 
   if (!run || run.status === "CANCELLED") {
+    debugLog("run not available", { runId: input.runId, status: run?.status ?? "not_found" });
     return null;
   }
 
@@ -134,6 +147,7 @@ export async function getFixRunContext(
   let analysisRcaSummary = run.analysis.rcaSummary;
   let analysisCodexFindings = run.analysis.codexFindings;
   let analysisSentryFindings = run.analysis.sentryFindings;
+  let resolvedAnalysisId = run.analysisId;
 
   if (!hasCodeContext(analysisCodexFindings)) {
     const recentAnalyses = await prisma.threadAnalysis.findMany({
@@ -159,6 +173,7 @@ export async function getFixRunContext(
       ?? recentAnalyses.find((analysis) => hasCodeContext(analysis.codexFindings));
 
     if (preferredAnalysis) {
+      resolvedAnalysisId = preferredAnalysis.id;
       analysisSummary = preferredAnalysis.summary;
       analysisRcaSummary = preferredAnalysis.rcaSummary;
       analysisCodexFindings = preferredAnalysis.codexFindings;
@@ -166,12 +181,28 @@ export async function getFixRunContext(
       console.log(
         `[fix-pr] run ${run.id} using fallback analysis ${preferredAnalysis.id} because ${run.analysisId} had empty codex findings`,
       );
+    } else {
+      console.log(`[fix-pr] run ${run.id} no alternate analysis with code context for ${run.analysisId}`);
     }
   }
+
+  const initialContext = expandFixPrCodeContext(run.analysis.codexFindings);
+  const resolvedContext = expandFixPrCodeContext(analysisCodexFindings);
+  debugLog("run context analysis snapshot", {
+    runId: run.id,
+    threadId: run.threadId,
+    analysisId: run.analysisId,
+    selectedAnalysisId: resolvedAnalysisId,
+    fallbackUsed: resolvedAnalysisId !== run.analysisId,
+    initialEditScopeCount: initialContext.editScope.length,
+    resolvedEditScopeCount: resolvedContext.editScope.length,
+    messageCount: run.analysis.thread.messages.length,
+  });
 
   const config = run.workspace.agentConfig;
   const configuredRepoIds = config?.codexRepositoryIds ?? [];
   let codexRepositoryIds = configuredRepoIds;
+  const repoSource = configuredRepoIds.length > 0 ? "workspaceConfig" : "workspaceRepos";
 
   // Fallback: if workspace config does not explicitly scope repos, use all indexed repos.
   if (codexRepositoryIds.length === 0) {
@@ -182,11 +213,21 @@ export async function getFixRunContext(
     codexRepositoryIds = workspaceRepos.map((repo) => repo.id);
   }
 
+  debugLog("run context repositories", {
+    runId: run.id,
+    repoSource,
+    configuredRepoCount: configuredRepoIds.length,
+    resolvedRepoCount: codexRepositoryIds.length,
+    workspaceId: input.workspaceId,
+    hasWorkspaceConfig: Boolean(config?.codexRepositoryIds?.length),
+    hasGithubConfig: Boolean(config?.githubToken && config?.githubDefaultOwner && config?.githubDefaultRepo),
+  });
+
   return {
     runId: run.id,
     workspaceId: run.workspaceId,
     threadId: run.threadId,
-    analysisId: run.analysisId,
+    analysisId: resolvedAnalysisId,
     summary: analysisSummary,
     rcaSummary: analysisRcaSummary,
     codexFindings: analysisCodexFindings,
@@ -196,7 +237,7 @@ export async function getFixRunContext(
       body: message.body,
     })),
     maxIterations: run.maxIterations,
-  github: {
+    github: {
       token: config?.githubToken ?? codexConfig.githubToken ?? null,
       owner: config?.githubDefaultOwner ?? null,
       repo: config?.githubDefaultRepo ?? null,
@@ -250,10 +291,17 @@ export async function runCodeContextAgent(params: {
 }): Promise<FixPrCodeContextOutput> {
   const cachedContext = expandFixPrCodeContext(params.codexFindings);
   if (cachedContext.editScope.length > 0) {
+    debugLog("runCodeContextAgent used cached context", {
+      workspaceId: params.workspaceId,
+      editScopeCount: cachedContext.editScope.length,
+      symbolCount: cachedContext.symbols.length,
+      relatedChunkCount: cachedContext.relatedChunks.length,
+    });
     return cachedContext;
   }
 
   if (!params.workspaceId) {
+    debugLog("runCodeContextAgent skipped", { reason: "missing_workspace", cachedEditScopeCount: cachedContext.editScope.length });
     return cachedContext;
   }
 
@@ -281,8 +329,15 @@ export async function runCodeContextAgent(params: {
     .join(" ")
     .slice(0, 500);
   if (!searchQuery) {
+    debugLog("runCodeContextAgent skipped", { reason: "empty_query", repositoryIdsCount: repositoryIds.length });
     return cachedContext;
   }
+  debugLog("runCodeContextAgent query", {
+    workspaceId: params.workspaceId,
+    searchQueryLength: searchQuery.length,
+    repositoryIds: repositoryIds.length,
+    messageCount: params.messages?.length ?? 0,
+  });
 
   try {
     const response = await fetch(`${codexConfig.webAppUrl}/api/rest/codex/search`, {
@@ -299,6 +354,10 @@ export async function runCodeContextAgent(params: {
 
     if (!response.ok) {
       console.warn(`[fix-pr] fresh codex search failed (${response.status})`);
+      debugLog("runCodeContextAgent search failed", {
+        workspaceId: params.workspaceId,
+        status: response.status,
+      });
       return cachedContext;
     }
 
@@ -306,10 +365,19 @@ export async function runCodeContextAgent(params: {
     const freshContext = expandFixPrCodeContext(freshFindings);
     if (freshContext.editScope.length > 0) {
       console.log(`[fix-pr] fresh code context recovered ${freshContext.editScope.length} files`);
+      debugLog("runCodeContextAgent recovered fresh context", {
+        runSummaryLength: params.summary?.length ?? 0,
+        freshEditScopeCount: freshContext.editScope.length,
+        freshSymbolCount: freshContext.symbols.length,
+      });
       return freshContext;
     }
   } catch (error) {
     console.warn("[fix-pr] fresh codex search errored:", error);
+    debugLog("runCodeContextAgent search errored", {
+      workspaceId: params.workspaceId,
+      message: error instanceof Error ? error.message : String(error),
+    });
   }
 
   return cachedContext;
@@ -332,11 +400,26 @@ export async function runFixerAgent(params: {
   priorFailures: string[];
   model: string;
   workingDirectory?: string;
+  targetRepositoryId?: string;
   codexFindings?: unknown | null;
 }): Promise<FixPrFixerOutput> {
-  const workingDirectory = params.workingDirectory ?? repoRootDir;
+  const workingDirectory = resolveActivityWorkingDirectory("runFixerAgent", params.workingDirectory, {
+    expectedRepositoryId: params.targetRepositoryId,
+    fileHints: params.codeContext.editScope,
+  });
+  debugLog("runFixerAgent context", {
+    runSummaryLength: params.rca.summary.length,
+    editScopeCount: params.codeContext.editScope.length,
+    codexContextChunkCount: expandFixPrCodeContext(params.codexFindings ?? null).relatedChunks.length,
+    workingDirectory,
+    requiredChanges: params.testPlan.requiredChecks.join(","),
+  });
   let fileContents = await loadFileContents(params.codeContext.editScope, workingDirectory);
   console.log(`[fix-pr] Local files found: ${fileContents.length}/${params.codeContext.editScope.length}`);
+  debugLog("runFixerAgent file contents", {
+    requestedFiles: params.codeContext.editScope,
+    loadedFileCount: fileContents.length,
+  });
 
   // Fallback: if local files not found, use chunk content from Codex search results
   if (fileContents.length === 0 && params.codexFindings) {
@@ -365,6 +448,7 @@ export async function runFixerAgent(params: {
   // Last resort: if still no file contents, tell the LLM to generate a new file
   if (fileContents.length === 0) {
     console.log("[fix-pr] No file contents at all — adding placeholder for LLM to create");
+    debugLog("runFixerAgent fallback", { reason: "no_contents" });
     const targetFile = params.codeContext.editScope[0] ?? "src/fix.ts";
     fileContents = [{
       filePath: targetFile,
@@ -390,9 +474,18 @@ export async function runFixerAgent(params: {
 export async function applyWorkspacePatch(params: {
   fixerOutput: FixPrFixerOutput;
   workingDirectory?: string;
+  targetRepositoryId?: string;
 }): Promise<{ appliedFiles: string[]; headSha: string }> {
   const appliedFiles: string[] = [];
-  const workingDirectory = params.workingDirectory ?? repoRootDir;
+  const workingDirectory = resolveActivityWorkingDirectory("applyWorkspacePatch", params.workingDirectory, {
+    expectedRepositoryId: params.targetRepositoryId,
+    fileHints: params.fixerOutput.changedFiles.map((change) => change.filePath),
+  });
+
+  debugLog("applyWorkspacePatch", {
+    changedFileCount: params.fixerOutput.changedFiles.length,
+    workingDirectory,
+  });
 
   for (const change of params.fixerOutput.changedFiles) {
     appliedFiles.push(await applyFileChange(change, workingDirectory));
@@ -430,10 +523,16 @@ export async function runChecksAgent(params: {
   commands: string[];
   workingDirectory?: string;
 }): Promise<FixPrChecksOutput> {
+  debugLog("runChecksAgent", {
+    commandCount: params.commands.length,
+    workingDirectory: params.workingDirectory,
+  });
   const commandsRun: FixPrChecksOutput["commandsRun"] = [];
   const failures: string[] = [];
   const logs: string[] = [];
-  const workingDirectory = params.workingDirectory ?? repoRootDir;
+  const workingDirectory = resolveActivityWorkingDirectory("runChecksAgent", params.workingDirectory, {
+    allowNoGit: true,
+  });
 
   for (const command of params.commands) {
     const result = await runCheckCommand(command, workingDirectory);
@@ -457,6 +556,12 @@ export async function runChecksAgent(params: {
 export async function saveFixRunProgress(
   input: SaveFixPRProgressInput,
 ): Promise<void> {
+  debugLog("saveFixRunProgress request", {
+    runId: input.runId,
+    status: input.status,
+    currentStage: input.currentStage,
+    iteration: input.iteration?.iteration,
+  });
   const response = await fetch(`${codexConfig.webAppUrl}/api/rest/fix-pr/progress`, {
     method: "POST",
     headers: {
@@ -477,8 +582,17 @@ export async function resolveFixTargetRepository(
 ): Promise<FixTargetRepository | null> {
   const repositoryIds = [...new Set(params.repositoryIds)];
   if (repositoryIds.length === 0) {
+    debugLog("resolveFixTargetRepository skipped", { reason: "no_repository_ids", filePathCount: params.filePaths.length });
     return null;
   }
+
+  debugLog("resolveFixTargetRepository start", {
+    repositoryIds: repositoryIds.length,
+    filePathCount: params.filePaths.length,
+    preferredOwner: params.preferredOwner,
+    preferredRepo: params.preferredRepo,
+    configuredBaseBranch: params.configuredBaseBranch,
+  });
 
   const repositories = await prisma.codexRepository.findMany({
     where: { id: { in: repositoryIds } },
@@ -492,10 +606,16 @@ export async function resolveFixTargetRepository(
   });
 
   if (repositories.length === 0) {
+    debugLog("resolveFixTargetRepository none", { repositoryIds });
     return null;
   }
 
-  let selectedRepository: (typeof repositories)[number] | undefined = repositories[0];
+  let selectedRepository: (typeof repositories)[number] = repositories[0]!;
+  debugLog("resolveFixTargetRepository selected by default", {
+    repositoryId: selectedRepository.id,
+    defaultBranch: selectedRepository.defaultBranch,
+  });
+
   if (params.filePaths.length > 0) {
     const fileMatches = await prisma.codexFile.findMany({
       where: {
@@ -525,9 +645,10 @@ export async function resolveFixTargetRepository(
     }
   }
 
-  if (!selectedRepository) {
-    return null;
-  }
+  debugLog("resolveFixTargetRepository resolved", {
+    repositoryId: selectedRepository.id,
+    localPath: path.resolve(codexConfig.cloneBasePath, selectedRepository.id),
+  });
 
   const parsedRemote = parseGitHubOwnerRepo(selectedRepository.sourceUrl);
   const owner = params.preferredOwner ?? parsedRemote?.owner ?? null;
@@ -551,7 +672,19 @@ export async function resolveFixTargetRepository(
 export async function createFixPullRequest(
   params: CreateFixPullRequestInput,
 ): Promise<CreateFixPullRequestResult> {
-  if (!existsSync(params.workingDirectory)) {
+  debugLog("createFixPullRequest start", {
+    runId: params.runId,
+    owner: params.targetRepository.owner,
+    repo: params.targetRepository.repo,
+    baseBranch: params.targetRepository.baseBranch,
+    changedFileCount: params.changedFiles.length,
+    iteration: params.iteration,
+  });
+  const workingDirectory = resolveActivityWorkingDirectory("createFixPullRequest", params.workingDirectory, {
+    expectedRepositoryId: params.targetRepository.repositoryId,
+  });
+
+  if (!existsSync(workingDirectory)) {
     throw new Error(`Working directory not found: ${params.workingDirectory}`);
   }
 
@@ -567,27 +700,33 @@ export async function createFixPullRequest(
     patchPlan: params.patchPlan,
   });
 
+  debugLog("createFixPullRequest commit", {
+    branchName,
+    commitMessage,
+    bodyLength: body.length,
+  });
+
   await runGitCommand(
-    params.workingDirectory,
+    workingDirectory,
     ["checkout", "-B", branchName, params.targetRepository.baseBranch],
   );
   if (params.changedFiles.length === 0) {
-    await runGitCommand(params.workingDirectory, ["add", "-A"]);
+    await runGitCommand(workingDirectory, ["add", "-A"]);
   } else {
-    await runGitCommand(params.workingDirectory, ["add", "--", ...params.changedFiles]);
+    await runGitCommand(workingDirectory, ["add", "--", ...params.changedFiles]);
   }
   try {
-    await runGitCommand(params.workingDirectory, ["commit", "-m", commitMessage]);
+    await runGitCommand(workingDirectory, ["commit", "-m", commitMessage]);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(`No changes to commit: ${message}`);
   }
 
-  const headSha = await runGitCommand(params.workingDirectory, ["rev-parse", "HEAD"]).then((result) =>
+  const headSha = await runGitCommand(workingDirectory, ["rev-parse", "HEAD"]).then((result) =>
     result.stdout.trim(),
   );
 
-  await runGitCommand(params.workingDirectory, ["push", "--set-upstream", "origin", branchName]);
+  await runGitCommand(workingDirectory, ["push", "--set-upstream", "origin", branchName]);
   const githubClient = createGitHubClient(params.githubToken);
   const pr = await createDraftPullRequest(githubClient, {
     owner: params.targetRepository.owner,
@@ -652,14 +791,167 @@ function buildChangedFilesDigest(changedFiles: FixPrFixerOutput["changedFiles"])
     .digest("hex");
 }
 
+function resolveActivityWorkingDirectory(
+  operation: string,
+  workingDirectory?: string,
+  opts: {
+    expectedRepositoryId?: string | null;
+    fileHints?: string[];
+    allowNoGit?: boolean;
+  } = {},
+): string {
+  const explicitDirectory = workingDirectory
+    ? path.resolve(workingDirectory)
+    : repoRootDir;
+  const resolved = tryResolveWorkingDirectory(operation, explicitDirectory, opts);
+  if (resolved) {
+    return resolved;
+  }
+
+  if (!workingDirectory) {
+    throw new Error(`${operation} could not resolve a valid working directory from default context.`);
+  }
+
+  throw new Error(`${operation} could not resolve a valid working directory from: ${workingDirectory}`);
+}
+
+function resolveGitRepoRoot(candidate: string): string | null {
+  const candidateGitRoot = path.resolve(candidate);
+  if (existsSync(candidateGitRoot) && isDirectoryWithGit(candidateGitRoot)) {
+    return candidateGitRoot;
+  }
+
+  return null;
+}
+
+function tryResolveWorkingDirectory(
+  operation: string,
+  workingDirectory: string,
+  opts: {
+    expectedRepositoryId?: string | null;
+    fileHints?: string[];
+    allowNoGit?: boolean;
+  },
+): string | null {
+  if (!existsSync(workingDirectory) || !lstatSync(workingDirectory).isDirectory()) {
+    return null;
+  }
+
+  if (opts.fileHints?.length) {
+    const canUseWorkingDirectory = opts.fileHints.every((fileHint) =>
+      canResolveFilePathInDirectory(workingDirectory, fileHint),
+    );
+    if (canUseWorkingDirectory) {
+      return workingDirectory;
+    }
+  }
+
+  const fallbackCandidate = resolveGitRepoRoot(workingDirectory);
+  if (fallbackCandidate) {
+    return fallbackCandidate;
+  }
+
+  if (opts.allowNoGit) {
+    return workingDirectory;
+  }
+
+  if (opts.expectedRepositoryId) {
+    const byRepositoryId = resolveGitRepoRoot(path.resolve(codexCloneBasePath, opts.expectedRepositoryId));
+    if (byRepositoryId) {
+      debugLog("resolveActivityWorkingDirectory fallbackByRepositoryId", {
+        operation,
+        expectedRepositoryId: opts.expectedRepositoryId,
+        workingDirectory,
+        resolved: byRepositoryId,
+      });
+      return byRepositoryId;
+    }
+  }
+
+  const cloneCandidate = resolveByFileHints(opts.fileHints ?? []);
+  if (cloneCandidate) {
+    debugLog("resolveActivityWorkingDirectory fallbackByFileHints", {
+      operation,
+      workingDirectory,
+      resolved: cloneCandidate,
+    });
+    return cloneCandidate;
+  }
+  return null;
+}
+
+function isDirectoryWithGit(candidatePath: string): boolean {
+  if (!existsSync(candidatePath)) {
+    return false;
+  }
+
+  try {
+    return lstatSync(candidatePath).isDirectory() && existsSync(path.join(candidatePath, ".git"));
+  } catch {
+    return false;
+  }
+}
+
+function resolveByFileHints(fileHints: string[]): string | null {
+  const entries = safeReadCloneDirectories();
+  const candidates: string[] = [];
+
+  for (const entry of entries) {
+    const base = path.resolve(codexCloneBasePath, entry);
+    if (!isDirectoryWithGit(base)) {
+      continue;
+    }
+
+    const hasAllFiles = fileHints.every((fileHint) => existsSync(path.resolve(base, fileHint)));
+    if (hasAllFiles) {
+      candidates.push(base);
+    }
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0] ?? null;
+  }
+
+  return null;
+}
+
+function canResolveFilePathInDirectory(
+  workingDirectory: string,
+  filePath: string,
+): boolean {
+  try {
+    const trimmedPath = filePath.trim();
+    if (!trimmedPath || path.isAbsolute(trimmedPath)) return false;
+    const absolutePath = path.resolve(workingDirectory, trimmedPath);
+    const relativePath = path.relative(workingDirectory, absolutePath);
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) return false;
+    return existsSync(absolutePath);
+  } catch {
+    return false;
+  }
+}
+
+function safeReadCloneDirectories(): string[] {
+  try {
+    return readdirSync(codexCloneBasePath, { withFileTypes: true })
+      .filter((entry: Dirent) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
 async function runCheckCommand(
   command: string,
   workingDirectory?: string,
 ): Promise<FixPrChecksOutput["commandsRun"][number]> {
   const cwd = workingDirectory ?? repoRootDir;
+  const resolvedWorkingDirectory = resolveActivityWorkingDirectory("runCheckCommand", cwd, {
+    allowNoGit: true,
+  });
   try {
     const { stdout, stderr } = await exec(command, {
-      cwd,
+      cwd: resolvedWorkingDirectory,
       timeout: 10 * 60 * 1000,
     });
 
@@ -690,6 +982,7 @@ async function runGitCommand(
   workingDirectory: string,
   args: string[],
 ): Promise<{ stdout: string; stderr: string }> {
+  debugLog("runGitCommand", { workingDirectory, args });
   const result = await execFile("git", args, {
     cwd: workingDirectory,
     timeout: 10 * 60 * 1000,
@@ -792,7 +1085,9 @@ function replaceSingleExactMatch(
 }
 
 function resolveWorkspaceFilePath(filePath: string, baseDirectory?: string): string {
-  const workingDirectory = baseDirectory ?? repoRootDir;
+  const workingDirectory = resolveActivityWorkingDirectory("loadFile", baseDirectory, {
+    allowNoGit: true,
+  });
   const trimmedPath = filePath.trim();
   if (!trimmedPath) {
     throw new Error("File path must not be empty");

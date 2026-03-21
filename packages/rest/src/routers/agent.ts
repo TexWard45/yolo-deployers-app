@@ -22,10 +22,14 @@ import type { SaveFixPRProgressInput } from "@shared/types";
 import type { Prisma } from "@shared/types/prisma";
 import {
   dispatchAnalyzeThreadWorkflow,
+  dispatchTriageThreadWorkflow,
   dispatchGenerateFixPRWorkflow,
   cancelGenerateFixPRWorkflow,
 } from "../temporal";
-import { expandFixPrCodeContext } from "./helpers/fix-pr-code-context";
+import {
+  expandFixPrCodeContext,
+  summarizeCodexFindingsRelevance,
+} from "./helpers/fix-pr-code-context";
 import { sendDraftToChannel } from "./helpers/send-draft";
 import { testSentryConnection as testSentryConnectionFn } from "./helpers/sentry-client";
 import {
@@ -35,13 +39,23 @@ import {
   getLinearIssue,
   severityToPriority,
 } from "./helpers/linear-client";
-import { generateLinearIssueBody, generateEngSpec } from "./helpers/triage-spec.prompt";
+import { generateLinearIssueBody } from "./helpers/triage-spec.prompt";
 import type { TriagePromptInput } from "./helpers/triage-spec.prompt";
 
 const ACTIVE_FIX_PR_STATUSES = new Set(["QUEUED", "RUNNING"]);
 const TERMINAL_FIX_PR_STATUSES = new Set(["PASSED", "WAITING_REVIEW", "FAILED", "CANCELLED"]);
 const ADMIN_WORKSPACE_ROLES = new Set(["OWNER", "ADMIN"]);
 const REDACTED_SECRET_PLACEHOLDER = "***";
+const FIX_PR_DEBUG_LOGS =
+  process.env.CODEX_DEBUG_LOGS === "1"
+  || process.env.CODEX_DEBUG_LOGS?.toLowerCase() === "true"
+  || process.env.CODEX_FIX_DEBUG_LOGS === "1"
+  || process.env.CODEX_FIX_DEBUG_LOGS?.toLowerCase() === "true";
+
+function debugLog(message: string, ...rest: unknown[]) {
+  if (!FIX_PR_DEBUG_LOGS) return;
+  console.log(`[fix-pr][rest] ${message}`, ...rest);
+}
 
 function hasFixPrCodeContext(codexFindings: unknown | null): boolean {
   return expandFixPrCodeContext(codexFindings).editScope.length > 0;
@@ -137,9 +151,12 @@ function buildFixPrRunMetadata(config: {
   githubToken?: string | null;
   githubDefaultOwner?: string | null;
   githubDefaultRepo?: string | null;
-} | null): Prisma.InputJsonValue {
+} | null, codexFindings: unknown | null = null): Prisma.InputJsonValue {
+  const codexRelevance = codexFindings ? summarizeCodexFindingsRelevance(codexFindings) : null;
+
   return {
     githubConfigured: Boolean(config?.githubToken && config.githubDefaultOwner && config.githubDefaultRepo),
+    codexRelevance: codexRelevance as Prisma.InputJsonValue | null,
   };
 }
 
@@ -157,6 +174,7 @@ function serializeFixPrStatus(run: {
   branchName: string | null;
   rcaSummary: string | null;
   rcaConfidence: number | null;
+  metadata: unknown;
   iterations: Array<{
     id: string;
     iteration: number;
@@ -178,12 +196,13 @@ function serializeFixPrStatus(run: {
     maxIterations: run.maxIterations,
     summary: run.summary,
     lastError: run.lastError,
-    prUrl: run.prUrl,
-    prNumber: run.prNumber,
-    branchName: run.branchName,
-    rcaSummary: run.rcaSummary,
-    rcaConfidence: run.rcaConfidence,
-    iterations: run.iterations.map((iteration) => ({
+  prUrl: run.prUrl,
+  prNumber: run.prNumber,
+  branchName: run.branchName,
+  rcaSummary: run.rcaSummary,
+  rcaConfidence: run.rcaConfidence,
+  metadata: run.metadata,
+  iterations: run.iterations.map((iteration) => ({
       id: iteration.id,
       iteration: iteration.iteration,
       status: iteration.status,
@@ -868,6 +887,12 @@ export const agentRouter = createTRPCRouter({
     .input(GenerateFixPRSchema)
     .mutation(async ({ ctx, input }) => {
       await requireWorkspaceMember(ctx, input);
+      debugLog("generateFixPR request", {
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        analysisId: input.analysisId,
+        userId: input.userId,
+      });
 
       const requestedAnalysis = await ctx.prisma.threadAnalysis.findUnique({
         where: { id: input.analysisId },
@@ -883,6 +908,7 @@ export const agentRouter = createTRPCRouter({
       }
 
       let selectedAnalysis = requestedAnalysis;
+      const selectedAnalysisReason = !hasFixPrCodeContext(requestedAnalysis.codexFindings) ? "fallback" : "requested";
       if (!hasFixPrCodeContext(requestedAnalysis.codexFindings)) {
         const candidates = await ctx.prisma.threadAnalysis.findMany({
           where: {
@@ -911,11 +937,30 @@ export const agentRouter = createTRPCRouter({
           console.log(
             `[generateFixPR] selected fallback analysis ${selectedAnalysis.id} (requested ${requestedAnalysis.id})`,
           );
+          debugLog("generateFixPR fallback analysis", {
+            requestedAnalysisId: requestedAnalysis.id,
+            selectedAnalysisId: selectedAnalysis.id,
+          });
         }
       }
 
+      debugLog("generateFixPR selected analysis", {
+        requestedAnalysisId: requestedAnalysis.id,
+        selectedAnalysisId: selectedAnalysis.id,
+        selectedAnalysisReason,
+        hasCodeContext: hasFixPrCodeContext(selectedAnalysis.codexFindings),
+      });
+
       const config = await ctx.prisma.workspaceAgentConfig.findUnique({
         where: { workspaceId: input.workspaceId },
+      });
+
+      debugLog("generateFixPR config", {
+        hasConfig: Boolean(config),
+        codexRepositoryIds: config?.codexRepositoryIds?.length ?? 0,
+        githubOwner: config?.githubDefaultOwner,
+        githubRepo: config?.githubDefaultRepo,
+        hasGithubToken: Boolean(config?.githubToken),
       });
 
       const existingRun = await ctx.prisma.fixPrRun.findUnique({
@@ -924,6 +969,11 @@ export const agentRouter = createTRPCRouter({
 
       if (existingRun) {
         if (ACTIVE_FIX_PR_STATUSES.has(existingRun.status)) {
+          debugLog("generateFixPR existing run active", {
+            runId: existingRun.id,
+            status: existingRun.status,
+            stage: existingRun.currentStage,
+          });
           return {
             runId: existingRun.id,
             status: existingRun.status,
@@ -940,6 +990,7 @@ export const agentRouter = createTRPCRouter({
             summary: null,
             lastError: null,
             maxIterations: config?.codexFixMaxIterations ?? 3,
+            metadata: buildFixPrRunMetadata(config, selectedAnalysis.codexFindings),
           },
         });
 
@@ -949,6 +1000,12 @@ export const agentRouter = createTRPCRouter({
           workspaceId: input.workspaceId,
           analysisId: selectedAnalysis.id,
           triggeredByUserId: input.userId,
+          debugLogs: FIX_PR_DEBUG_LOGS,
+        });
+
+        debugLog("generateFixPR re-dispatched existing run", {
+          runId: existingRun.id,
+          selectedAnalysisId: selectedAnalysis.id,
         });
 
         return {
@@ -967,8 +1024,15 @@ export const agentRouter = createTRPCRouter({
           status: "QUEUED",
           currentStage: "QUEUED",
           maxIterations: config?.codexFixMaxIterations ?? 3,
-          metadata: buildFixPrRunMetadata(config),
+          metadata: buildFixPrRunMetadata(config, selectedAnalysis.codexFindings),
         },
+      });
+
+      debugLog("generateFixPR created run", {
+        runId: run.id,
+        selectedAnalysisId: selectedAnalysis.id,
+        workspaceId: input.workspaceId,
+        maxIterations: run.maxIterations,
       });
 
       await dispatchGenerateFixPRWorkflow({
@@ -977,6 +1041,12 @@ export const agentRouter = createTRPCRouter({
         workspaceId: input.workspaceId,
         analysisId: selectedAnalysis.id,
         triggeredByUserId: input.userId,
+        debugLogs: FIX_PR_DEBUG_LOGS,
+      });
+      debugLog("generateFixPR dispatched", {
+        runId: run.id,
+        analysisId: selectedAnalysis.id,
+        workspaceId: input.workspaceId,
       });
 
       return {
@@ -1006,6 +1076,14 @@ export const agentRouter = createTRPCRouter({
       });
 
       if (!run) return null;
+
+      debugLog("getFixPRStatus", {
+        threadId: input.threadId,
+        workspaceId: input.workspaceId,
+        runId: run.id,
+        status: run.status,
+        stage: run.currentStage,
+      });
 
       return serializeFixPrStatus(run);
     }),
@@ -1039,6 +1117,14 @@ export const agentRouter = createTRPCRouter({
   saveFixPRProgress: publicProcedure
     .input(SaveFixPRProgressSchema)
     .mutation(async ({ ctx, input }) => {
+      debugLog("saveFixPRProgress request", {
+        runId: input.runId,
+        status: input.status,
+        currentStage: input.currentStage,
+        hasMetadata: Boolean(input.metadata),
+        hasIteration: Boolean(input.iteration),
+        iteration: input.iteration?.iteration,
+      });
       const run = await ctx.prisma.fixPrRun.findUnique({
         where: { id: input.runId },
       });
@@ -1089,83 +1175,19 @@ export const agentRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "No analysis found for this thread" });
       }
 
-      const config = await ctx.prisma.workspaceAgentConfig.findUnique({
-        where: { workspaceId: input.workspaceId },
+      await dispatchTriageThreadWorkflow({
+        workspaceId: input.workspaceId,
+        threadId: input.threadId,
+        analysisId: analysis.id,
+        triggeredByUserId: input.userId,
+        mode: "SPEC_ONLY",
       });
 
-      const llmApiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
-      if (!llmApiKey) {
-        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "LLM API key not configured" });
-      }
-
-      // Fresh Codex search using analysis summary + RCA as query
-      let freshCodexFindings = analysis.codexFindings;
-      const repoIds = config?.codexRepositoryIds ?? [];
-      if (repoIds.length > 0) {
-        const searchQuery = [
-          analysis.summary,
-          analysis.rcaSummary,
-          analysis.affectedComponent,
-        ].filter(Boolean).join(" ");
-
-        try {
-          const webAppUrl = process.env.WEB_APP_URL ?? "http://localhost:3000";
-          const searchResponse = await fetch(`${webAppUrl}/api/rest/codex/search`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              workspaceId: input.workspaceId,
-              query: searchQuery,
-              repositoryIds: repoIds,
-              limit: 10,
-            }),
-          });
-          if (searchResponse.ok) {
-            freshCodexFindings = (await searchResponse.json()) as Prisma.JsonValue;
-          }
-        } catch (err) {
-          console.warn("[generateSpec] fresh Codex search failed, using cached findings:", err);
-        }
-      }
-
-      const promptInput: TriagePromptInput = {
-        analysis: {
-          issueCategory: analysis.issueCategory,
-          severity: analysis.severity,
-          affectedComponent: analysis.affectedComponent,
-          summary: analysis.summary,
-          rcaSummary: analysis.rcaSummary,
-          codexFindings: freshCodexFindings,
-          sentryFindings: analysis.sentryFindings,
-        },
-        messages: analysis.thread.messages.map((m) => ({ direction: m.direction, body: m.body })),
-        customerDisplayName: "Customer",
-        threadTitle: analysis.thread.title,
+      return {
+        queued: true,
+        workflowId: `triage-thread-${input.threadId}-${analysis.id}`,
+        action: "spec_generation_started",
       };
-
-      const result = await generateEngSpec(promptInput, {
-        apiKey: llmApiKey,
-        model: config?.model ?? undefined,
-      });
-
-      if (!result) {
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to generate spec" });
-      }
-
-      // Save triage action
-      await ctx.prisma.triageAction.create({
-        data: {
-          threadId: input.threadId,
-          workspaceId: input.workspaceId,
-          analysisId: analysis.id,
-          action: "GENERATE_SPEC",
-          linearIssueId: input.linearIssueId,
-          specMarkdown: result.specMarkdown,
-          createdById: input.userId,
-        },
-      });
-
-      return result;
     }),
 
   /** Get A/B test results for investigation quality experiments */

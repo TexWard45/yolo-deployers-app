@@ -91,6 +91,13 @@ export interface TriagePromptInput {
   messages: Array<{ direction: string; body: string }>;
   customerDisplayName: string;
   threadTitle: string | null;
+  telemetryFindings?: {
+    sessionId?: string;
+    sessionUrl?: string;
+    errorCount?: number;
+    errors?: Array<{ message?: string; timestamp?: string }>;
+    userAgent?: string | null;
+  } | null;
 }
 
 export interface TriagePromptOptions {
@@ -161,6 +168,25 @@ function buildTriageUserMessage(input: TriagePromptInput): string {
         if (e.stackTrace) {
           lines.push(`    Stack: ${e.stackTrace.slice(0, 200)}`);
         }
+      }
+    }
+  }
+
+  if (input.telemetryFindings) {
+    lines.push("", "Session replay / telemetry:");
+    if (input.telemetryFindings.sessionUrl) {
+      lines.push(`  - Replay URL: ${input.telemetryFindings.sessionUrl}`);
+    }
+    if (typeof input.telemetryFindings.errorCount === "number") {
+      lines.push(`  - Error count: ${input.telemetryFindings.errorCount}`);
+    }
+    if (input.telemetryFindings.userAgent) {
+      lines.push(`  - User agent: ${input.telemetryFindings.userAgent}`);
+    }
+    const errors = input.telemetryFindings.errors ?? [];
+    for (const error of errors.slice(0, 5)) {
+      if (error.message) {
+        lines.push(`  - ${error.message.slice(0, 220)}`);
       }
     }
   }

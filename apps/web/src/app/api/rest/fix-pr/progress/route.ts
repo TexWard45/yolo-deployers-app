@@ -9,8 +9,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const debug =
+    process.env.CODEX_FIX_DEBUG_LOGS === "1"
+    || process.env.CODEX_FIX_DEBUG_LOGS?.toLowerCase() === "true"
+    || process.env.CODEX_DEBUG_LOGS === "1"
+    || process.env.CODEX_DEBUG_LOGS?.toLowerCase() === "true";
+
   try {
     const body = await req.json();
+    if (debug) {
+      console.log("[fix-pr/progress] request", {
+        runId: body?.runId,
+        status: body?.status,
+        stage: body?.currentStage,
+        hasMetadata: Boolean(body?.metadata),
+      });
+    }
     const trpc = createCaller(createTRPCContext());
     const result = await trpc.agent.saveFixPRProgress(body);
 

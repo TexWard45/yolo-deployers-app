@@ -38,6 +38,9 @@ export interface TriageContext {
   // Messages for LLM context
   messages: Array<{ direction: string; body: string }>;
   customerDisplayName: string;
+  telemetrySessionId: string | null;
+  customerEmail: string | null;
+  threadCreatedAt: string;
   // Config
   codexRepositoryIds: string[];
   sentryConfig: SentryConfig | null;
@@ -122,6 +125,9 @@ export async function getTriageContext(
       body: m.body,
     })),
     customerDisplayName: analysis.thread.customer.displayName,
+    telemetrySessionId: analysis.thread.telemetrySessionId,
+    customerEmail: analysis.thread.customer.email,
+    threadCreatedAt: analysis.thread.createdAt.toISOString(),
     codexRepositoryIds,
     sentryConfig,
     linearConfig,
@@ -303,6 +309,7 @@ export async function generateEngSpecActivity(params: {
   context: TriageContext;
   freshCodexFindings: unknown | null;
   freshSentryFindings: unknown | null;
+  telemetryFindings?: unknown | null;
 }): Promise<{ specMarkdown: string; specTitle: string } | null> {
   const apiKey = queueEnv.LLM_API_KEY;
   if (!apiKey) {
@@ -321,6 +328,7 @@ export async function generateEngSpecActivity(params: {
     messages: params.context.messages,
     customerDisplayName: params.context.customerDisplayName,
     threadTitle: params.context.threadTitle,
+    telemetryFindings: params.telemetryFindings ?? null,
   };
 
   return generateEngSpec(promptInput, {

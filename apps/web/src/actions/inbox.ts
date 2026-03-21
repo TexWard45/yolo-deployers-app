@@ -275,6 +275,11 @@ export async function generateFixPRAction(data: {
   workspaceId: string;
   analysisId: string;
 }) {
+  const debug = process.env.CODEX_FIX_DEBUG_LOGS === "1"
+    || process.env.CODEX_FIX_DEBUG_LOGS?.toLowerCase() === "true"
+    || process.env.CODEX_DEBUG_LOGS === "1"
+    || process.env.CODEX_DEBUG_LOGS?.toLowerCase() === "true";
+
   const session = await getSession();
   if (!session) {
     return { success: false, error: "Not authenticated" } as const;
@@ -282,6 +287,13 @@ export async function generateFixPRAction(data: {
 
   try {
     const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    if (debug) {
+      console.log("[inbox] generateFixPRAction", {
+        threadId: data.threadId,
+        workspaceId: data.workspaceId,
+        analysisId: data.analysisId,
+      });
+    }
     const result = await trpc.agent.generateFixPR({
       threadId: data.threadId,
       workspaceId: data.workspaceId,
@@ -321,6 +333,7 @@ export interface FixPRStatusResult {
   branchName: string | null;
   rcaSummary: string | null;
   rcaConfidence: number | null;
+  metadata?: unknown;
   iterations: FixPRIterationStatusResult[];
 }
 
@@ -328,16 +341,31 @@ export async function getFixPRStatusAction(
   threadId: string,
   workspaceId: string,
 ): Promise<FixPRStatusResult | null> {
+  const debug = process.env.CODEX_FIX_DEBUG_LOGS === "1"
+    || process.env.CODEX_FIX_DEBUG_LOGS?.toLowerCase() === "true"
+    || process.env.CODEX_DEBUG_LOGS === "1"
+    || process.env.CODEX_DEBUG_LOGS?.toLowerCase() === "true";
+
   const session = await getSession();
   if (!session) return null;
 
   try {
     const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-    return await trpc.agent.getFixPRStatus({
+    const result = await trpc.agent.getFixPRStatus({
       threadId,
       workspaceId,
       userId: session.id,
     });
+    if (debug) {
+      console.log("[inbox] getFixPRStatusAction", {
+        hasResult: Boolean(result),
+        runId: result?.runId,
+        status: result?.status,
+        stage: result?.currentStage,
+        metadataPresent: Boolean(result?.metadata),
+      });
+    }
+    return result;
   } catch {
     return null;
   }

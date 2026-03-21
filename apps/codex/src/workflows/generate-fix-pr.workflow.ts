@@ -12,6 +12,7 @@ const {
   runRcaAgent,
   runCodeContextAgent,
   runTestAgent,
+  cloneRepository,
   runFixerAgent,
   applyWorkspacePatch,
   runReviewerAgent,
@@ -26,6 +27,18 @@ const {
   },
 });
 
+interface FixPrWorkflowInputLike {
+  debugLogs?: boolean;
+}
+
+function createWorkflowDebugLogger(input: FixPrWorkflowInputLike) {
+  const debugEnabled = Boolean(input.debugLogs);
+  return (message: string, ...rest: unknown[]) => {
+    if (!debugEnabled) return;
+    console.log(`[fix-pr][workflow] ${message}`, ...rest);
+  };
+}
+
 export interface GenerateFixPRWorkflowResult {
   runId: string;
   status: "PASSED" | "WAITING_REVIEW" | "FAILED" | "CANCELLED";
@@ -34,6 +47,13 @@ export interface GenerateFixPRWorkflowResult {
 export async function generateFixPRWorkflow(
   input: GenerateFixPRWorkflowInput,
 ): Promise<GenerateFixPRWorkflowResult> {
+  const debugLog = createWorkflowDebugLogger(input);
+  debugLog("workflow started", {
+    runId: input.runId,
+    threadId: input.threadId,
+    workspaceId: input.workspaceId,
+    analysisId: input.analysisId,
+  });
   const context = await getFixRunContext(input);
   if (!context) {
     return {
@@ -42,7 +62,17 @@ export async function generateFixPRWorkflow(
     };
   }
 
+  debugLog("workflow context", {
+    runId: context.runId,
+    analysisId: context.analysisId,
+    githubOwner: context.github.owner,
+    githubRepo: context.github.repo,
+    baseBranch: context.github.baseBranch,
+    repoCount: context.codexRepositoryIds.length,
+  });
+
   try {
+    debugLog("workflow state", { runId: input.runId, stage: "COLLECTING_CONTEXT" });
     await saveFixRunProgress({
       runId: input.runId,
       status: "RUNNING",
@@ -53,6 +83,7 @@ export async function generateFixPRWorkflow(
       runId: input.runId,
       analysisId: input.analysisId,
     });
+    debugLog("workflow parent thread", { runId: input.runId, parentThreadId });
 
     await saveFixRunProgress({
       runId: input.runId,
@@ -78,6 +109,15 @@ export async function generateFixPRWorkflow(
       }),
     ]);
 
+    debugLog("workflow context resolved", {
+      runId: input.runId,
+      editScopeCount: codeContext.editScope.length,
+      symbolCount: codeContext.symbols.length,
+      relatedChunkCount: codeContext.relatedChunks.length,
+      filesCount: codeContext.files.length,
+      rcaConfidence: rca.confidence,
+    });
+
     const targetRepository = await resolveFixTargetRepository({
       repositoryIds: context.codexRepositoryIds,
       filePaths: codeContext.editScope,
@@ -85,18 +125,60 @@ export async function generateFixPRWorkflow(
       preferredRepo: context.github.repo,
       configuredBaseBranch: context.github.baseBranch,
     });
+    if (!targetRepository) {
+      debugLog("workflow no target repository", {
+        runId: input.runId,
+        repositoryIds: context.codexRepositoryIds,
+      });
+      await saveFixRunProgress({
+        runId: input.runId,
+        status: "WAITING_REVIEW",
+        currentStage: "WAITING_REVIEW",
+        lastError: "Unable to resolve a target repository for this fix run.",
+      });
+      return {
+        runId: input.runId,
+        status: "WAITING_REVIEW",
+      };
+    }
+    debugLog("workflow target repository", {
+      runId: input.runId,
+      targetRepository,
+    });
     const githubToken = context.github.token;
+    const syncedRepo = await cloneRepository({
+      repositoryId: targetRepository.repositoryId,
+    });
+
+    const workingDirectory = syncedRepo.localPath;
+    if (!workingDirectory) {
+      throw new Error("No target repository was resolved for this fix run.");
+    }
+
     const canCreatePullRequest = Boolean(
-      targetRepository?.canCreatePullRequest
-      && targetRepository.owner
-      && targetRepository.repo
-      && githubToken,
+      targetRepository.canCreatePullRequest
+      || (
+        targetRepository.owner
+        && targetRepository.repo
+        && githubToken
+        && workingDirectory.length > 0
+      ),
     );
-    const workingDirectory = targetRepository?.localPath;
+    debugLog("workflow target decision", {
+      runId: input.runId,
+      canCreatePullRequest,
+      workingDirectory,
+    });
 
     const testPlan = await runTestAgent({
       codeContext,
       requiredCheckNames: context.requiredCheckNames,
+    });
+    debugLog("workflow test plan", {
+      runId: input.runId,
+      commands: testPlan.commands,
+      requiredChecks: testPlan.requiredChecks,
+      rationale: testPlan.rationale,
     });
 
     await saveFixRunProgress({
@@ -114,6 +196,10 @@ export async function generateFixPRWorkflow(
     let priorFailures: string[] = [];
 
     for (let iteration = 1; iteration <= context.maxIterations; iteration += 1) {
+      debugLog("workflow iteration start", {
+        runId: input.runId,
+        iteration,
+      });
       await saveFixRunProgress({
         runId: input.runId,
         currentStage: "FIXING",
@@ -132,6 +218,14 @@ export async function generateFixPRWorkflow(
         model: context.models.fix,
         codexFindings: context.codexFindings,
         workingDirectory,
+        targetRepositoryId: targetRepository.repositoryId,
+      });
+      debugLog("workflow fixer output", {
+        runId: input.runId,
+        iteration,
+        changedFileCount: fixerOutput.changedFiles.length,
+        summary: fixerOutput.summary,
+        cannotFixSafely: fixerOutput.cannotFixSafely,
       });
 
       if (fixerOutput.changedFiles.length === 0) {
@@ -160,6 +254,13 @@ export async function generateFixPRWorkflow(
       const applied = await applyWorkspacePatch({
         fixerOutput,
         workingDirectory,
+        targetRepositoryId: targetRepository.repositoryId,
+      });
+      debugLog("workflow applied patch", {
+        runId: input.runId,
+        iteration,
+        appliedFiles: applied.appliedFiles,
+        headSha: applied.headSha,
       });
 
       const [reviewerOutput, checksOutput] = await Promise.all([
@@ -176,6 +277,13 @@ export async function generateFixPRWorkflow(
       ]);
 
       const iterationStatus = reviewerOutput.approved && checksOutput.passed ? "PASSED" : "FAILED";
+      debugLog("workflow iteration result", {
+        runId: input.runId,
+        iteration,
+        iterationStatus,
+        reviewerApproved: reviewerOutput.approved,
+        checksPassed: checksOutput.passed,
+      });
 
       await saveFixRunProgress({
         runId: input.runId,
@@ -197,6 +305,11 @@ export async function generateFixPRWorkflow(
       if (reviewerOutput.approved && checksOutput.passed) {
         if (canCreatePullRequest && targetRepository && githubToken) {
           try {
+            debugLog("workflow creating PR", {
+              runId: input.runId,
+              iteration,
+              changedFiles: applied.appliedFiles,
+            });
             const pr = await createFixPullRequest({
               runId: input.runId,
               summary: fixerOutput.summary,
@@ -206,6 +319,13 @@ export async function generateFixPRWorkflow(
               workingDirectory: targetRepository.localPath,
               githubToken,
               iteration,
+            });
+            debugLog("workflow PR created", {
+              runId: input.runId,
+              iteration,
+              branchName: pr.branchName,
+              prUrl: pr.prUrl,
+              prNumber: pr.prNumber,
             });
 
             await saveFixRunProgress({
@@ -226,6 +346,11 @@ export async function generateFixPRWorkflow(
             };
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
+            debugLog("workflow PR creation failed", {
+              runId: input.runId,
+              iteration,
+              message,
+            });
             await saveFixRunProgress({
               runId: input.runId,
               status: "WAITING_REVIEW",
@@ -276,6 +401,11 @@ export async function generateFixPRWorkflow(
       }
 
       priorFailures = collectFailureMessages(reviewerOutput, checksOutput);
+      debugLog("workflow prior failures updated", {
+        runId: input.runId,
+        iteration,
+        priorFailuresCount: priorFailures.length,
+      });
     }
 
     await saveFixRunProgress({
@@ -291,6 +421,7 @@ export async function generateFixPRWorkflow(
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    debugLog("workflow failed", { runId: input.runId, message });
 
     await saveFixRunProgress({
       runId: input.runId,

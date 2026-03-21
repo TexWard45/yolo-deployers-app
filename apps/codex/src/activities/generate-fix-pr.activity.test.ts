@@ -20,6 +20,7 @@ test("runChecksAgent executes repo-scoped commands from the workspace root", asy
   const { runChecksAgent, repoRootDir } = await import("./generate-fix-pr.activity.js");
   const result = await runChecksAgent({
     commands: ['node -e "process.stdout.write(process.cwd())"'],
+    workingDirectory: repoRootDir,
   });
 
   assert.equal(result.passed, true);
@@ -37,6 +38,7 @@ test("applyWorkspacePatch resolves repo-relative file paths", async () => {
     await writeFile(path.join(tempDir, "example.ts"), "const value = 'before';\n", "utf8");
 
     const result = await applyWorkspacePatch({
+      workingDirectory: repoRootDir,
       fixerOutput: {
         summary: "update value",
         patchPlan: "replace literal",
@@ -66,14 +68,15 @@ test("applyWorkspacePatch resolves repo-relative file paths", async () => {
 test("applyWorkspacePatch rejects file paths that escape the repo root", async () => {
   setCodexTestEnv();
 
-  const { applyWorkspacePatch } = await import("./generate-fix-pr.activity.js");
+  const { applyWorkspacePatch, repoRootDir } = await import("./generate-fix-pr.activity.js");
 
   await assert.rejects(
     () =>
-      applyWorkspacePatch({
-        fixerOutput: {
-          summary: "malicious patch",
-          patchPlan: "escape repo root",
+    applyWorkspacePatch({
+      workingDirectory: repoRootDir,
+      fixerOutput: {
+        summary: "malicious patch",
+        patchPlan: "escape repo root",
           riskNotes: [],
           cannotFixSafely: false,
           confidence: 0.8,
@@ -108,6 +111,7 @@ test("applyWorkspacePatch rejects ambiguous snippet replacements", async () => {
     await assert.rejects(
       () =>
         applyWorkspacePatch({
+          workingDirectory: repoRootDir,
           fixerOutput: {
             summary: "ambiguous patch",
             patchPlan: "replace duplicated literal",
