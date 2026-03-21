@@ -10,13 +10,15 @@ import {
 const SYSTEM_PROMPT = `You are a code-fix agent.
 
 Return ONLY valid JSON with this shape:
-{"summary":"...","changedFiles":[{"filePath":"...","original":"...","updated":"...","explanation":"..."}],"patchPlan":"...","riskNotes":["..."],"cannotFixSafely":false}
+{"summary":"...","changedFiles":[{"filePath":"...","original":"...","updated":"...","explanation":"..."}],"patchPlan":"...","riskNotes":["..."],"cannotFixSafely":false,"confidence":0.7}
 
 Rules:
 - make the smallest viable change
 - only edit files in the provided editScope
 - include exact original snippets for each replacement
-- if you cannot safely produce a targeted patch, return changedFiles=[] and cannotFixSafely=true`;
+- ALWAYS attempt to generate a fix, even if you are not fully confident — set "confidence" (0.0-1.0) to reflect how likely the fix is correct
+- set cannotFixSafely=true ONLY if the editScope is completely empty (no files at all)
+- if the files in editScope are not ideal but exist, still attempt a best-effort fix with a low confidence score and explain in riskNotes`;
 
 export interface CodexFixPromptInput {
   rca: FixPrRcaOutput;
@@ -37,6 +39,7 @@ export async function generateCodexFix(
       patchPlan: "No patch generated.",
       riskNotes: ["LLM API key missing"],
       cannotFixSafely: true,
+      confidence: 0,
     };
   }
 
@@ -64,6 +67,7 @@ export async function generateCodexFix(
       patchPlan: "No patch generated.",
       riskNotes: ["Fix generation failed"],
       cannotFixSafely: true,
+      confidence: 0,
     };
   } finally {
     clearTimeout(timeout);

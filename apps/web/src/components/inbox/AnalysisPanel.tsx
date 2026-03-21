@@ -49,6 +49,7 @@ const SEVERITY_STYLES: Record<string, string> = {
 
 export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refreshRef }: AnalysisPanelProps) {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [hasAnalysis, setHasAnalysis] = useState(false);
   const [loading, startTransition] = useTransition();
   const [triggering, startTriggering] = useTransition();
   const hasAnalysisRef = useRef(false);
@@ -58,7 +59,9 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
       const data = await getThreadAnalysis(threadId, workspaceId);
       const result = data as Analysis | null;
       setAnalysis(result);
-      hasAnalysisRef.current = result !== null;
+      const found = result !== null;
+      hasAnalysisRef.current = found;
+      setHasAnalysis(found);
       const draft = result?.drafts[0] ?? null;
       onDraftAvailable?.(draft);
     });
@@ -87,7 +90,8 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
 
   const handleReanalyze = () => {
     setAnalysis(null);
-    hasAnalysisRef.current = false; // Reset to resume polling
+    hasAnalysisRef.current = false;
+    setHasAnalysis(false);
     startTriggering(async () => {
       const result = await triggerThreadAnalysis(threadId, workspaceId);
       if (result.success) {
@@ -132,7 +136,7 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
             </Button>
           </>
         )}
-        {hasAnalysisRef.current === false && !triggering ? (
+        {!hasAnalysis && !triggering ? (
           <p className="mt-2 text-[10px] text-muted-foreground">
             Auto-refreshing every 10s
           </p>
