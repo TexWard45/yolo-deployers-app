@@ -8,6 +8,7 @@
 2. [Danh sách file & vai trò](./file-map.md) — Mọi file liên quan, đường dẫn tuyệt đối, mục đích
 3. [API Contract & Data Model](./api-contracts.md) — Database schema, tRPC endpoints, Zod schemas
 4. [Hướng dẫn sử dụng & tích hợp](./usage-guide.md) — Cách dùng SDK, cách mở rộng
+5. [Error Tracking & Session Investigator](./error-tracking.md) — Error flagging, logError() SDK, getExactErrorMoment API
 
 ## Trạng thái hiện tại
 
@@ -18,6 +19,11 @@
 - **Trace Correlation**: ✅ `getSessionByTraceId` endpoint, `SessionTraceLink` model
 - **Admin UI**: ✅ Trang `/admin/replays` với session list + replay viewer
 - **Demo data**: ✅ Seed script tại `packages/database/prisma/seed.ts`
+- **Error Flagging**: ✅ `Session.hasError` + `Session.errorCount`; auto-set on ingest; filter in `listSessions`
+- **Error SDK**: ✅ `Telemetry.logError()` + global `window.onerror` / `unhandledrejection` capture in `TelemetryProvider`
+- **Error Timeline**: ✅ `SessionTimeline` rows with `type = "ERROR"` — red markers on replay scrubber + auto-seek
+- **Error Investigator**: ✅ `getExactErrorMoment` endpoint — sub-second seek by customer identity + time range
+- **Pagination**: ✅ `listSessions` uses page-based pagination (`page`, `total`, `totalPages`)
 
 ## Quick Reference
 

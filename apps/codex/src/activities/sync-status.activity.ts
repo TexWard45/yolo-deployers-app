@@ -14,7 +14,7 @@ export interface UpdateSyncStatusInput {
 export async function updateSyncStatus(
   input: UpdateSyncStatusInput,
 ): Promise<void> {
-  await prisma.codexRepository.update({
+  const result = await prisma.codexRepository.updateMany({
     where: { id: input.repositoryId },
     data: {
       syncStatus: input.status,
@@ -27,6 +27,12 @@ export async function updateSyncStatus(
       }),
     },
   });
+
+  if (result.count === 0) {
+    console.warn(
+      `updateSyncStatus: repository ${input.repositoryId} not found — it may have been deleted`,
+    );
+  }
 }
 
 export interface CreateSyncLogInput {
@@ -85,7 +91,7 @@ export async function updateSyncLog(
   input: UpdateSyncLogInput,
 ): Promise<void> {
   const isTerminal = input.status === "COMPLETED" || input.status === "FAILED";
-  await prisma.codexSyncLog.update({
+  const result = await prisma.codexSyncLog.updateMany({
     where: { id: input.syncLogId },
     data: {
       ...(input.status != null && { status: input.status }),
@@ -99,4 +105,10 @@ export async function updateSyncLog(
       ...(isTerminal && { completedAt: new Date() }),
     },
   });
+
+  if (result.count === 0) {
+    console.warn(
+      `updateSyncLog: sync log ${input.syncLogId} not found — it may have been deleted via cascade`,
+    );
+  }
 }

@@ -14,7 +14,7 @@ export { analyzeThread } from "./routers/helpers/thread-analysis.prompt";
 export type { ThreadAnalysisInput, ThreadAnalysisOptions } from "./routers/helpers/thread-analysis.prompt";
 export { generateDraftReply } from "./routers/helpers/draft-reply.prompt";
 export type { DraftReplyInput, DraftReplyOptions } from "./routers/helpers/draft-reply.prompt";
-export { fetchSentryContext, extractErrorSignals } from "./routers/helpers/sentry-client";
+export { fetchSentryContext, extractErrorSignals, testSentryConnection } from "./routers/helpers/sentry-client";
 export type { SentryConfig, SentryFinding } from "./routers/helpers/sentry-client";
 export { generateLinearIssueBody, generateEngSpec } from "./routers/helpers/triage-spec.prompt";
 export type { TriagePromptInput, TriagePromptOptions } from "./routers/helpers/triage-spec.prompt";

@@ -48,6 +48,11 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           codexReviewModel: config.codexReviewModel,
           codexFixMaxIterations: config.codexFixMaxIterations,
           codexRequiredCheckNames: config.codexRequiredCheckNames,
+          sentryOrgSlug: config.sentryOrgSlug,
+          sentryProjectSlug: config.sentryProjectSlug,
+          hasSentryToken: config.sentryAuthToken === "***",
+          linearTeamId: config.linearTeamId,
+          hasLinearKey: config.linearApiKey === "***",
         }}
       />
     </div>

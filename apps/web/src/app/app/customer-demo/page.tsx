@@ -134,6 +134,7 @@ export default function CustomerDemoPage() {
     } catch (err: any) {
       // BUG: error is caught but displayed in an ugly way — visible in replay
       setJsError(`💥 Runtime Error: ${err.message}`);
+      Telemetry.logError(err.message, { source: "applyDiscount", couponCode });
       console.error("[Customer Demo] Coupon crash:", err);
     }
   }, [cart, couponCode]);
@@ -467,6 +468,7 @@ export default function CustomerDemoPage() {
                     } catch (err: any) {
                       setCrashMessage(err.message);
                       setIsCrashed(true);
+                      Telemetry.logError(err.message, { source: "Trigger Crash button", couponCode: "CRASH" });
                     }
                   }}
                 >
@@ -502,6 +504,7 @@ export default function CustomerDemoPage() {
                   variant="destructive"
                   className="w-full"
                   onClick={() => {
+                    Telemetry.logError("UI frozen: main thread blocked for 3s", { source: "Freeze button" });
                     // Intentional: synchronous block to simulate a frozen UI
                     const start = Date.now();
                     while (Date.now() - start < 3000) {

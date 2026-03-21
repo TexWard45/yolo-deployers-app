@@ -16,6 +16,7 @@ import {
   GetFixPRStatusSchema,
   CancelFixPRSchema,
   SaveFixPRProgressSchema,
+  TestSentryConnectionSchema,
 } from "@shared/types";
 import type { SaveFixPRProgressInput } from "@shared/types";
 import type { Prisma } from "@shared/types/prisma";
@@ -25,6 +26,7 @@ import {
   cancelGenerateFixPRWorkflow,
 } from "../temporal";
 import { sendDraftToChannel } from "./helpers/send-draft";
+import { testSentryConnection as testSentryConnectionFn } from "./helpers/sentry-client";
 import {
   createLinearClient,
   createLinearIssue,
@@ -90,6 +92,8 @@ function getDefaultWorkspaceAgentConfig(workspaceId: string) {
     linearApiKey: null,
     linearTeamId: null,
     linearDefaultLabels: [] as string[],
+    sentryProjectSlugs: [] as string[],
+    investigationABEnabled: false,
     githubToken: null,
     githubDefaultOwner: null,
     githubDefaultRepo: null,
@@ -327,6 +331,30 @@ export const agentRouter = createTRPCRouter({
         create: { workspaceId, ...data },
         update: data,
       });
+    }),
+
+  /** Test Sentry API connection with provided credentials */
+  testSentryConnection: publicProcedure
+    .input(TestSentryConnectionSchema)
+    .mutation(async ({ ctx, input }) => {
+      const member = await ctx.prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+          },
+        },
+      });
+
+      if (!member || (member.role !== "OWNER" && member.role !== "ADMIN")) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Only OWNER or ADMIN can test Sentry connection" });
+      }
+
+      return testSentryConnectionFn(
+        input.sentryOrgSlug,
+        input.sentryProjectSlug,
+        input.sentryAuthToken,
+      );
     }),
 
   /** Generate an AI draft reply for a thread */
@@ -588,9 +616,11 @@ export const agentRouter = createTRPCRouter({
         },
       });
 
-      // Update thread with latest analysis + increment clarification count if needed
+      // Update thread with latest analysis + summary + increment clarification count if needed
       const updateData: Record<string, unknown> = {
         lastAnalysisId: analysis.id,
+        summary: input.analysis.summary,
+        summaryUpdatedAt: new Date(),
       };
       if (input.draft.draftType === "CLARIFICATION") {
         updateData.clarificationCount = { increment: 1 };
@@ -1041,5 +1071,70 @@ export const agentRouter = createTRPCRouter({
       });
 
       return result;
+    }),
+
+  /** Get A/B test results for investigation quality experiments */
+  getABResults: publicProcedure
+    .input(z.object({
+      workspaceId: z.string(),
+      userId: z.string(),
+      phase: z.enum(["sentry", "rerank", "context_expansion", "combined"]).optional(),
+      limit: z.number().int().min(1).max(100).default(50),
+    }))
+    .query(async ({ ctx, input }) => {
+      const member = await ctx.prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+          },
+        },
+      });
+
+      if (!member) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
+      }
+
+      const logs = await ctx.prisma.analysisABLog.findMany({
+        where: {
+          workspaceId: input.workspaceId,
+          ...(input.phase ? { phase: input.phase } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        take: input.limit,
+      });
+
+      // Aggregate stats per phase
+      const stats = new Map<string, {
+        count: number;
+        avgLatencyMs: number;
+        totalLatencyMs: number;
+        withVariantData: number;
+      }>();
+
+      for (const log of logs) {
+        const existing = stats.get(log.phase) ?? {
+          count: 0,
+          avgLatencyMs: 0,
+          totalLatencyMs: 0,
+          withVariantData: 0,
+        };
+        existing.count++;
+        if (log.latencyMs) existing.totalLatencyMs += log.latencyMs;
+        if (log.variantResult && Array.isArray(log.variantResult) && (log.variantResult as unknown[]).length > 0) {
+          existing.withVariantData++;
+        }
+        stats.set(log.phase, existing);
+      }
+
+      const summary = Array.from(stats.entries()).map(([phase, s]) => ({
+        phase,
+        totalRuns: s.count,
+        avgLatencyMs: s.count > 0 ? Math.round(s.totalLatencyMs / s.count) : 0,
+        runsWithFindings: s.withVariantData,
+        findingsRate: s.count > 0 ? Math.round((s.withVariantData / s.count) * 100) : 0,
+      }));
+
+      return { summary, logs };
     }),
 });

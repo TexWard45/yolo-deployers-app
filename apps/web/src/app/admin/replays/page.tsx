@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ReplayViewer } from "@/components/telemetry/ReplayViewer";
 import { useReplayExplorer } from "@/hooks/useReplayExplorer";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -8,27 +9,90 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown } from "lucide-react";
+import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown, ChevronLeft, ChevronRight, ShieldAlert, Search, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { trpc } from "@/trpc/client";
+
+const INVESTIGATOR_DEFAULTS = {
+  userId: "",
+  customerEmail: "",
+  customerPhone: "",
+  startDate: "",
+  endDate: "",
+};
 
 export default function ReplaysPage() {
+  /* ── Investigator state ── */
+  const [investigatorOpen, setInvestigatorOpen] = useState(false);
+  const [investigatorFields, setInvestigatorFields] = useState(INVESTIGATOR_DEFAULTS);
+  const [investigatorOffsetMs, setInvestigatorOffsetMs] = useState<number | undefined>(undefined);
+  const [investigatorResult, setInvestigatorResult] = useState<
+    { found: true; sessionId?: string; offsetMs?: number; errorContent?: string; errorCount?: number } |
+    { found: false } |
+    null
+  >(null);
+
+  // Only include date fields when the user has typed a value.
+  // Guards against new Date("") → Invalid Date, which would pass the Zod coerce
+  // silently and produce a wrong DB query. Empty string → field omitted → backend
+  // defaults to last 24h.
+  const investigatorInput = {
+    ...(investigatorFields.userId        ? { userId:        investigatorFields.userId }                    : {}),
+    ...(investigatorFields.customerEmail ? { customerEmail: investigatorFields.customerEmail }              : {}),
+    ...(investigatorFields.customerPhone ? { customerPhone: investigatorFields.customerPhone }              : {}),
+    ...(investigatorFields.startDate     ? { startTime:     new Date(investigatorFields.startDate) }        : {}),
+    ...(investigatorFields.endDate       ? { endTime:       new Date(investigatorFields.endDate) }          : {}),
+  };
+
+  const hasInvestigatorIdentity =
+    !!(investigatorFields.userId || investigatorFields.customerEmail || investigatorFields.customerPhone);
+
+  // Never auto-fires — always triggered manually via refetch() in the button handler.
+  const [investigatorLoading, setInvestigatorLoading] = useState(false);
+  const { refetch: refetchInvestigator } =
+    trpc.telemetry.getExactErrorMoment.useQuery(investigatorInput, {
+      enabled: false,
+    });
+
   const {
     selectedSessionId,
     setSelectedSessionId,
     filters,
     setFilter,
+    setHasErrorFilter,
     clearFilters,
     sessions,
     selectedSession,
     sessionsLoading,
-    hasMore,
-    loadMore,
+    page,
+    totalPages,
+    total,
+    goToPage,
     replayData,
     replayLoading,
     timelineData,
+    errorTimestamps,
   } = useReplayExplorer();
 
-  const hasActiveFilters = Object.values(filters).some(Boolean);
+  const hasActiveFilters = Object.values(filters).some(Boolean) || filters.hasError;
+
+  // Imperatively trigger the query and handle result in the event handler —
+  // no useEffect needed, no cascading renders.
+  const handleInvestigatorSearch = async () => {
+    setInvestigatorOffsetMs(undefined);
+    setInvestigatorResult(null);
+    setInvestigatorLoading(true);
+    try {
+      const { data } = await refetchInvestigator();
+      setInvestigatorResult(data ?? { found: false });
+      if (data?.found) {
+        setSelectedSessionId(data.sessionId ?? null);
+        setInvestigatorOffsetMs(data.offsetMs);
+      }
+    } finally {
+      setInvestigatorLoading(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
@@ -39,10 +103,92 @@ export default function ReplaysPage() {
         </div>
         <div className="flex items-center gap-4">
           <Badge variant="outline" className="px-3 py-1 bg-primary/5 border-primary/20">
-            {sessions.length} Sessions{hasMore ? "+" : ""}
+            {total} Sessions
           </Badge>
         </div>
       </header>
+
+      {/* ── Error Investigator ── */}
+      <div className="border-b bg-amber-50/40">
+        <button
+          className="w-full flex items-center gap-2 px-6 py-2.5 text-left hover:bg-amber-50/60 transition-colors"
+          onClick={() => setInvestigatorOpen((v) => !v)}
+        >
+          <Search className="w-4 h-4 text-amber-600" />
+          <span className="text-sm font-semibold text-amber-800">Error Investigator</span>
+          <span className="text-xs text-amber-600 ml-1">— find exact error moment by customer identity</span>
+          <span className="ml-auto text-amber-500">
+            {investigatorOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+          </span>
+        </button>
+
+        {investigatorOpen && (
+          <div className="px-6 pb-4 space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              <Input
+                placeholder="User ID"
+                className="h-7 text-[11px]"
+                value={investigatorFields.userId}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, userId: e.target.value }))}
+              />
+              <Input
+                placeholder="Email"
+                className="h-7 text-[11px]"
+                value={investigatorFields.customerEmail}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, customerEmail: e.target.value }))}
+              />
+              <Input
+                placeholder="Phone"
+                className="h-7 text-[11px]"
+                value={investigatorFields.customerPhone}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, customerPhone: e.target.value }))}
+              />
+              <Input
+                type="datetime-local"
+                className="h-7 text-[11px]"
+                value={investigatorFields.startDate}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, startDate: e.target.value }))}
+              />
+              <Input
+                type="datetime-local"
+                className="h-7 text-[11px]"
+                value={investigatorFields.endDate}
+                onChange={(e) => setInvestigatorFields((p) => ({ ...p, endDate: e.target.value }))}
+              />
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                className="h-7 text-xs bg-amber-600 hover:bg-amber-700"
+                disabled={!hasInvestigatorIdentity || investigatorLoading}
+                onClick={handleInvestigatorSearch}
+              >
+                <Search className="w-3 h-3 mr-1" />
+                {investigatorLoading ? "Searching…" : "Find Error Moment"}
+              </Button>
+
+              {investigatorResult && !investigatorLoading && (
+                investigatorResult.found ? (
+                  <div className="flex items-center gap-2">
+                    <Badge className="bg-green-500 text-white text-[10px]">Found</Badge>
+                    <span className="text-xs text-muted-foreground font-mono">{investigatorResult.sessionId?.slice(0, 12)}…</span>
+                    <span className="text-xs text-green-700 font-medium">
+                      Error at +{((investigatorResult.offsetMs ?? 0) / 1000).toFixed(1)}s — {investigatorResult.errorContent}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">({investigatorResult.errorCount} total errors)</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="text-[10px]">No match</Badge>
+                    <span className="text-xs text-muted-foreground">No errored session found for this customer in the given time range.</span>
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Pane: Session List */}
@@ -89,6 +235,16 @@ export default function ReplaysPage() {
                 onChange={(e) => setFilter("endDate", e.target.value)}
               />
             </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded accent-destructive"
+                checked={filters.hasError}
+                onChange={(e) => setHasErrorFilter(e.target.checked)}
+              />
+              <ShieldAlert className="w-3 h-3 text-destructive" />
+              <span className="text-[11px] text-destructive font-medium">Errors only</span>
+            </label>
           </div>
 
           <ScrollArea className="flex-1">
@@ -118,9 +274,17 @@ export default function ReplaysPage() {
                         <p className="font-mono text-[10px] font-bold truncate max-w-[140px]">
                           {s.id}
                         </p>
-                        <Badge variant="secondary" className="text-[9px] h-4 px-1 leading-none">
-                          {s._count.events} ev
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          {s.hasError && (
+                            <Badge variant="destructive" className="text-[9px] h-4 px-1 leading-none gap-0.5">
+                              <ShieldAlert className="w-2.5 h-2.5" />
+                              {s.errorCount}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-[9px] h-4 px-1 leading-none">
+                            {s._count.events} ev
+                          </Badge>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-muted-foreground">
                         <Clock className="w-3 h-3" />
@@ -130,15 +294,54 @@ export default function ReplaysPage() {
                       </div>
                     </button>
                   ))}
-                  {hasMore && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full h-8 text-xs text-muted-foreground mt-1"
-                      onClick={loadMore}
-                    >
-                      <ChevronDown className="w-3 h-3 mr-1" /> Load more
-                    </Button>
+                  {totalPages > 1 && (
+                    <div className="flex items-center justify-between pt-2 mt-1 border-t">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={page <= 1}
+                        onClick={() => goToPage(page - 1)}
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </Button>
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1)
+                          .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                          .reduce<(number | "…")[]>((acc, p, idx, arr) => {
+                            if (idx > 0 && (arr[idx - 1] as number) + 1 < p) acc.push("…");
+                            acc.push(p);
+                            return acc;
+                          }, [])
+                          .map((p, idx) =>
+                            p === "…" ? (
+                              <span key={`ellipsis-${idx}`} className="text-[10px] text-muted-foreground px-0.5">…</span>
+                            ) : (
+                              <button
+                                key={p}
+                                onClick={() => goToPage(p)}
+                                className={cn(
+                                  "h-6 w-6 rounded text-[10px] font-medium transition-colors",
+                                  p === page
+                                    ? "bg-primary text-primary-foreground"
+                                    : "text-muted-foreground hover:bg-muted"
+                                )}
+                              >
+                                {p}
+                              </button>
+                            )
+                          )}
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        disabled={page >= totalPages}
+                        onClick={() => goToPage(page + 1)}
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
                   )}
                 </>
               )}
@@ -205,7 +408,11 @@ export default function ReplaysPage() {
                           </div>
                         </div>
                       ) : replayData?.events && replayData.events.length >= 2 ? (
-                        <ReplayViewer events={replayData.events} />
+                        <ReplayViewer
+                          events={replayData.events}
+                          errorTimestamps={errorTimestamps}
+                          initialOffsetMs={investigatorOffsetMs}
+                        />
                       ) : (
                         <div className="flex-1 h-full flex items-center justify-center p-8 text-center">
                           <div className="space-y-4 max-w-xs">
