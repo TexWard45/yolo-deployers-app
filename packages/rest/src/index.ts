@@ -40,6 +40,7 @@ export {
   createLinearIssue,
   updateLinearIssue,
   getLinearIssue,
+  appendPRToLinearIssue,
   severityToPriority,
 } from "./routers/helpers/linear-client";
 export type { CreateLinearIssueInput, LinearIssueResult, UpdateLinearIssueInput } from "./routers/helpers/linear-client";

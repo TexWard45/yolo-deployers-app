@@ -20,6 +20,7 @@ const {
   resolveFixTargetRepository,
   createFixPullRequest,
   saveFixRunProgress,
+  attachPRToLinearTicket,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: "5 minutes",
   retry: {
@@ -357,6 +358,8 @@ export async function generateFixPRWorkflow(
               lastError: null,
             });
 
+            await tryAttachPRToLinear(input, pr.prUrl, pr.prNumber, "PASSED");
+
             return {
               runId: input.runId,
               status: "PASSED",
@@ -469,6 +472,8 @@ export async function generateFixPRWorkflow(
             || `Reached max iterations (${context.maxIterations}) before a clean pass; draft PR created for manual review.`,
         });
 
+        await tryAttachPRToLinear(input, pr.prUrl, pr.prNumber, "WAITING_REVIEW");
+
         return {
           runId: input.runId,
           status: "WAITING_REVIEW",
@@ -510,6 +515,30 @@ export async function generateFixPRWorkflow(
       runId: input.runId,
       status: "FAILED",
     };
+  }
+}
+
+async function tryAttachPRToLinear(
+  input: GenerateFixPRWorkflowInput,
+  prUrl: string,
+  prNumber: number,
+  status: string,
+): Promise<void> {
+  try {
+    await attachPRToLinearTicket({
+      runId: input.runId,
+      threadId: input.threadId,
+      workspaceId: input.workspaceId,
+      analysisId: input.analysisId,
+      prUrl,
+      prNumber,
+      status,
+      createdById: input.triggeredByUserId,
+    });
+  } catch (error) {
+    // Non-critical: log but don't fail the workflow
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[fix-pr] attachPRToLinearTicket failed (non-critical): ${message}`);
   }
 }
 

@@ -18,4 +18,5 @@ export {
   resolveFixTargetRepository,
   createFixPullRequest,
   saveFixRunProgress,
+  attachPRToLinearTicket,
 } from "./generate-fix-pr.activity.js";

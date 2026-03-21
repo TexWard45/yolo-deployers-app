@@ -14,6 +14,8 @@ import {
   generateCodexFix,
   generateFixPrRca,
   reviewCodexFix,
+  createLinearClient,
+  appendPRToLinearIssue,
 } from "@shared/rest";
 import type {
   FixPrChecksOutput,
@@ -578,6 +580,98 @@ export async function saveFixRunProgress(
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Failed to save fix run progress (${response.status}): ${body}`);
+  }
+}
+
+export async function attachPRToLinearTicket(params: {
+  runId: string;
+  threadId: string;
+  workspaceId: string;
+  analysisId: string;
+  prUrl: string;
+  prNumber?: number;
+  status?: string;
+  createdById: string;
+}): Promise<{ linked: boolean; reason?: string }> {
+  debugLog("attachPRToLinearTicket start", {
+    runId: params.runId,
+    threadId: params.threadId,
+  });
+
+  const thread = await prisma.supportThread.findUnique({
+    where: { id: params.threadId },
+    select: { linearIssueId: true, linearIssueUrl: true },
+  });
+
+  if (!thread?.linearIssueId) {
+    debugLog("attachPRToLinearTicket skipped", { reason: "no_linear_issue" });
+    return { linked: false, reason: "no_linear_issue" };
+  }
+
+  const config = await prisma.workspaceAgentConfig.findUnique({
+    where: { workspaceId: params.workspaceId },
+    select: { linearApiKey: true },
+  });
+
+  if (!config?.linearApiKey) {
+    debugLog("attachPRToLinearTicket skipped", { reason: "no_linear_api_key" });
+    return { linked: false, reason: "no_linear_api_key" };
+  }
+
+  try {
+    const client = createLinearClient(config.linearApiKey);
+    const result = await appendPRToLinearIssue(
+      client,
+      thread.linearIssueId,
+      params.prUrl,
+      params.prNumber,
+      params.status,
+    );
+
+    if (!result.success) {
+      debugLog("attachPRToLinearTicket linear update failed", {
+        runId: params.runId,
+        linearIssueId: thread.linearIssueId,
+      });
+      return { linked: false, reason: "linear_issue_not_found" };
+    }
+
+    // Record the linkage via REST endpoint
+    const response = await fetch(`${codexConfig.webAppUrl}/api/rest/fix-pr/link-linear`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": codexConfig.internalApiSecret,
+      },
+      body: JSON.stringify({
+        threadId: params.threadId,
+        workspaceId: params.workspaceId,
+        analysisId: params.analysisId,
+        linearIssueId: thread.linearIssueId,
+        linearIssueUrl: result.issueUrl ?? thread.linearIssueUrl,
+        prUrl: params.prUrl,
+        prNumber: params.prNumber,
+        status: params.status,
+        createdById: params.createdById,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      console.warn(`[fix-pr] Failed to save link-linear action (${response.status}): ${body}`);
+    }
+
+    debugLog("attachPRToLinearTicket linked", {
+      runId: params.runId,
+      linearIssueId: thread.linearIssueId,
+      prUrl: params.prUrl,
+    });
+
+    return { linked: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[fix-pr] attachPRToLinearTicket failed: ${message}`);
+    return { linked: false, reason: message };
   }
 }
 

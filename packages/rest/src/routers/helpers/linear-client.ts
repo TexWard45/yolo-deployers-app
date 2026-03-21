@@ -93,6 +93,53 @@ export async function updateLinearIssue(
   };
 }
 
+const FIX_PR_SECTION_HEADER = "## Fix PR";
+
+export async function appendPRToLinearIssue(
+  client: LinearClient,
+  issueId: string,
+  prUrl: string,
+  prNumber?: number,
+  status?: string,
+): Promise<{ success: boolean; issueUrl?: string }> {
+  const issue = await getLinearIssue(client, issueId);
+  if (!issue) {
+    return { success: false };
+  }
+
+  const rawIssue = await client.issue(issueId);
+  const currentDescription = rawIssue.description ?? "";
+
+  const prLabel = prNumber ? `#${prNumber}` : "PR";
+  const statusLabel = status ?? "PASSED";
+  const prSection = [
+    "",
+    "---",
+    "",
+    FIX_PR_SECTION_HEADER,
+    "",
+    "| Status | PR |",
+    "|--------|-----|",
+    `| ${statusLabel} | [${prLabel}](${prUrl}) |`,
+    "",
+    "*Auto-linked by ResolveAI fix-PR pipeline*",
+  ].join("\n");
+
+  let updatedDescription: string;
+  const sectionIndex = currentDescription.indexOf(FIX_PR_SECTION_HEADER);
+  if (sectionIndex !== -1) {
+    // Find the start of the section block (look for the preceding ---).
+    const hrIndex = currentDescription.lastIndexOf("---", sectionIndex);
+    const replaceStart = hrIndex !== -1 && hrIndex >= sectionIndex - 10 ? hrIndex : sectionIndex;
+    updatedDescription = currentDescription.slice(0, replaceStart).trimEnd() + prSection;
+  } else {
+    updatedDescription = currentDescription.trimEnd() + prSection;
+  }
+
+  await updateLinearIssue(client, issueId, { description: updatedDescription });
+  return { success: true, issueUrl: issue.url };
+}
+
 export async function getLinearIssue(
   client: LinearClient,
   issueId: string,

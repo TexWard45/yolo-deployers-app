@@ -678,6 +678,19 @@ export const SaveFixPRProgressSchema = z.object({
 });
 export type SaveFixPRProgressInput = z.infer<typeof SaveFixPRProgressSchema>;
 
+export const AttachPRToLinearSchema = z.object({
+  threadId: z.string(),
+  workspaceId: z.string(),
+  analysisId: z.string(),
+  linearIssueId: z.string(),
+  linearIssueUrl: z.string().optional(),
+  prUrl: z.string(),
+  prNumber: z.number().int().optional(),
+  status: z.string().optional(),
+  createdById: z.string(),
+});
+export type AttachPRToLinearInput = z.infer<typeof AttachPRToLinearSchema>;
+
 // ── Triage Workflow (Temporal) ─────────────────────────────────────
 
 export const TriageThreadWorkflowInputSchema = z.object({
