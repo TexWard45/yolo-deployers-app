@@ -15,3 +15,8 @@ export {
   saveAnalysisAndDraftActivity,
   escalateThreadActivity,
 } from "./analyze-thread.activity.js";
+export {
+  getOutboundContext,
+  sendToDiscordActivity,
+  recordOutboundMessageActivity,
+} from "./send-outbound-message.activity.js";

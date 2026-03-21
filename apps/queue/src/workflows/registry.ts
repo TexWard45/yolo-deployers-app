@@ -3,4 +3,5 @@ export const workflowRegistry = {
   threadReview: "threadReviewWorkflow",
   sessionEnrichment: "sessionEnrichmentWorkflow",
   analyzeThread: "analyzeThreadWorkflow",
+  sendOutboundMessage: "sendOutboundMessageWorkflow",
 } as const;
