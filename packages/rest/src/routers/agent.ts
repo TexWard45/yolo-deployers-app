@@ -1080,7 +1080,7 @@ export const agentRouter = createTRPCRouter({
             }),
           });
           if (searchResponse.ok) {
-            freshCodexFindings = await searchResponse.json();
+            freshCodexFindings = (await searchResponse.json()) as Prisma.JsonValue;
           }
         } catch (err) {
           console.warn("[generateSpec] fresh Codex search failed, using cached findings:", err);
