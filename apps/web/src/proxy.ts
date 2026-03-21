@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const publicRoutes = ["/login", "/signup"];
+const publicRoutes = ["/login", "/signup", "/landing"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -13,8 +13,14 @@ export function proxy(request: NextRequest) {
   // Skip API routes
   if (isApiRoute) return NextResponse.next();
 
+  // Unauthenticated user at root → show landing page
+  if (pathname === "/" && !session) {
+    return NextResponse.rewrite(new URL("/landing", request.url));
+  }
+
   // Logged in user trying to visit login/signup → redirect to dashboard
-  if (isPublicRoute && session) {
+  // But allow /landing for everyone
+  if (isPublicRoute && session && pathname !== "/landing") {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
@@ -27,5 +33,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|images).*)"],
 };

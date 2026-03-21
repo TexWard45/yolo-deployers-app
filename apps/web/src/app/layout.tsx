@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "YOLO Deployers",
+  title: "ResolveAI",
   description: "AI-powered support & code intelligence platform",
 };
 
