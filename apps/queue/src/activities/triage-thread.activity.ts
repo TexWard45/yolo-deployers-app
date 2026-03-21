@@ -145,6 +145,7 @@ export async function triageSearchCodebaseActivity(params: {
             taskDescription: params.analysisQuery,
             maxResults: 5,
           }),
+          signal: AbortSignal.timeout(30_000),
         });
 
         if (!response.ok) {
@@ -152,16 +153,17 @@ export async function triageSearchCodebaseActivity(params: {
           return null;
         }
 
-        return (await response.json()) as { chunks?: Array<{ id: string; score: number }> };
+        return (await response.json()) as { chunks?: Array<{ id: string; score: number; filePath: string; content: string; symbolName: string | null; chunkType: string }> };
       }),
     );
 
     // Merge chunks from all repos, deduplicate by chunk ID, keep top 5 by score
-    const chunkMap = new Map<string, unknown>();
+    type GrepChunk = { id: string; score: number; filePath: string; content: string; symbolName: string | null; chunkType: string };
+    const chunkMap = new Map<string, GrepChunk>();
     for (const result of results) {
       if (!result?.chunks || !Array.isArray(result.chunks)) continue;
       for (const chunk of result.chunks) {
-        const existing = chunkMap.get(chunk.id) as { score: number } | undefined;
+        const existing = chunkMap.get(chunk.id);
         if (!existing || chunk.score > existing.score) {
           chunkMap.set(chunk.id, chunk);
         }
@@ -169,7 +171,7 @@ export async function triageSearchCodebaseActivity(params: {
     }
 
     const mergedChunks = [...chunkMap.values()]
-      .sort((a, b) => (b as { score: number }).score - (a as { score: number }).score)
+      .sort((a, b) => b.score - a.score)
       .slice(0, 5);
 
     return { chunks: mergedChunks };

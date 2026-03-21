@@ -1,4 +1,5 @@
 import type OpenAI from "openai";
+import { AgentGrepSummarizeResultSchema } from "@shared/types";
 import type { AgentGrepSummarizeResult } from "@shared/types";
 
 // ── System Prompt ────────────────────────────────────────────────────
@@ -79,7 +80,15 @@ export async function llmSummarizeTask(
     );
 
     const text = response.choices[0]?.message?.content ?? "";
-    const parsed = JSON.parse(text) as AgentGrepSummarizeResult;
+    const raw = JSON.parse(text);
+    const validated = AgentGrepSummarizeResultSchema.safeParse(raw);
+
+    if (!validated.success) {
+      console.warn("[agent-grep-prompt] unexpected LLM response shape:", validated.error.issues);
+      return null;
+    }
+
+    const parsed = validated.data;
 
     console.log(
       `[agent-grep-prompt] summary="${parsed.summary}" queries=${parsed.semanticQueries.length} keywords=${parsed.keywords.length} symbols=${parsed.symbolNames.length}`,
