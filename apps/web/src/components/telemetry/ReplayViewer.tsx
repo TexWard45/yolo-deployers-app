@@ -10,7 +10,7 @@ import { AlertCircle } from "lucide-react";
 const CONTROLLER_HEIGHT = 80;
 
 interface ReplayViewerProps {
-  events: Array<{ type: string; payload: unknown }>;
+  events: Array<{ type: string | number; payload: unknown }>;
 }
 
 export function ReplayViewer({ events }: ReplayViewerProps) {
@@ -22,8 +22,8 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
     if (!el) return;
 
     const rrwebEvents = events
-      .filter((e) => e.type === "rrweb")
-      .map((e) => e.payload) as eventWithTime[];
+      .filter((e) => e.type === "rrweb" || e.type === 2)
+      .map((e) => (typeof e.payload === "string" ? JSON.parse(e.payload) : e.payload)) as eventWithTime[];
 
     if (rrwebEvents.length < 2) return;
 
@@ -55,12 +55,15 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
 
     return () => {
       cancelAnimationFrame(raf);
+      if (playerRef.current) {
+        try { (playerRef.current as unknown as { $destroy(): void }).$destroy(); } catch { /* ignore */ }
+        playerRef.current = null;
+      }
       if (el) el.innerHTML = "";
-      playerRef.current = null;
     };
   }, [events]);
 
-  const rrwebCount = events.filter((e) => e.type === "rrweb").length;
+  const rrwebCount = events.filter((e) => e.type === "rrweb" || e.type === 2).length;
   if (rrwebCount < 2) {
     return (
       <div className="flex-1 w-full flex flex-col items-center justify-center p-12 text-center">
@@ -82,7 +85,7 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
   return (
     <div
       ref={containerRef}
-      className="w-full min-h-[500px] h-full [&_.rr-player]:!float-none [&_.rr-player]:!w-full [&_.rr-player]:!shadow-none [&_.rr-player]:!rounded-none"
+      className="w-full min-h-[500px] h-full"
     />
   );
 }
