@@ -17,6 +17,8 @@ interface ThreadListItem {
   summary: string | null;
   status: ThreadStatusValue;
   updatedAt: Date;
+  trackerIssueIdentifier?: string | null;
+  trackerIssueUrl?: string | null;
   customer: {
     displayName: string;
   };
@@ -174,6 +176,8 @@ export function ThreadList({ threads }: ThreadListProps) {
                           thread.assignedTo?.email ??
                           null
                         }
+                        trackerIssueIdentifier={thread.trackerIssueIdentifier}
+                        trackerIssueUrl={thread.trackerIssueUrl}
                         selected={selectedId === thread.id}
                         onClick={() => selectThread(thread.id)}
                       />

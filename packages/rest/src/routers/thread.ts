@@ -6,6 +6,7 @@ import {
   UpdateThreadStatusSchema,
 } from "@shared/types";
 import { createTRPCRouter, protectedProcedure } from "../init";
+import { maybeCreateTrackerIssueForThread } from "../lib/tracker";
 
 async function assertWorkspaceMember(params: {
   prisma: { workspaceMember: { findUnique: Function } };
@@ -104,10 +105,20 @@ export const threadRouter = createTRPCRouter({
         userId,
       });
 
-      return ctx.prisma.supportThread.update({
+      const updated = await ctx.prisma.supportThread.update({
         where: { id: input.threadId },
         data: { status: input.status },
       });
+
+      if (input.status === "IN_PROGRESS") {
+        maybeCreateTrackerIssueForThread(
+          ctx.prisma,
+          input.threadId,
+          thread.workspaceId,
+        ).catch(() => {});
+      }
+
+      return updated;
     }),
 
   assign: protectedProcedure

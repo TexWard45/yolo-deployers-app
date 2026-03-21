@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./codex": "./src/routers/codex/index.ts",
-    "./src/routers/codex": "./src/routers/codex/index.ts"
+    "./src/routers/codex": "./src/routers/codex/index.ts",
+    "./tracker": "./src/lib/tracker/index.ts"
   },
   "scripts": {
     "build": "tsc --build",

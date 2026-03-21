@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { getSession } from "@/actions/auth";
 import { redirect } from "next/navigation";
+import { createCaller, createTRPCContext } from "@shared/rest";
 import {
   Card,
   CardContent,
@@ -10,12 +11,26 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { TrackerConnectionCard } from "@/components/settings/TrackerConnectionCard";
+import { AddTrackerForm } from "@/components/settings/AddTrackerForm";
 
 export default async function SettingsPage() {
   const session = await getSession();
   if (!session) redirect("/login");
 
   const workspaces = session.workspaces ?? [];
+  const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+
+  const trackersByWorkspace = await Promise.all(
+    workspaces.map(async (ws) => {
+      try {
+        const connections = await trpc.tracker.list({ workspaceId: ws.id });
+        return { workspaceId: ws.id, connections };
+      } catch {
+        return { workspaceId: ws.id, connections: [] };
+      }
+    }),
+  );
 
   return (
     <div className="space-y-6">
@@ -99,6 +114,38 @@ export default async function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {workspaces.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Integrations</CardTitle>
+            <CardDescription>
+              Connect project trackers to auto-create issues from support threads
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {workspaces.map((ws) => {
+              const tracker = trackersByWorkspace.find((t) => t.workspaceId === ws.id);
+              const connections = tracker?.connections ?? [];
+              return (
+                <div key={ws.id} className="space-y-3">
+                  {workspaces.length > 1 && (
+                    <p className="text-xs font-medium text-muted-foreground">{ws.name}</p>
+                  )}
+                  {connections.map((conn) => (
+                    <TrackerConnectionCard
+                      key={conn.id}
+                      connection={conn}
+                      workspaceId={ws.id}
+                    />
+                  ))}
+                  <AddTrackerForm workspaceId={ws.id} />
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

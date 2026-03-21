@@ -306,6 +306,53 @@ export const ThreadReviewWorkflowResultSchema = z.object({
 
 export type ThreadReviewWorkflowResult = z.infer<typeof ThreadReviewWorkflowResultSchema>;
 
+// ── Tracker Integration ──────────────────────────────────────────
+export const TrackerTypeSchema = z.enum(["LINEAR", "JIRA"]);
+export type TrackerTypeValue = z.infer<typeof TrackerTypeSchema>;
+
+export const CreateTrackerConnectionSchema = z.object({
+  workspaceId: z.string(),
+  type: TrackerTypeSchema,
+  label: z.string().min(1).max(100),
+  apiToken: z.string().min(1),
+  projectKey: z.string().min(1),
+  projectName: z.string().min(1),
+  siteUrl: z.string().url().optional(),
+  configJson: z.record(z.string(), z.unknown()).optional(),
+  isDefault: z.boolean().optional(),
+});
+export type CreateTrackerConnectionInput = z.infer<typeof CreateTrackerConnectionSchema>;
+
+export const UpdateTrackerConnectionSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+  label: z.string().min(1).max(100).optional(),
+  projectKey: z.string().min(1).optional(),
+  projectName: z.string().min(1).optional(),
+  enabled: z.boolean().optional(),
+  isDefault: z.boolean().optional(),
+  configJson: z.record(z.string(), z.unknown()).optional(),
+});
+export type UpdateTrackerConnectionInput = z.infer<typeof UpdateTrackerConnectionSchema>;
+
+export const DeleteTrackerConnectionSchema = z.object({
+  id: z.string(),
+  workspaceId: z.string(),
+});
+export type DeleteTrackerConnectionInput = z.infer<typeof DeleteTrackerConnectionSchema>;
+
+export const ListTrackerConnectionsSchema = z.object({
+  workspaceId: z.string(),
+});
+export type ListTrackerConnectionsInput = z.infer<typeof ListTrackerConnectionsSchema>;
+
+export const ListTrackerProjectsSchema = z.object({
+  type: TrackerTypeSchema,
+  apiToken: z.string().min(1),
+  siteUrl: z.string().url().optional(),
+});
+export type ListTrackerProjectsInput = z.infer<typeof ListTrackerProjectsSchema>;
+
 // ── Legacy types kept for existing activity imports ───────────────
 export const LlmThreadMatchInputSchema = z.object({
   incomingMessage: z.string().min(1),
