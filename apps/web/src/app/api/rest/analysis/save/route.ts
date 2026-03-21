@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
+import { webEnv } from "@shared/env/web";
 
 export async function POST(req: Request): Promise<NextResponse> {
+  const secret = req.headers.get("x-internal-secret");
+  if (!secret || secret !== webEnv.INTERNAL_API_SECRET) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await req.json();
     const trpc = createCaller(createTRPCContext());

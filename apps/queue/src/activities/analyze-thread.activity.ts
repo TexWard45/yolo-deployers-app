@@ -264,7 +264,10 @@ export async function saveAnalysisAndDraftActivity(
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": queueEnv.INTERNAL_API_SECRET,
+      },
       body: JSON.stringify(input),
     });
 
