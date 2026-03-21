@@ -10,8 +10,20 @@ export async function POST(req: Request) {
     return NextResponse.json(results);
   } catch (error) {
     if (error instanceof TRPCError) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      const status = error.code === "BAD_REQUEST" ? 400
+        : error.code === "NOT_FOUND" ? 404
+        : error.code === "INTERNAL_SERVER_ERROR" ? 500
+        : 400;
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status },
+      );
     }
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Internal server error";
+    console.error("[codex/agent/grep] unhandled error:", error);
+    return NextResponse.json(
+      { error: message, code: "INTERNAL_SERVER_ERROR" },
+      { status: 500 },
+    );
   }
 }

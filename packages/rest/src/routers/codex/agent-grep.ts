@@ -134,7 +134,7 @@ export async function grepRelevantCode(
   const baseInput = {
     workspaceId: input.workspaceId,
     repositoryIds: [input.repositoryId],
-    rerank: false,
+    rerank: input.rerank ?? false,
     limit: 20,
     offset: 0,
   };
