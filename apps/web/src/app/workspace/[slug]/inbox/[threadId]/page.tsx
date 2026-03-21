@@ -1,45 +1,26 @@
 export const dynamic = "force-dynamic";
 
 import { redirect } from "next/navigation";
-import { TRPCError } from "@trpc/server";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { getSession } from "@/actions/auth";
-import { ThreadDetail } from "@/components/inbox/ThreadDetail";
+import { ThreadList } from "@/components/inbox/ThreadList";
 
-interface ThreadDetailPageProps {
+interface InboxThreadPageProps {
   params: Promise<{ slug: string; threadId: string }>;
 }
 
-export default async function WorkspaceThreadDetailPage({ params }: ThreadDetailPageProps) {
+export default async function WorkspaceInboxThreadPage({ params }: InboxThreadPageProps) {
+  const { slug, threadId } = await params;
   const session = await getSession();
   if (!session) redirect("/login");
 
-  const { threadId } = await params;
+  const workspace = session.workspaces.find((w) => w.slug === slug);
+  if (!workspace) redirect("/");
+
   const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-  const thread = await trpc.thread
-    .getById({ threadId })
-    .catch((error: unknown) => {
-      if (error instanceof TRPCError && error.code === "FORBIDDEN") {
-        redirect("/");
-      }
-      return null;
-    });
+  const threads = await trpc.thread.listByWorkspace({
+    workspaceId: workspace.id,
+  });
 
-  if (!thread) {
-    return (
-      <div className="rounded-md border border-dashed p-6 text-sm text-muted-foreground">
-        Thread not found.
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-3xl font-bold tracking-tight">Thread Detail</h2>
-        <p className="text-muted-foreground">Review timeline and update status.</p>
-      </div>
-      <ThreadDetail thread={thread} />
-    </div>
-  );
+  return <ThreadList threads={threads} currentUserId={session.id} initialThreadId={threadId} />;
 }

@@ -16,6 +16,7 @@
     "test": "node --import tsx --test $(find src -type f \\( -name '*.test.ts' -o -name '*.e2e.test.ts' \\))"
   },
   "dependencies": {
+    "@octokit/rest": "^22.0.0",
     "@linear/sdk": "^78.0.0",
     "@shared/database": "*",
     "@shared/env": "*",

@@ -26,7 +26,7 @@ const { generateAnalysisActivity } = proxyActivities<typeof activities>({
   retry: { maximumAttempts: 2 },
 });
 
-const DEBOUNCE_SECONDS = 60;
+const DEBOUNCE_SECONDS = 30;
 
 /**
  * AI Thread Analysis & Auto-Response Pipeline.
@@ -175,6 +175,7 @@ export async function analyzeThreadWorkflow(
     workspaceId: input.workspaceId,
     threadId: input.threadId,
     analysis: {
+      threadLabel: analysisResult.threadLabel ?? null,
       issueCategory: analysisResult.issueCategory,
       severity: analysisResult.severity,
       affectedComponent: analysisResult.affectedComponent,

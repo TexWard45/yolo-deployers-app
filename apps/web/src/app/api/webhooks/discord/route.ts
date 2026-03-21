@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@shared/database";
 import { createCaller, createTRPCContext } from "@shared/rest";
+import { DiscordChannelConfigSchema } from "@shared/types";
 import { z } from "zod";
 
 const DiscordWebhookPayloadSchema = z.object({
@@ -64,6 +65,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Infer Discord thread messages from channel id:
+    // - If channel_id is in configured root channels -> regular channel message
+    // - Otherwise treat it as a Discord thread channel id and persist as externalThreadId
+    const parsedConfig = DiscordChannelConfigSchema.safeParse(channelConnection.configJson);
+    const inferredExternalThreadId =
+      parsedConfig.success
+        ? (parsedConfig.data.channelIds.includes(payload.channel_id) ? null : payload.channel_id)
+        : null;
+
     // Ingest via the unified performIngestion path
     const trpc = createCaller(createTRPCContext());
     const result = await trpc.intake.ingestFromChannel({
@@ -80,7 +90,7 @@ export async function POST(request: NextRequest) {
         channelId: payload.channel_id,
         guildId: payload.guild_id,
       },
-      externalThreadId: null,
+      externalThreadId: inferredExternalThreadId,
       inReplyToExternalMessageId: payload.message_reference?.message_id ?? null,
     });
 

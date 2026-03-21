@@ -35,3 +35,7 @@ export {
   evalGate2ShouldTriage,
   evalGate3ShouldSpec,
 } from "./pipeline-eval.activity.js";
+export {
+  discoverAndUpdateChannelsActivity,
+  backfillNewChannelsActivity,
+} from "./sync-discord-channels.activity.js";

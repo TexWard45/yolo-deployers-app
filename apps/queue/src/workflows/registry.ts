@@ -6,4 +6,5 @@ export const workflowRegistry = {
   sendOutboundMessage: "sendOutboundMessageWorkflow",
   triageThread: "triageThreadWorkflow",
   supportPipeline: "supportPipelineWorkflow",
+  syncDiscordChannels: "syncDiscordChannelsWorkflow",
 } as const;

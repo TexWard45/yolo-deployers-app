@@ -13,16 +13,32 @@ import { Users, FileText, Activity, TrendingUp } from "lucide-react";
 
 export default async function DashboardPage() {
   const session = await getSession();
-  const users = await trpc.user.list();
+  let users: Awaited<ReturnType<typeof trpc.user.list>> = [];
+  let dataLoadWarning: string | null = null;
+
+  try {
+    users = await trpc.user.list();
+  } catch (error) {
+    console.error("[dashboard] failed to load users", error);
+    dataLoadWarning = "Some dashboard data is temporarily unavailable. Check your database connection.";
+  }
 
   // Gather posts across all workspaces the user belongs to
   const workspaceIds = session?.workspaces?.map((w) => w.id) ?? [];
   const postResults = await Promise.all(
     workspaceIds.map((wId) =>
-      trpc.post.list({ workspaceId: wId, userId: session!.id }).catch(() => [])
+      trpc.post.list({ workspaceId: wId, userId: session!.id })
+        .then((posts) => ({ ok: true as const, posts }))
+        .catch((error) => {
+          console.error(`[dashboard] failed to load posts for workspace ${wId}`, error);
+          return { ok: false as const, posts: [] as Awaited<ReturnType<typeof trpc.post.list>> };
+        })
     )
   );
-  const allPosts = postResults.flat();
+  if (!dataLoadWarning && postResults.some((r) => !r.ok)) {
+    dataLoadWarning = "Some dashboard data is temporarily unavailable. Check your database connection.";
+  }
+  const allPosts = postResults.flatMap((r) => r.posts);
 
   const stats = [
     {
@@ -59,6 +75,12 @@ export default async function DashboardPage() {
           Overview of your application.
         </p>
       </div>
+
+      {dataLoadWarning ? (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {dataLoadWarning}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
