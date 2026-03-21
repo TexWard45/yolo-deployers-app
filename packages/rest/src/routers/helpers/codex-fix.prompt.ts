@@ -58,14 +58,18 @@ export async function generateCodexFix(
       ],
     }, { signal: controller.signal });
 
-    const content = response.choices[0]?.message?.content ?? "";
+    const raw = response.choices[0]?.message?.content ?? "";
+    // Strip markdown code fences if LLM wraps JSON in ```json ... ```
+    const content = raw.replace(/^```(?:json)?\s*\n?/i, "").replace(/\n?```\s*$/i, "").trim();
+    console.log("[codex-fix] LLM response length:", content.length);
     return FixPrFixerOutputSchema.parse(JSON.parse(content));
-  } catch {
+  } catch (err) {
+    console.error("[codex-fix] Fix generation failed:", err);
     return {
       summary: "Failed to generate a code patch safely.",
       changedFiles: [],
       patchPlan: "No patch generated.",
-      riskNotes: ["Fix generation failed"],
+      riskNotes: ["Fix generation failed: " + (err instanceof Error ? err.message : String(err))],
       cannotFixSafely: true,
       confidence: 0,
     };

@@ -42,7 +42,7 @@ test("applyWorkspacePatch resolves repo-relative file paths", async () => {
         patchPlan: "replace literal",
         riskNotes: [],
         cannotFixSafely: false,
-        confidence: 0.8,
+          confidence: 0.8,
         changedFiles: [
           {
             filePath: relativePath,
@@ -76,7 +76,7 @@ test("applyWorkspacePatch rejects file paths that escape the repo root", async (
           patchPlan: "escape repo root",
           riskNotes: [],
           cannotFixSafely: false,
-        confidence: 0.8,
+          confidence: 0.8,
           changedFiles: [
             {
               filePath: "../outside.ts",
@@ -113,7 +113,7 @@ test("applyWorkspacePatch rejects ambiguous snippet replacements", async () => {
             patchPlan: "replace duplicated literal",
             riskNotes: [],
             cannotFixSafely: false,
-        confidence: 0.8,
+          confidence: 0.8,
             changedFiles: [
               {
                 filePath: relativePath,
