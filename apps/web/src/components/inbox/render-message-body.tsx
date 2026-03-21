@@ -30,6 +30,7 @@ export function renderMessageBody(
           className="inline-flex items-center gap-0.5 rounded bg-blue-100 px-1 text-xs font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
         >
           {mention?.avatarUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
             <img
               src={mention.avatarUrl}
               alt={name}
@@ -58,6 +59,7 @@ export function renderMessageBody(
       <span key="attachments" className="mt-2 flex flex-wrap gap-2">
         {attachments.map((att, i) => (
           <a key={i} href={att.url} target="_blank" rel="noopener noreferrer">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={att.url}
               alt={att.name ?? "attachment"}

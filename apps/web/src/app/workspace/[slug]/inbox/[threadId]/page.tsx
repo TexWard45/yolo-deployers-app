@@ -1,9 +1,11 @@
 export const dynamic = "force-dynamic";
 
 import { redirect } from "next/navigation";
+import { TRPCError } from "@trpc/server";
 import { createCaller, createTRPCContext } from "@shared/rest";
 import { getSession } from "@/actions/auth";
 import { ThreadList } from "@/components/inbox/ThreadList";
+import { NotAuthorized } from "@/components/NotAuthorized";
 
 interface InboxThreadPageProps {
   params: Promise<{ slug: string; threadId: string }>;
@@ -17,10 +19,18 @@ export default async function WorkspaceInboxThreadPage({ params }: InboxThreadPa
   const workspace = session.workspaces.find((w) => w.slug === slug);
   if (!workspace) redirect("/");
 
-  const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-  const threads = await trpc.thread.listByWorkspace({
-    workspaceId: workspace.id,
-  });
+  let threads;
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    threads = await trpc.thread.listByWorkspace({
+      workspaceId: workspace.id,
+    });
+  } catch (error) {
+    if (error instanceof TRPCError && error.code === "FORBIDDEN") {
+      return <NotAuthorized />;
+    }
+    throw error;
+  }
 
   return <ThreadList threads={threads} currentUserId={session.id} initialThreadId={threadId} />;
 }
