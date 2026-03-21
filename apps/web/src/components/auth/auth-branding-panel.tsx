@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ResolveLogoIcon } from "@/components/resolve-logo";
 
 interface AuthBrandingPanelProps {
   headline: string;
@@ -18,7 +19,7 @@ export function AuthBrandingPanel({ headline, subheadline }: AuthBrandingPanelPr
       <div className="relative">
         <Link href="/" className="flex items-center gap-2.5">
           <div className="flex size-8 items-center justify-center rounded-lg bg-white/20">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+            <ResolveLogoIcon className="size-[18px]" />
           </div>
           <span className="text-lg font-bold tracking-tight">ResolveAI</span>
         </Link>

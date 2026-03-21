@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthBrandingPanel } from "./auth-branding-panel";
+import { ResolveLogoIcon } from "@/components/resolve-logo";
 
 export function SignupForm() {
   const router = useRouter();
@@ -57,7 +58,7 @@ export function SignupForm() {
           <div className="lg:hidden">
             <Link href="/" className="flex items-center gap-2.5">
               <div className="gradient-bg flex size-8 items-center justify-center rounded-lg text-white">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                <ResolveLogoIcon className="size-[18px]" />
               </div>
               <span className="text-lg font-bold tracking-tight">ResolveAI</span>
             </Link>

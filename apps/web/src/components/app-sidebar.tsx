@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  LayoutDashboard,
   Inbox,
   Settings,
   Shield,
@@ -32,6 +31,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { ResolveLogoIcon } from "@/components/resolve-logo";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { logout } from "@/actions/auth";
@@ -81,7 +81,7 @@ export function AppSidebar({ user }: AppSidebarProps) {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" render={<Link href="/" />}>
               <div className="gradient-bg flex aspect-square size-8 items-center justify-center rounded-lg text-white shadow-sm">
-                <LayoutDashboard className="size-4" />
+                <ResolveLogoIcon className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold tracking-tight">
