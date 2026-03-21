@@ -50,6 +50,12 @@ apps/* → @shared/rest + @shared/database + @shared/types + @shared/env
 - `apps/web` and `apps/queue` must share the same type contracts from `@shared/types` so API payloads and workflow payloads stay consistent.
 - For any queue workflow/activity input shape that overlaps app/domain data, define or reuse the type in `packages/types` and import it into both apps.
 
+### Queue Rules
+
+- **No create/update/delete on queue.** All DB mutations (CRUD) must go through `apps/web` REST endpoints or tRPC procedures. The queue worker is for background compute and orchestration only (e.g. session enrichment, LLM thread matching).
+- When the queue needs to trigger a DB write, it must call a REST endpoint on `apps/web` (via `WEB_APP_URL` env var) instead of importing `@shared/database` directly in activities.
+- The Discord bot (runs inside `apps/queue`) ingests messages by calling `POST /api/rest/intake/ingest-from-channel` on the web app.
+
 ### Queue Structure
 
 - Keep workflow implementations in `apps/queue/src/workflows/`.

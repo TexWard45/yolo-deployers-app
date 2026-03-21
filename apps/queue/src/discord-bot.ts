@@ -9,9 +9,7 @@ import {
 import { prisma } from "@shared/database";
 import type { DiscordChannelConfig, IngestSupportMessageInput } from "@shared/types";
 import { DiscordChannelConfigSchema } from "@shared/types";
-import { getTemporalClient } from "./temporal-client.js";
-import { temporalConfig } from "./config.js";
-import { workflowRegistry } from "./workflows/registry.js";
+import { queueEnv } from "@shared/env/queue";
 
 // ── Connection cache ──────────────────────────────────────────────
 interface CachedConnection {
@@ -121,56 +119,25 @@ function findMatchingConnection(
   });
 }
 
-// ── Workflow management ──────────────────────────────────────────
+// ── REST ingestion ──────────────────────────────────────────────────
 
 /**
- * Send a message to the ingest workflow using signalWithStart.
- * This atomically starts the workflow if it doesn't exist, or signals
- * it if it's already running — no race conditions, no duplicate workflows.
+ * Send a message to the web app REST endpoint for ingestion.
+ * Replaces the old Temporal workflow signal approach.
  */
-async function signalWorkflow(
-  connectionId: string,
-  input: IngestSupportMessageInput,
-): Promise<void> {
-  const temporal = await getTemporalClient();
-  const workflowId = `discord-ingest-${connectionId}`;
+async function ingestViaRest(input: IngestSupportMessageInput): Promise<void> {
+  const url = `${queueEnv.WEB_APP_URL}/api/rest/intake/ingest-from-channel`;
 
-  await temporal.workflow.signalWithStart(workflowRegistry.ingestSupportMessage, {
-    workflowId,
-    taskQueue: temporalConfig.taskQueue,
-    args: [connectionId, 0],
-    signal: "inboundMessage",
-    signalArgs: [input],
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
   });
-}
 
-/**
- * Ensure the long-running workflow is started for a connection.
- * Uses signalWithStart with a no-op signal approach: we send a dummy
- * message that the workflow will process harmlessly via idempotency.
- */
-async function ensureWorkflowRunning(connectionId: string): Promise<void> {
-  const temporal = await getTemporalClient();
-  const workflowId = `discord-ingest-${connectionId}`;
-
-  try {
-    const handle = temporal.workflow.getHandle(workflowId);
-    const desc = await handle.describe();
-    if (desc.status.name === "RUNNING") {
-      console.log(`[discord-bot] Workflow ${workflowId} already running`);
-      return;
-    }
-  } catch {
-    // Workflow doesn't exist yet
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Ingestion failed (${response.status}): ${body}`);
   }
-
-  // Start the workflow (no initial signal needed — backfill will signal it)
-  await temporal.workflow.start(workflowRegistry.ingestSupportMessage, {
-    workflowId,
-    taskQueue: temporalConfig.taskQueue,
-    args: [connectionId, 0],
-  });
-  console.log(`[discord-bot] Started ingest workflow ${workflowId}`);
 }
 
 // ── Backfill: fetch recent messages on startup ────────────────────
@@ -224,7 +191,7 @@ async function backfillChannel(
     if (existing) continue;
 
     const input = discordMessageToInput(conn.id, msg);
-    await signalWorkflow(conn.id, input);
+    await ingestViaRest(input);
     ingested++;
   }
 
@@ -265,10 +232,9 @@ export function startDiscordBot(botToken: string): void {
     // Refresh cache with auto-discover (passes Discord client for guild access)
     await refreshConnectionCache(client);
 
-    // Auto-start workflows + backfill for every active connection
+    // Backfill recent messages for every active connection
     for (const conn of connectionCache) {
       try {
-        await ensureWorkflowRunning(conn.id);
         await backfillConnection(client, conn);
       } catch (err) {
         console.error(`[discord-bot] Startup failed for connection ${conn.id}:`, err);
@@ -278,7 +244,7 @@ export function startDiscordBot(botToken: string): void {
     if (connectionCache.length > 0) {
       console.log(`[discord-bot] Startup complete: ${connectionCache.length} connections active`);
     } else {
-      console.warn("[discord-bot] No active Discord connections found — no workflows started");
+      console.warn("[discord-bot] No active Discord connections found");
     }
   });
 
@@ -298,11 +264,11 @@ export function startDiscordBot(botToken: string): void {
       if (!connection) return;
 
       const input = discordMessageToInput(connection.id, message);
-      await signalWorkflow(connection.id, input);
+      await ingestViaRest(input);
 
       const channelName = "name" in message.channel ? (message.channel.name ?? channelId) : channelId;
       console.log(
-        `[discord-bot] Signaled ingest workflow for message from ${message.author.username} in #${channelName}`,
+        `[discord-bot] Ingested message from ${message.author.username} in #${channelName}`,
       );
     } catch (err) {
       console.error("[discord-bot] Failed to process message:", err);
