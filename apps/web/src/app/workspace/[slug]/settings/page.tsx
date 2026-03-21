@@ -74,6 +74,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           hasSentryToken: config.sentryAuthToken === "***",
           linearTeamId: config.linearTeamId,
           hasLinearKey: config.linearApiKey === "***",
+          hasLinearTeamId: Boolean(config.linearTeamId),
         }}
       />
     </div>

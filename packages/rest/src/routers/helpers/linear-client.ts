@@ -8,6 +8,64 @@ export function createLinearClient(apiKey: string): LinearClient {
   return new LinearClient({ apiKey });
 }
 
+interface LinearTeamSummary {
+  id: string;
+  key: string | null;
+  name: string | null;
+}
+
+function normalizeTeamValue(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+async function listLinearTeams(client: LinearClient): Promise<LinearTeamSummary[]> {
+  const teams = await client.teams();
+  return teams.nodes.map((team) => ({
+    id: team.id,
+    key: team.key ?? null,
+    name: team.name ?? null,
+  }));
+}
+
+export async function resolveLinearTeamId(
+  client: LinearClient,
+  configuredTeamId: string | null | undefined,
+): Promise<string> {
+  const teams = await listLinearTeams(client);
+  if (teams.length === 0) {
+    throw new Error("No Linear teams are available for the configured API key.");
+  }
+
+  const normalizedConfigured = normalizeTeamValue(configuredTeamId);
+  if (!normalizedConfigured) {
+    const firstTeam = teams[0];
+    if (!firstTeam) {
+      throw new Error("No Linear teams are available for the configured API key.");
+    }
+    return firstTeam.id;
+  }
+
+  const matchingTeam = teams.find((team) => (
+    normalizeTeamValue(team.id) === normalizedConfigured
+    || normalizeTeamValue(team.key) === normalizedConfigured
+    || normalizeTeamValue(team.name) === normalizedConfigured
+  ));
+  if (matchingTeam) {
+    return matchingTeam.id;
+  }
+
+  try {
+    const byId = await client.team(configuredTeamId as string);
+    if (byId?.id) return byId.id;
+  } catch {
+    // Fall through to a clear actionable error below.
+  }
+
+  throw new Error(
+    `Linear team '${configuredTeamId}' was not found. Use a valid team id or team key from Linear.`,
+  );
+}
+
 const SEVERITY_TO_PRIORITY: Record<string, number> = {
   urgent: 1,
   critical: 1,

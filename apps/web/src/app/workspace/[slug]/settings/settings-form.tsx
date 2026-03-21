@@ -29,6 +29,7 @@ interface SettingsFormProps {
     hasSentryToken: boolean;
     linearTeamId: string | null;
     hasLinearKey: boolean;
+    hasLinearTeamId: boolean;
   };
 }
 
@@ -62,7 +63,8 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
   // Linear
   const [linearApiKey, setLinearApiKey] = useState("");
   const [linearTeamId, setLinearTeamId] = useState(config.linearTeamId ?? "");
-  const [linearConnected] = useState(config.hasLinearKey);
+  const linearConnected = config.hasLinearKey && config.hasLinearTeamId;
+  const linearNeedsTeam = config.hasLinearKey && !config.hasLinearTeamId;
   const [saving, startSaving] = useTransition();
   const [saved, setSaved] = useState(false);
 
@@ -359,6 +361,8 @@ export function SettingsForm({ workspaceId, config }: SettingsFormProps) {
           </div>
           {linearConnected ? (
             <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Connected</Badge>
+          ) : linearNeedsTeam ? (
+            <Badge variant="outline" className="text-amber-700 border-amber-200">Missing Team ID</Badge>
           ) : (
             <Badge variant="outline" className="text-muted-foreground">Not configured</Badge>
           )}

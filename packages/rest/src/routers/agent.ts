@@ -37,6 +37,7 @@ import {
   createLinearIssue,
   updateLinearIssue,
   getLinearIssue,
+  resolveLinearTeamId,
   severityToPriority,
 } from "./helpers/linear-client";
 import { generateLinearIssueBody } from "./helpers/triage-spec.prompt";
@@ -720,10 +721,10 @@ export const agentRouter = createTRPCRouter({
         where: { workspaceId: input.workspaceId },
       });
 
-      if (!config?.linearApiKey || !config.linearTeamId) {
+      if (!config?.linearApiKey) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
-          message: "Linear not configured for this workspace. Add API key and team ID in settings.",
+          message: "Linear not configured for this workspace. Add API key in settings.",
         });
       }
 
@@ -739,6 +740,13 @@ export const agentRouter = createTRPCRouter({
 
       const thread = analysis.thread;
       const client = createLinearClient(config.linearApiKey);
+      const resolvedLinearTeamId = await resolveLinearTeamId(client, config.linearTeamId);
+      if (config.linearTeamId !== resolvedLinearTeamId) {
+        await ctx.prisma.workspaceAgentConfig.update({
+          where: { workspaceId: input.workspaceId },
+          data: { linearTeamId: resolvedLinearTeamId },
+        });
+      }
 
       // Build triage prompt input
       const promptInput: TriagePromptInput = {
@@ -783,7 +791,7 @@ export const agentRouter = createTRPCRouter({
         } else {
           // Issue was deleted externally — re-create
           linearResult = await createLinearIssue(client, {
-            teamId: config.linearTeamId,
+            teamId: resolvedLinearTeamId,
             title,
             description,
             priority,
@@ -793,7 +801,7 @@ export const agentRouter = createTRPCRouter({
         }
       } else {
         linearResult = await createLinearIssue(client, {
-          teamId: config.linearTeamId,
+          teamId: resolvedLinearTeamId,
           title,
           description,
           priority,

@@ -41,6 +41,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
   const [cancellingFixPr, startCancellingFixPr] = useTransition();
   const [copied, setCopied] = useState(false);
   const isFixRunActive = fixPrStatus ? isActiveFixPrStatus(fixPrStatus.status) : false;
+  const linearIssueLabel = formatLinearIssueLabel(linearIssueId, linearIssueUrl);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,8 +199,8 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       >
         {triaging
           ? "Creating ticket..."
-          : linearIssueId
-            ? `Update ${linearIssueId}`
+          : linearIssueUrl || linearIssueId
+            ? `Update ${linearIssueLabel}`
             : "Triage to Linear"}
       </Button>
 
@@ -211,7 +212,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
           rel="noopener noreferrer"
           className="block text-xs text-blue-600 hover:underline"
         >
-          {linearIssueId} - Open in Linear
+          {linearIssueLabel} - Open in Linear
         </a>
       ) : null}
 
@@ -489,11 +490,11 @@ function getFixPrButtonLabel(params: {
 
 function getTriageHistoryLabel(historyItem: TriageHistory): string {
   if (historyItem.action === "CREATE_TICKET") {
-    return `Created ${historyItem.linearIssueId}`;
+    return `Created ${historyItem.linearIssueId ?? "Linear ticket"}`;
   }
 
   if (historyItem.action === "UPDATE_TICKET") {
-    return `Updated ${historyItem.linearIssueId}`;
+    return `Updated ${historyItem.linearIssueId ?? "Linear ticket"}`;
   }
 
   if (historyItem.action === "GENERATE_FIX_PR") {
@@ -511,4 +512,33 @@ function timeAgo(dateStr: string): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function formatLinearIssueLabel(
+  linearIssueId: string | null,
+  linearIssueUrl: string | null,
+): string {
+  const issueKeyFromUrl = getLinearIssueKeyFromUrl(linearIssueUrl);
+  if (issueKeyFromUrl) return issueKeyFromUrl;
+
+  const id = linearIssueId?.trim();
+  if (!id) return "Linear ticket";
+  if (isUuidLike(id)) return "Linear ticket";
+  return id;
+}
+
+function getLinearIssueKeyFromUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    const match = parsed.pathname.match(/\/issue\/([^/]+)/i);
+    const key = match?.[1]?.trim();
+    return key && !isUuidLike(key) ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
