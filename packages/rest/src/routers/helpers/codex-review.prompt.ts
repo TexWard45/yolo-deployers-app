@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { FixPrReviewerOutput } from "@shared/types";
+import { FixPrReviewerOutputSchema, type FixPrReviewerOutput } from "@shared/types";
 
 const SYSTEM_PROMPT = `You are a strict code reviewer.
 
@@ -47,7 +47,7 @@ export async function reviewCodexFix(
     }, { signal: controller.signal });
 
     const content = response.choices[0]?.message?.content ?? "";
-    return JSON.parse(content) as FixPrReviewerOutput;
+    return FixPrReviewerOutputSchema.parse(JSON.parse(content));
   } catch {
     return {
       approved: false,

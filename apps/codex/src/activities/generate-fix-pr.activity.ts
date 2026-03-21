@@ -294,12 +294,7 @@ function buildInlineDiff(original: string, updated: string): string {
 async function applyFileChange(change: FixPrFixerOutput["changedFiles"][number]): Promise<string> {
   const absolutePath = resolveWorkspaceFilePath(change.filePath);
   const currentContent = await fs.readFile(absolutePath, "utf8");
-
-  if (!currentContent.includes(change.original)) {
-    throw new Error(`Original snippet not found in ${change.filePath}`);
-  }
-
-  const nextContent = currentContent.replace(change.original, change.updated);
+  const nextContent = replaceSingleExactMatch(currentContent, change);
   await fs.writeFile(absolutePath, nextContent, "utf8");
   return change.filePath;
 }
@@ -349,6 +344,41 @@ function appendTrimmedLog(logs: string[], value: string): void {
   }
 }
 
+function replaceSingleExactMatch(
+  currentContent: string,
+  change: FixPrFixerOutput["changedFiles"][number],
+): string {
+  if (change.original.length === 0) {
+    throw new Error(`Original snippet must not be empty for ${change.filePath}`);
+  }
+
+  const matchCount = currentContent.split(change.original).length - 1;
+  if (matchCount === 0) {
+    throw new Error(`Original snippet not found in ${change.filePath}`);
+  }
+
+  if (matchCount > 1) {
+    throw new Error(`Original snippet matched multiple locations in ${change.filePath}`);
+  }
+
+  return currentContent.replace(change.original, change.updated);
+}
+
 function resolveWorkspaceFilePath(filePath: string): string {
-  return path.resolve(repoRootDir, filePath);
+  const trimmedPath = filePath.trim();
+  if (!trimmedPath) {
+    throw new Error("File path must not be empty");
+  }
+
+  if (path.isAbsolute(trimmedPath)) {
+    throw new Error(`Absolute file paths are not allowed: ${filePath}`);
+  }
+
+  const absolutePath = path.resolve(repoRootDir, trimmedPath);
+  const relativePath = path.relative(repoRootDir, absolutePath);
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error(`File path escapes repo root: ${filePath}`);
+  }
+
+  return absolutePath;
 }

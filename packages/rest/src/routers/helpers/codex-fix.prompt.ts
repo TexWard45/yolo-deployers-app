@@ -1,5 +1,11 @@
 import OpenAI from "openai";
-import type { FixPrCodeContextOutput, FixPrFixerOutput, FixPrRcaOutput, FixPrTestPlan } from "@shared/types";
+import {
+  FixPrFixerOutputSchema,
+  type FixPrCodeContextOutput,
+  type FixPrFixerOutput,
+  type FixPrRcaOutput,
+  type FixPrTestPlan,
+} from "@shared/types";
 
 const SYSTEM_PROMPT = `You are a code-fix agent.
 
@@ -50,7 +56,7 @@ export async function generateCodexFix(
     }, { signal: controller.signal });
 
     const content = response.choices[0]?.message?.content ?? "";
-    return JSON.parse(content) as FixPrFixerOutput;
+    return FixPrFixerOutputSchema.parse(JSON.parse(content));
   } catch {
     return {
       summary: "Failed to generate a code patch safely.",

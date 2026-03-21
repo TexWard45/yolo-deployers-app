@@ -61,3 +61,72 @@ test("applyWorkspacePatch resolves repo-relative file paths", async () => {
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("applyWorkspacePatch rejects file paths that escape the repo root", async () => {
+  setCodexTestEnv();
+
+  const { applyWorkspacePatch } = await import("./generate-fix-pr.activity.js");
+
+  await assert.rejects(
+    () =>
+      applyWorkspacePatch({
+        fixerOutput: {
+          summary: "malicious patch",
+          patchPlan: "escape repo root",
+          riskNotes: [],
+          cannotFixSafely: false,
+          changedFiles: [
+            {
+              filePath: "../outside.ts",
+              original: "before",
+              updated: "after",
+              explanation: "should not be allowed",
+            },
+          ],
+        },
+      }),
+    /escapes repo root/,
+  );
+});
+
+test("applyWorkspacePatch rejects ambiguous snippet replacements", async () => {
+  setCodexTestEnv();
+
+  const { applyWorkspacePatch, repoRootDir } = await import("./generate-fix-pr.activity.js");
+  const tempDir = await mkdtemp(path.join(repoRootDir, ".tmp-fix-pr-"));
+  const relativePath = path.relative(repoRootDir, path.join(tempDir, "example.ts"));
+
+  try {
+    await writeFile(
+      path.join(tempDir, "example.ts"),
+      "const value = 'before';\nconst mirror = 'before';\n",
+      "utf8",
+    );
+
+    await assert.rejects(
+      () =>
+        applyWorkspacePatch({
+          fixerOutput: {
+            summary: "ambiguous patch",
+            patchPlan: "replace duplicated literal",
+            riskNotes: [],
+            cannotFixSafely: false,
+            changedFiles: [
+              {
+                filePath: relativePath,
+                original: "'before'",
+                updated: "'after'",
+                explanation: "duplicate literal should be rejected",
+              },
+            ],
+          },
+        }),
+      /matched multiple locations/,
+    );
+
+    const content = await readFile(path.join(tempDir, "example.ts"), "utf8");
+    assert.equal(content, "const value = 'before';\nconst mirror = 'before';\n");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});

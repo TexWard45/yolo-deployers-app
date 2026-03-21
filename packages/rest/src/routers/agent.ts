@@ -38,6 +38,7 @@ import type { TriagePromptInput } from "./helpers/triage-spec.prompt";
 const ACTIVE_FIX_PR_STATUSES = new Set(["QUEUED", "RUNNING"]);
 const TERMINAL_FIX_PR_STATUSES = new Set(["PASSED", "WAITING_REVIEW", "FAILED", "CANCELLED"]);
 const ADMIN_WORKSPACE_ROLES = new Set(["OWNER", "ADMIN"]);
+const REDACTED_SECRET_PLACEHOLDER = "***";
 
 async function requireWorkspaceMember(
   ctx: TRPCContext,
@@ -100,6 +101,26 @@ function getDefaultWorkspaceAgentConfig(workspaceId: string) {
     threadRecencyWindowMinutes: 0,
     createdAt: null,
     updatedAt: null,
+  };
+}
+
+function buildWorkspaceAgentConfigUpdateData(input: Omit<z.infer<typeof UpdateWorkspaceAgentConfigSchema>, "workspaceId" | "userId">) {
+  const {
+    handoffRulesJson,
+    githubToken,
+    sentryAuthToken,
+    linearApiKey,
+    ...rest
+  } = input;
+
+  return {
+    ...rest,
+    ...(handoffRulesJson !== undefined
+      ? { handoffRulesJson: handoffRulesJson as Record<string, unknown> as never }
+      : {}),
+    ...(githubToken !== REDACTED_SECRET_PLACEHOLDER ? { githubToken } : {}),
+    ...(sentryAuthToken !== REDACTED_SECRET_PLACEHOLDER ? { sentryAuthToken } : {}),
+    ...(linearApiKey !== REDACTED_SECRET_PLACEHOLDER ? { linearApiKey } : {}),
   };
 }
 
@@ -298,13 +319,8 @@ export const agentRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       await requireWorkspaceMember(ctx, input, ADMIN_WORKSPACE_ROLES);
 
-      const { workspaceId, userId, handoffRulesJson, ...rest } = input;
-      const data = {
-        ...rest,
-        ...(handoffRulesJson !== undefined
-          ? { handoffRulesJson: handoffRulesJson as Record<string, unknown> as never }
-          : {}),
-      };
+      const { workspaceId, userId, ...rest } = input;
+      const data = buildWorkspaceAgentConfigUpdateData(rest);
 
       return ctx.prisma.workspaceAgentConfig.upsert({
         where: { workspaceId },

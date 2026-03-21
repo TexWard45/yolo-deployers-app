@@ -246,3 +246,43 @@ test("getFixPRStatus rejects non-members", async () => {
       error.message === "Not a member of this workspace",
   );
 });
+
+test("updateWorkspaceConfig ignores redacted secrets instead of overwriting stored credentials", async () => {
+  setRestTestEnv();
+  const upsertInputs: unknown[] = [];
+
+  const prisma = {
+    workspaceMember: {
+      findUnique: async () => ({ id: "member-1", role: "OWNER" }),
+    },
+    workspaceAgentConfig: {
+      upsert: async (input: unknown) => {
+        upsertInputs.push(input);
+        return input;
+      },
+    },
+  };
+
+  const { createCallerFactory } = await import("../init");
+  const { agentRouter } = await import("./agent");
+  const caller = createCallerFactory(agentRouter)({
+    prisma: prisma as never,
+    sessionUserId: "user-1",
+  });
+
+  await caller.updateWorkspaceConfig({
+    workspaceId: "workspace-1",
+    userId: "user-1",
+    githubToken: "***",
+    githubDefaultOwner: "TexWard45",
+  });
+
+  assert.equal(upsertInputs.length, 1);
+  const upsertInput = upsertInputs[0] as {
+    update: Record<string, unknown>;
+    create: Record<string, unknown>;
+  };
+  assert.equal("githubToken" in upsertInput.update, false);
+  assert.equal("githubToken" in upsertInput.create, false);
+  assert.equal(upsertInput.update.githubDefaultOwner, "TexWard45");
+});

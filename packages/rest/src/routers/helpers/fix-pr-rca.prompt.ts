@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import type { FixPrRcaOutput } from "@shared/types";
+import { FixPrRcaOutputSchema, type FixPrRcaOutput } from "@shared/types";
 
 const SYSTEM_PROMPT = `You are an RCA agent for a code-fix workflow.
 
@@ -45,7 +45,7 @@ export async function generateFixPrRca(
     }, { signal: controller.signal });
 
     const content = response.choices[0]?.message?.content ?? "";
-    return JSON.parse(content) as FixPrRcaOutput;
+    return FixPrRcaOutputSchema.parse(JSON.parse(content));
   } catch {
     return fallback;
   } finally {
