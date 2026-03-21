@@ -20,7 +20,31 @@ export function TelemetryProvider({
 }: TelemetryConfig & { children: React.ReactNode }) {
   useEffect(() => {
     Telemetry.init(config);
-    return () => Telemetry.stop();
+
+    const onError = (event: ErrorEvent) => {
+      Telemetry.logError(event.message, {
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+      });
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const message =
+        event.reason instanceof Error
+          ? event.reason.message
+          : String(event.reason ?? "Unhandled Promise Rejection");
+      Telemetry.logError(message, { reason: String(event.reason) });
+    };
+
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+      Telemetry.stop();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return <>{children}</>;

@@ -3,9 +3,11 @@ model Session {
   userId    String?
   user      User?    @relation(fields: [userId], references: [id])
   userAgent String?
-  ipAddress String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  ipAddress  String?
+  hasError   Boolean  @default(false)
+  errorCount Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   events      ReplayEvent[]
   timelines   SessionTimeline[]

@@ -216,6 +216,15 @@ export class TelemetryClient {
     }
   }
 
+  /**
+   * Emit a system_error custom event into the rrweb stream.
+   * The backend will extract these to flag the session and populate the error timeline.
+   */
+  public logError(errorMsg: string, details?: Record<string, unknown>): void {
+    if (!this._stopFn || !this._sessionId) return;
+    rrweb.addCustomEvent("system_error", { message: errorMsg, ...details });
+  }
+
   /** Get the current session ID */
   public getSessionId(): string | null {
     return this._sessionId;

@@ -35,11 +35,28 @@ export const telemetryRouter = createTRPCRouter({
         });
       }
 
+      // rrweb custom events are type 5 in the raw rrweb payload
+      const errorEvents = events.filter(
+        (e) =>
+          e.type === "rrweb" &&
+          (e.payload as any)?.type === 5 &&
+          (e.payload as any)?.data?.tag === "system_error"
+      );
+
       await ctx.prisma.$transaction([
         ctx.prisma.session.upsert({
           where: { id: sessionId },
-          update: {},
-          create: { id: sessionId, userId: resolvedUserId, userAgent },
+          update:
+            errorEvents.length > 0
+              ? { hasError: true, errorCount: { increment: errorEvents.length } }
+              : {},
+          create: {
+            id: sessionId,
+            userId: resolvedUserId,
+            userAgent,
+            hasError: errorEvents.length > 0,
+            errorCount: errorEvents.length,
+          },
         }),
         ctx.prisma.replayEvent.createMany({
           data: events.map((event) => ({
@@ -52,6 +69,20 @@ export const telemetryRouter = createTRPCRouter({
             route: event.route,
           })),
         }),
+        ...(errorEvents.length > 0
+          ? [
+              ctx.prisma.sessionTimeline.createMany({
+                data: errorEvents.map((e) => ({
+                  sessionId,
+                  type: "ERROR",
+                  content:
+                    (e.payload as any)?.data?.payload?.message ?? "System Error",
+                  metadata: e.payload as Prisma.InputJsonValue,
+                  timestamp: e.timestamp,
+                })),
+              }),
+            ]
+          : []),
       ]);
 
       return { ingested: events.length, sessionId };
@@ -67,10 +98,11 @@ export const telemetryRouter = createTRPCRouter({
         customerPhone: z.string().optional(),
         startDate: z.coerce.date().optional(),
         endDate: z.coerce.date().optional(),
+        hasError: z.boolean().optional(),
       })
     )
     .query(async ({ ctx, input }) => {
-      const { limit, cursor, customerId, customerEmail, customerPhone, startDate, endDate } = input;
+      const { limit, cursor, customerId, customerEmail, customerPhone, startDate, endDate, hasError } = input;
 
       // Resolve session IDs by searching user.identify event payloads
       let sessionIdFilter: string[] | undefined;
@@ -94,6 +126,7 @@ export const telemetryRouter = createTRPCRouter({
         ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
         where: {
           ...(sessionIdFilter ? { id: { in: sessionIdFilter } } : {}),
+          ...(hasError !== undefined ? { hasError } : {}),
           ...(startDate ?? endDate
             ? {
                 createdAt: {

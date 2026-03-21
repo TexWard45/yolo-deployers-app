@@ -11,9 +11,11 @@ const CONTROLLER_HEIGHT = 80;
 
 interface ReplayViewerProps {
   events: Array<{ type: string | number; payload: unknown }>;
+  /** Absolute Unix timestamps (ms) of error events — used for timeline markers and auto-seek */
+  errorTimestamps?: number[];
 }
 
-export function ReplayViewer({ events }: ReplayViewerProps) {
+export function ReplayViewer({ events, errorTimestamps }: ReplayViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<rrwebPlayer | null>(null);
 
@@ -49,8 +51,17 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
           showController: true,
           autoPlay: false,
           speed: 1,
+          ...(errorTimestamps && errorTimestamps.length > 0
+            ? { tags: { "Error": errorTimestamps } }
+            : {}),
         },
       });
+
+      // Auto-seek to 3s before the first error so reviewers land in context
+      if (errorTimestamps && errorTimestamps.length > 0 && rrwebEvents[0]) {
+        const offset = Math.max(0, errorTimestamps[0]! - rrwebEvents[0].timestamp - 3000);
+        setTimeout(() => playerRef.current?.goto(offset, true), 500);
+      }
     });
 
     return () => {
@@ -61,7 +72,7 @@ export function ReplayViewer({ events }: ReplayViewerProps) {
       }
       if (el) el.innerHTML = "";
     };
-  }, [events]);
+  }, [events, errorTimestamps]);
 
   const rrwebCount = events.filter((e) => e.type === "rrweb" || e.type === 2).length;
   if (rrwebCount < 2) {

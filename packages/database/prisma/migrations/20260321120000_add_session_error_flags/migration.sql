@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Session" ADD COLUMN "hasError" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Session" ADD COLUMN "errorCount" INTEGER NOT NULL DEFAULT 0;

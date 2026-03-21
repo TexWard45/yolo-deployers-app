@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown } from "lucide-react";
+import { Play, History, List, AlertCircle, Clock, MousePointer2, X, ChevronDown, ShieldAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function ReplaysPage() {
@@ -17,6 +17,7 @@ export default function ReplaysPage() {
     setSelectedSessionId,
     filters,
     setFilter,
+    setHasErrorFilter,
     clearFilters,
     sessions,
     selectedSession,
@@ -26,9 +27,10 @@ export default function ReplaysPage() {
     replayData,
     replayLoading,
     timelineData,
+    errorTimestamps,
   } = useReplayExplorer();
 
-  const hasActiveFilters = Object.values(filters).some(Boolean);
+  const hasActiveFilters = Object.values(filters).some(Boolean) || filters.hasError;
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
@@ -89,6 +91,16 @@ export default function ReplaysPage() {
                 onChange={(e) => setFilter("endDate", e.target.value)}
               />
             </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="h-3.5 w-3.5 rounded accent-destructive"
+                checked={filters.hasError}
+                onChange={(e) => setHasErrorFilter(e.target.checked)}
+              />
+              <ShieldAlert className="w-3 h-3 text-destructive" />
+              <span className="text-[11px] text-destructive font-medium">Errors only</span>
+            </label>
           </div>
 
           <ScrollArea className="flex-1">
@@ -118,9 +130,17 @@ export default function ReplaysPage() {
                         <p className="font-mono text-[10px] font-bold truncate max-w-[140px]">
                           {s.id}
                         </p>
-                        <Badge variant="secondary" className="text-[9px] h-4 px-1 leading-none">
-                          {s._count.events} ev
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          {s.hasError && (
+                            <Badge variant="destructive" className="text-[9px] h-4 px-1 leading-none gap-0.5">
+                              <ShieldAlert className="w-2.5 h-2.5" />
+                              {s.errorCount}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-[9px] h-4 px-1 leading-none">
+                            {s._count.events} ev
+                          </Badge>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-muted-foreground">
                         <Clock className="w-3 h-3" />
@@ -205,7 +225,7 @@ export default function ReplaysPage() {
                           </div>
                         </div>
                       ) : replayData?.events && replayData.events.length >= 2 ? (
-                        <ReplayViewer events={replayData.events} />
+                        <ReplayViewer events={replayData.events} errorTimestamps={errorTimestamps} />
                       ) : (
                         <div className="flex-1 h-full flex items-center justify-center p-8 text-center">
                           <div className="space-y-4 max-w-xs">

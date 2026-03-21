@@ -7,6 +7,7 @@ export type SessionFilters = {
   customerPhone: string;
   startDate: string;
   endDate: string;
+  hasError: boolean;
 };
 
 export type ReplayExplorerReturn = {
@@ -14,6 +15,7 @@ export type ReplayExplorerReturn = {
   setSelectedSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   filters: SessionFilters;
   setFilter: (key: keyof SessionFilters, value: string) => void;
+  setHasErrorFilter: (value: boolean) => void;
   clearFilters: () => void;
   sessions: any[];
   selectedSession: any | undefined;
@@ -23,6 +25,7 @@ export type ReplayExplorerReturn = {
   replayData: any | undefined;
   replayLoading: boolean;
   timelineData: any | undefined;
+  errorTimestamps: number[];
 };
 
 const EMPTY_FILTERS: SessionFilters = {
@@ -31,6 +34,7 @@ const EMPTY_FILTERS: SessionFilters = {
   customerPhone: "",
   startDate: "",
   endDate: "",
+  hasError: false,
 };
 
 export function useReplayExplorer(): ReplayExplorerReturn {
@@ -44,6 +48,7 @@ export function useReplayExplorer(): ReplayExplorerReturn {
     ...(filters.customerPhone ? { customerPhone: filters.customerPhone } : {}),
     ...(filters.startDate ? { startDate: new Date(filters.startDate) } : {}),
     ...(filters.endDate ? { endDate: new Date(filters.endDate) } : {}),
+    ...(filters.hasError ? { hasError: true } : {}),
   };
 
   const {
@@ -70,8 +75,17 @@ export function useReplayExplorer(): ReplayExplorerReturn {
 
   const selectedSession = sessions.find((s) => s.id === selectedSessionId);
 
+  // Derive absolute error timestamps (ms) from the session timeline for the replay player
+  const errorTimestamps: number[] = (timelineData ?? [])
+    .filter((t: any) => t.type === "ERROR")
+    .map((t: any) => new Date(t.timestamp).getTime());
+
   const setFilter = useCallback((key: keyof SessionFilters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const setHasErrorFilter = useCallback((value: boolean) => {
+    setFilters((prev) => ({ ...prev, hasError: value }));
   }, []);
 
   const clearFilters = useCallback(() => {
@@ -83,6 +97,7 @@ export function useReplayExplorer(): ReplayExplorerReturn {
     setSelectedSessionId,
     filters,
     setFilter,
+    setHasErrorFilter,
     clearFilters,
     sessions,
     selectedSession,
@@ -92,5 +107,6 @@ export function useReplayExplorer(): ReplayExplorerReturn {
     replayData,
     replayLoading,
     timelineData,
+    errorTimestamps,
   };
 }
