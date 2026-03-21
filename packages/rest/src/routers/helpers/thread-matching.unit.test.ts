@@ -109,6 +109,7 @@ test("time-proximity: matches same-customer thread within recency window", () =>
 });
 
 test("time-proximity: does NOT match when outside recency window", () => {
+  const oldTime = new Date(Date.now() - 15 * 60 * 1000);
   const decision = decideDeterministicThreadMatch({
     externalThreadId: null,
     inReplyToExternalMessageId: null,
@@ -125,8 +126,8 @@ test("time-proximity: does NOT match when outside recency window", () => {
         externalThreadId: "ext-1",
         issueFingerprint: "who write trash code setting page",
         summary: null,
-        lastMessageAt: new Date(),
-        lastInboundAt: new Date(Date.now() - 15 * 60 * 1000),
+        lastMessageAt: oldTime,
+        lastInboundAt: oldTime,
       },
     ],
   });
@@ -179,7 +180,7 @@ test("time-proximity: picks most recent thread when multiple exist", () => {
         externalThreadId: "ext-1",
         issueFingerprint: "billing issue",
         summary: null,
-        lastMessageAt: new Date(),
+        lastMessageAt: new Date(Date.now() - 8 * 60 * 1000),
         lastInboundAt: new Date(Date.now() - 8 * 60 * 1000),
       },
       {
@@ -188,7 +189,7 @@ test("time-proximity: picks most recent thread when multiple exist", () => {
         externalThreadId: "ext-2",
         issueFingerprint: "login bug",
         summary: null,
-        lastMessageAt: new Date(),
+        lastMessageAt: new Date(Date.now() - 2 * 60 * 1000),
         lastInboundAt: new Date(Date.now() - 2 * 60 * 1000),
       },
     ],

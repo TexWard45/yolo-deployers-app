@@ -63,7 +63,7 @@ model WorkspaceAgentConfig {
   autoDraftOnInbound Boolean @default(true)
   handoffRulesJson   Json?
   model              String?
-  threadRecencyWindowMinutes Int @default(10)
+  threadRecencyWindowMinutes Int @default(0)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
