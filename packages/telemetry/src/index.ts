@@ -105,6 +105,12 @@ export class TelemetryClient {
 
   /**
    * Initialize session recording. Call once at app startup.
+   *
+   * NOTE: We delay `rrweb.record()` until the page is fully loaded so
+   * that Next.js / Turbopack has finished injecting CSS `<style>` tags
+   * into the DOM. Without this delay, the initial Full Snapshot captured
+   * the correct DOM tree but with no stylesheet rules, producing a
+   * structurally valid but visually blank replay.
    */
   public init(config: TelemetryConfig): void {
     if (this._stopFn) {
@@ -130,6 +136,23 @@ export class TelemetryClient {
     this._sequence = 0;
     this._consecutiveErrors = 0;
 
+    // Delay recording until the document is fully loaded (CSS injected).
+    const startRecording = () => {
+      // Extra 500ms grace period for JS-injected stylesheets (Turbopack, etc.)
+      setTimeout(() => this._startRecording(), 500);
+    };
+
+    if (typeof document !== "undefined" && document.readyState === "complete") {
+      startRecording();
+    } else if (typeof window !== "undefined") {
+      window.addEventListener("load", startRecording, { once: true });
+    }
+  }
+
+  /** @internal — start the actual rrweb recorder (must be called after CSS is in the DOM) */
+  private _startRecording(): void {
+    if (this._stopFn || !this._config) return; // guard against double-start or stopped
+
     const stop = rrweb.record({
       emit: (event) => {
         // Drop events if buffer exceeds max capacity to avoid infinite memory growth
@@ -141,18 +164,19 @@ export class TelemetryClient {
           payload: event as unknown as Record<string, unknown>,
           sequence: this._sequence++,
         });
-        
+
         if (this._config && this._buffer.length >= this._config.batchSize) {
           void this._flush();
         }
       },
       maskAllInputs: this._config.maskAllInputs,
       blockSelector: this._config.blockSelector,
-      // Critical for Next.js / Turbopack: inline all CSS into the snapshot
-      // so replays render correctly instead of showing a blank white page.
+      // Inline all CSS / fonts / images so the replay is self-contained
       inlineStylesheet: true,
       collectFonts: true,
       inlineImages: true,
+      // Take a fresh full snapshot every 15s to capture lazy-loaded styles
+      checkoutEveryNms: 15_000,
     });
 
     this._stopFn = stop ?? null;
