@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
+import { renderMessageBody } from "@/components/inbox/render-message-body";
 import { getThreadDetail, sendReply } from "@/actions/inbox";
 import {
   getDefaultReplySegmentId,
@@ -217,7 +218,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                                 }`}
                               >
                                 <p className="whitespace-pre-wrap text-sm">
-                                  {msg.body}
+                                  {renderMessageBody(msg.body)}
                                 </p>
                               </div>
                             </div>

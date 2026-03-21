@@ -153,9 +153,10 @@ function discordMessageToInput(
     externalUserId: message.author.id,
     username: message.author.username,
     displayName: message.author.globalName ?? message.author.username,
-    body: message.content,
+    body: message.cleanContent,
     timestamp: message.createdAt.toISOString(),
     rawPayload: {
+      originalContent: message.content,
       authorId: message.author.id,
       username: message.author.username,
       channelId: message.channelId,

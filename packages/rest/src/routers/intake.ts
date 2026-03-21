@@ -276,7 +276,7 @@ async function performIngestion(
         needsReview,
       },
     };
-  });
+  }, { timeout: 15000 });
 
   if (result.matching.needsReview) {
     void dispatchThreadReviewWorkflow({
