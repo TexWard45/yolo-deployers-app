@@ -135,18 +135,19 @@ export async function approveDraftAction(data: {
   }
 
   try {
+    console.log("[approveDraftAction] calling tRPC approveDraft", { draftId: data.draftId, workspaceId: data.workspaceId });
     const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
-    await trpc.agent.approveDraft({
+    const result = await trpc.agent.approveDraft({
       draftId: data.draftId,
       workspaceId: data.workspaceId,
       userId: session.id,
     });
+    console.log("[approveDraftAction] success, draft status:", result.status);
     return { success: true } as const;
   } catch (error) {
-    if (error instanceof TRPCError) {
-      return { success: false, error: error.message } as const;
-    }
-    return { success: false, error: "Something went wrong" } as const;
+    const message = error instanceof TRPCError ? error.message : String(error);
+    console.error("[approveDraftAction] FAILED:", message, error);
+    return { success: false, error: message } as const;
   }
 }
 

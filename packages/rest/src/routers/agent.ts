@@ -178,9 +178,9 @@ export const agentRouter = createTRPCRouter({
             include: {
               messages: {
                 where: { direction: "INBOUND" },
-                orderBy: { createdAt: "desc" },
+                orderBy: { createdAt: "asc" },
                 take: 1,
-                select: { metadata: true },
+                select: { metadata: true, externalMessageId: true, body: true },
               },
             },
           },
@@ -198,20 +198,63 @@ export const agentRouter = createTRPCRouter({
       // 1. Send to external channel (Discord)
       let externalMessageId: string | null = null;
 
-      if (draft.thread.source === "DISCORD") {
-        const lastInbound = draft.thread.messages[0];
-        const rawPayload = (lastInbound?.metadata as Record<string, unknown> | null)?.rawPayload as Record<string, unknown> | null;
-        const channelId = (rawPayload?.channelId as string) ?? null;
-        const targetChannelId = draft.thread.externalThreadId.startsWith("synthetic-")
-          ? channelId
-          : draft.thread.externalThreadId;
+      console.log("[approveDraft] source:", draft.thread.source, "externalThreadId:", draft.thread.externalThreadId);
 
-        if (targetChannelId) {
-          const botToken = process.env.DISCORD_BOT_TOKEN;
-          if (botToken) {
-            try {
-              const response = await fetch(
-                `https://discord.com/api/v10/channels/${targetChannelId}/messages`,
+      if (draft.thread.source === "DISCORD") {
+        const firstInbound = draft.thread.messages[0];
+        const meta = firstInbound?.metadata as Record<string, unknown> | null;
+        const channelId = (meta?.channelId as string)
+          ?? ((meta?.rawPayload as Record<string, unknown> | null)?.channelId as string)
+          ?? null;
+        const isSynthetic = draft.thread.externalThreadId.startsWith("synthetic-");
+
+        console.log("[approveDraft] channelId:", channelId, "isSynthetic:", isSynthetic, "firstInbound externalMessageId:", firstInbound?.externalMessageId);
+
+        const botToken = process.env.DISCORD_BOT_TOKEN;
+        if (!botToken) {
+          console.error("[approveDraft] DISCORD_BOT_TOKEN not set in env");
+        } else if (isSynthetic && channelId && firstInbound?.externalMessageId) {
+          // No Discord thread yet — create one on the customer's first message, then send reply inside it
+          try {
+            const threadName = (firstInbound.body ?? "Support").slice(0, 100);
+
+            // Step 1: Create thread from the customer's message
+            const threadRes = await fetch(
+              `https://discord.com/api/v10/channels/${channelId}/messages/${firstInbound.externalMessageId}/threads`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bot ${botToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  name: threadName,
+                  auto_archive_duration: 1440,
+                }),
+              },
+            );
+
+            let threadChannelId: string | null = null;
+
+            if (threadRes.ok) {
+              const threadData = (await threadRes.json()) as { id: string };
+              threadChannelId = threadData.id;
+              console.log(`[approveDraft] created Discord thread ${threadChannelId}`);
+            } else {
+              const errText = await threadRes.text().catch(() => "");
+              console.error(`[approveDraft] create thread failed (${threadRes.status}): ${errText}`);
+              // Thread might already exist — try using the message's thread ID
+              // Discord returns 400 if thread already exists on this message
+              if (threadRes.status === 400) {
+                // Fall back: send directly to channel as reply
+                threadChannelId = channelId;
+              }
+            }
+
+            // Step 2: Send reply inside the thread
+            if (threadChannelId) {
+              const msgRes = await fetch(
+                `https://discord.com/api/v10/channels/${threadChannelId}/messages`,
                 {
                   method: "POST",
                   headers: {
@@ -222,18 +265,54 @@ export const agentRouter = createTRPCRouter({
                 },
               );
 
-              if (response.ok) {
-                const data = (await response.json()) as { id: string };
-                externalMessageId = data.id;
-                console.log(`[approveDraft] sent message ${data.id} to channel ${targetChannelId}`);
+              if (msgRes.ok) {
+                const msgData = (await msgRes.json()) as { id: string };
+                externalMessageId = msgData.id;
+                console.log(`[approveDraft] sent message ${msgData.id} in thread ${threadChannelId}`);
+
+                // Update SupportThread with the real Discord thread ID
+                if (threadChannelId !== channelId) {
+                  await ctx.prisma.supportThread.update({
+                    where: { id: draft.threadId },
+                    data: { externalThreadId: threadChannelId },
+                  });
+                }
               } else {
-                const error = await response.text().catch(() => "");
-                console.error(`[approveDraft] Discord API error (${response.status}): ${error}`);
+                const error = await msgRes.text().catch(() => "");
+                console.error(`[approveDraft] Discord send error (${msgRes.status}): ${error}`);
               }
-            } catch (error) {
-              console.error("[approveDraft] Discord send failed:", error);
             }
+          } catch (error) {
+            console.error("[approveDraft] Discord thread+send failed:", error);
           }
+        } else if (!isSynthetic) {
+          // Already have a real Discord thread ID — just send in it
+          try {
+            const response = await fetch(
+              `https://discord.com/api/v10/channels/${draft.thread.externalThreadId}/messages`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bot ${botToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ content: draft.body }),
+              },
+            );
+
+            if (response.ok) {
+              const data = (await response.json()) as { id: string };
+              externalMessageId = data.id;
+              console.log(`[approveDraft] sent message ${data.id} in existing thread ${draft.thread.externalThreadId}`);
+            } else {
+              const error = await response.text().catch(() => "");
+              console.error(`[approveDraft] Discord API error (${response.status}): ${error}`);
+            }
+          } catch (error) {
+            console.error("[approveDraft] Discord send failed:", error);
+          }
+        } else {
+          console.error("[approveDraft] cannot resolve Discord target — channelId:", channelId, "firstInbound:", firstInbound?.externalMessageId);
         }
       }
 

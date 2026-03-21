@@ -253,6 +253,7 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
                 onDraftActioned={() => {
                   setDraft(null);
                   analysisRefreshRef.current?.();
+                  fetchThread(threadId);
                 }}
               />
             </div>
