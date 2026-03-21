@@ -13,6 +13,8 @@ interface ThreadCardProps {
   updatedAt: Date;
   messageCount: number;
   assigneeName: string | null;
+  linearIssueId?: string | null;
+  linearIssueUrl?: string | null;
   severity: string | null;
   issueCategory: string | null;
   selected: boolean;
@@ -43,6 +45,8 @@ export function ThreadCard({
   updatedAt,
   messageCount,
   assigneeName,
+  linearIssueId,
+  linearIssueUrl,
   severity,
   issueCategory,
   selected,
@@ -104,6 +108,17 @@ export function ThreadCard({
         <span className="ml-1.5">
           {messageCount} msgs &bull; {timeAgo(updatedAt)}
         </span>
+        {linearIssueId && linearIssueUrl ? (
+          <a
+            href={linearIssueUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="ml-auto inline-flex items-center gap-0.5 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+          >
+            {linearIssueId}
+          </a>
+        ) : null}
       </div>
     </button>
   );

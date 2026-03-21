@@ -36,9 +36,10 @@ model SupportThread {
   lastAnalysisId     String?        @unique
   lastAnalysis       ThreadAnalysis? @relation("latestAnalysis", fields: [lastAnalysisId], references: [id])
 
-  // Linear integration
+  // Linear integration (triage pipeline)
   linearIssueId  String? @unique
   linearIssueUrl String?
+
 
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt

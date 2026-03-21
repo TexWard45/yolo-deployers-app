@@ -16,7 +16,6 @@ export default async function SettingsPage() {
   if (!session) redirect("/login");
 
   const workspaces = session.workspaces ?? [];
-
   return (
     <div className="space-y-6">
       <div>
@@ -99,6 +98,7 @@ export default async function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
     </div>
   );
 }

@@ -496,6 +496,24 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
             <ThreadStatusBadge status={thread.status} />
           </div>
 
+          {/* Linear Issue */}
+          {thread.linearIssueId && thread.linearIssueUrl ? (
+            <div>
+              <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                Issue
+              </h3>
+              <a
+                href={thread.linearIssueUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 rounded bg-violet-100 px-2 py-1 text-xs font-medium text-violet-700 hover:bg-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:hover:bg-violet-900/50"
+              >
+                {thread.linearIssueId}
+                <span className="text-[10px]">&#8599;</span>
+              </a>
+            </div>
+          ) : null}
+
           {/* Customer Info */}
           <div>
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">

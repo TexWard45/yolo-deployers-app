@@ -34,6 +34,8 @@ interface ThreadListItem {
   summary: string | null;
   status: ThreadStatusValue;
   updatedAt: Date;
+  linearIssueId?: string | null;
+  linearIssueUrl?: string | null;
   customer: {
     displayName: string;
   };
@@ -301,6 +303,8 @@ export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadLi
                           thread.assignedTo?.email ??
                           null
                         }
+                        linearIssueId={thread.linearIssueId}
+                        linearIssueUrl={thread.linearIssueUrl}
                         severity={thread.lastAnalysis?.severity ?? null}
                         issueCategory={thread.lastAnalysis?.issueCategory ?? null}
                         selected={selectedId === thread.id}

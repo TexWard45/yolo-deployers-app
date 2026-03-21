@@ -111,10 +111,13 @@ export const threadRouter = createTRPCRouter({
         userId,
       });
 
-      return ctx.prisma.supportThread.update({
+      const updated = await ctx.prisma.supportThread.update({
         where: { id: input.threadId },
         data: { status: input.status },
       });
+
+
+      return updated;
     }),
 
   assign: protectedProcedure
