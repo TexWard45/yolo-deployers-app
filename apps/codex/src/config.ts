@@ -16,6 +16,7 @@ export const temporalConfig = {
 
 export const codexConfig = {
   cloneBasePath: resolve(codexEnv.CODEX_CLONE_BASE_PATH),
+  githubToken: codexEnv.CODEX_GITHUB_TOKEN,
   llm: {
     apiKey: resolvedLlmApiKey,
     model: codexEnv.LLM_MODEL_DEFAULT,

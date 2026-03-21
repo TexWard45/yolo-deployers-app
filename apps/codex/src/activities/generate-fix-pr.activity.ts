@@ -1,5 +1,6 @@
 import { promisify } from "node:util";
-import { exec as execCallback } from "node:child_process";
+import { exec as execCallback, execFile as execFileCallback } from "node:child_process";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { promises as fs } from "node:fs";
 import { createHash } from "node:crypto";
@@ -8,6 +9,8 @@ import { prisma } from "@shared/database";
 import {
   buildFixPrTestPlan,
   expandFixPrCodeContext,
+  createDraftPullRequest,
+  createGitHubClient,
   generateCodexFix,
   generateFixPrRca,
   reviewCodexFix,
@@ -25,6 +28,7 @@ import type {
 import { codexConfig } from "../config.js";
 
 const exec = promisify(execCallback);
+const execFile = promisify(execFileCallback);
 // Commands and file edits operate on repo-relative paths, so activities anchor
 // all filesystem work at the monorepo root instead of the app package directory.
 export const repoRootDir = path.resolve(
@@ -55,6 +59,41 @@ export interface FixRunContext {
   };
   requiredCheckNames: string[];
   codexRepositoryIds: string[];
+}
+
+export interface ResolveFixTargetRepositoryParams {
+  repositoryIds: string[];
+  filePaths: string[];
+  preferredOwner?: string | null;
+  preferredRepo?: string | null;
+  configuredBaseBranch: string;
+}
+
+export interface FixTargetRepository {
+  repositoryId: string;
+  localPath: string;
+  owner: string | null;
+  repo: string | null;
+  baseBranch: string;
+  canCreatePullRequest: boolean;
+}
+
+export interface CreateFixPullRequestInput {
+  runId: string;
+  summary: string;
+  patchPlan: string;
+  changedFiles: string[];
+  targetRepository: FixTargetRepository;
+  workingDirectory: string;
+  githubToken: string;
+  iteration: number;
+}
+
+export interface CreateFixPullRequestResult {
+  branchName: string;
+  prUrl: string;
+  prNumber: number;
+  headSha: string;
 }
 
 function hasCodeContext(codexFindings: unknown | null): boolean {
@@ -157,8 +196,8 @@ export async function getFixRunContext(
       body: message.body,
     })),
     maxIterations: run.maxIterations,
-    github: {
-      token: config?.githubToken ?? null,
+  github: {
+      token: config?.githubToken ?? codexConfig.githubToken ?? null,
       owner: config?.githubDefaultOwner ?? null,
       repo: config?.githubDefaultRepo ?? null,
       baseBranch: config?.githubBaseBranch ?? "main",
@@ -292,9 +331,11 @@ export async function runFixerAgent(params: {
   testPlan: FixPrTestPlan;
   priorFailures: string[];
   model: string;
+  workingDirectory?: string;
   codexFindings?: unknown | null;
 }): Promise<FixPrFixerOutput> {
-  let fileContents = await loadFileContents(params.codeContext.editScope);
+  const workingDirectory = params.workingDirectory ?? repoRootDir;
+  let fileContents = await loadFileContents(params.codeContext.editScope, workingDirectory);
   console.log(`[fix-pr] Local files found: ${fileContents.length}/${params.codeContext.editScope.length}`);
 
   // Fallback: if local files not found, use chunk content from Codex search results
@@ -348,11 +389,13 @@ export async function runFixerAgent(params: {
 
 export async function applyWorkspacePatch(params: {
   fixerOutput: FixPrFixerOutput;
+  workingDirectory?: string;
 }): Promise<{ appliedFiles: string[]; headSha: string }> {
   const appliedFiles: string[] = [];
+  const workingDirectory = params.workingDirectory ?? repoRootDir;
 
   for (const change of params.fixerOutput.changedFiles) {
-    appliedFiles.push(await applyFileChange(change));
+    appliedFiles.push(await applyFileChange(change, workingDirectory));
   }
 
   return {
@@ -385,13 +428,15 @@ export async function runReviewerAgent(params: {
 
 export async function runChecksAgent(params: {
   commands: string[];
+  workingDirectory?: string;
 }): Promise<FixPrChecksOutput> {
   const commandsRun: FixPrChecksOutput["commandsRun"] = [];
   const failures: string[] = [];
   const logs: string[] = [];
+  const workingDirectory = params.workingDirectory ?? repoRootDir;
 
   for (const command of params.commands) {
-    const result = await runCheckCommand(command);
+    const result = await runCheckCommand(command, workingDirectory);
     commandsRun.push(result);
     appendTrimmedLog(logs, result.stdout);
     appendTrimmedLog(logs, result.stderr);
@@ -427,11 +472,149 @@ export async function saveFixRunProgress(
   }
 }
 
-async function loadFileContents(filePaths: string[]): Promise<Array<{ filePath: string; content: string }>> {
+export async function resolveFixTargetRepository(
+  params: ResolveFixTargetRepositoryParams,
+): Promise<FixTargetRepository | null> {
+  const repositoryIds = [...new Set(params.repositoryIds)];
+  if (repositoryIds.length === 0) {
+    return null;
+  }
+
+  const repositories = await prisma.codexRepository.findMany({
+    where: { id: { in: repositoryIds } },
+    select: {
+      id: true,
+      sourceType: true,
+      sourceUrl: true,
+      defaultBranch: true,
+      displayName: true,
+    },
+  });
+
+  if (repositories.length === 0) {
+    return null;
+  }
+
+  let selectedRepository: (typeof repositories)[number] | undefined = repositories[0];
+  if (params.filePaths.length > 0) {
+    const fileMatches = await prisma.codexFile.findMany({
+      where: {
+        repositoryId: { in: repositoryIds },
+        filePath: { in: params.filePaths },
+      },
+      select: {
+        repositoryId: true,
+      },
+    });
+
+    const matchCounts = new Map<string, number>();
+    for (const match of fileMatches) {
+      const nextCount = (matchCounts.get(match.repositoryId) ?? 0) + 1;
+      matchCounts.set(match.repositoryId, nextCount);
+    }
+
+    let bestMatchCount = 0;
+    for (const [repoId, count] of matchCounts.entries()) {
+      if (count > bestMatchCount) {
+        const repo = repositories.find((candidate) => candidate.id === repoId);
+        if (repo) {
+          selectedRepository = repo;
+          bestMatchCount = count;
+        }
+      }
+    }
+  }
+
+  if (!selectedRepository) {
+    return null;
+  }
+
+  const parsedRemote = parseGitHubOwnerRepo(selectedRepository.sourceUrl);
+  const owner = params.preferredOwner ?? parsedRemote?.owner ?? null;
+  const repo = params.preferredRepo ?? parsedRemote?.repo ?? null;
+  const localPath = path.resolve(codexConfig.cloneBasePath, selectedRepository.id);
+
+  return {
+    repositoryId: selectedRepository.id,
+    localPath,
+    owner,
+    repo,
+    baseBranch: selectedRepository.defaultBranch ?? params.configuredBaseBranch ?? "main",
+    canCreatePullRequest:
+      existsSync(localPath)
+      && existsSync(path.join(localPath, ".git"))
+      && selectedRepository.sourceType === "GITHUB"
+      && Boolean(owner && repo),
+  };
+}
+
+export async function createFixPullRequest(
+  params: CreateFixPullRequestInput,
+): Promise<CreateFixPullRequestResult> {
+  if (!existsSync(params.workingDirectory)) {
+    throw new Error(`Working directory not found: ${params.workingDirectory}`);
+  }
+
+  if (!params.targetRepository.owner || !params.targetRepository.repo) {
+    throw new Error("Unable to determine GitHub owner/repo for pull request creation");
+  }
+
+  const branchName = buildBranchName(params.runId, params.iteration);
+  const commitMessage = buildCommitMessage(params.summary);
+  const body = buildPullRequestBody({
+    runId: params.runId,
+    summary: params.summary,
+    patchPlan: params.patchPlan,
+  });
+
+  await runGitCommand(
+    params.workingDirectory,
+    ["checkout", "-B", branchName, params.targetRepository.baseBranch],
+  );
+  if (params.changedFiles.length === 0) {
+    await runGitCommand(params.workingDirectory, ["add", "-A"]);
+  } else {
+    await runGitCommand(params.workingDirectory, ["add", "--", ...params.changedFiles]);
+  }
+  try {
+    await runGitCommand(params.workingDirectory, ["commit", "-m", commitMessage]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`No changes to commit: ${message}`);
+  }
+
+  const headSha = await runGitCommand(params.workingDirectory, ["rev-parse", "HEAD"]).then((result) =>
+    result.stdout.trim(),
+  );
+
+  await runGitCommand(params.workingDirectory, ["push", "--set-upstream", "origin", branchName]);
+  const githubClient = createGitHubClient(params.githubToken);
+  const pr = await createDraftPullRequest(githubClient, {
+    owner: params.targetRepository.owner,
+    repo: params.targetRepository.repo,
+    title: `[Codex Fix] ${params.summary}`,
+    body,
+    head: branchName,
+    base: params.targetRepository.baseBranch,
+  });
+
+  return {
+    branchName,
+    prUrl: pr.prUrl,
+    prNumber: pr.prNumber,
+    headSha,
+  };
+}
+
+async function loadFileContents(
+  filePaths: string[],
+  workingDirectory?: string,
+): Promise<Array<{ filePath: string; content: string }>> {
+  const baseDirectory = workingDirectory ?? repoRootDir;
   const results: Array<{ filePath: string; content: string }> = [];
 
   for (const filePath of filePaths) {
-    const absolutePath = resolveWorkspaceFilePath(filePath);
+    const absolutePath = resolveWorkspaceFilePath(filePath, baseDirectory);
     try {
       const content = await fs.readFile(absolutePath, "utf8");
       results.push({ filePath, content });
@@ -452,8 +635,11 @@ function buildInlineDiff(original: string, updated: string): string {
   ].join("\n");
 }
 
-async function applyFileChange(change: FixPrFixerOutput["changedFiles"][number]): Promise<string> {
-  const absolutePath = resolveWorkspaceFilePath(change.filePath);
+async function applyFileChange(
+  change: FixPrFixerOutput["changedFiles"][number],
+  workingDirectory: string,
+): Promise<string> {
+  const absolutePath = resolveWorkspaceFilePath(change.filePath, workingDirectory);
   const currentContent = await fs.readFile(absolutePath, "utf8");
   const nextContent = replaceSingleExactMatch(currentContent, change);
   await fs.writeFile(absolutePath, nextContent, "utf8");
@@ -468,10 +654,12 @@ function buildChangedFilesDigest(changedFiles: FixPrFixerOutput["changedFiles"])
 
 async function runCheckCommand(
   command: string,
+  workingDirectory?: string,
 ): Promise<FixPrChecksOutput["commandsRun"][number]> {
+  const cwd = workingDirectory ?? repoRootDir;
   try {
     const { stdout, stderr } = await exec(command, {
-      cwd: repoRootDir,
+      cwd,
       timeout: 10 * 60 * 1000,
     });
 
@@ -496,6 +684,84 @@ async function runCheckCommand(
       stderr: execError.stderr ?? execError.message,
     };
   }
+}
+
+async function runGitCommand(
+  workingDirectory: string,
+  args: string[],
+): Promise<{ stdout: string; stderr: string }> {
+  const result = await execFile("git", args, {
+    cwd: workingDirectory,
+    timeout: 10 * 60 * 1000,
+  });
+  return {
+    stdout: result.stdout.toString(),
+    stderr: result.stderr.toString(),
+  };
+}
+
+function buildBranchName(runId: string, iteration: number): string {
+  const safeRunId = runId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40);
+  return `codex-fix/${safeRunId}-${iteration}-${Date.now()}`;
+}
+
+function buildCommitMessage(summary: string): string {
+  const sanitizedSummary = summary.trim().replace(/\s+/g, " ").slice(0, 80) || "Automated fix";
+  return `chore(codex): ${sanitizedSummary}`;
+}
+
+function buildPullRequestBody(params: { runId: string; summary: string; patchPlan: string }): string {
+  const bulletRows = params.patchPlan
+    .split("\n")
+    .filter(Boolean)
+    .slice(0, 6)
+    .map((line) => `- ${line}`)
+    .join("\n");
+
+  return [
+    `Automated fix generated by Codex for run **${params.runId}**.`,
+    "",
+    `Summary: ${params.summary}`,
+    "",
+    "Patch plan:",
+    bulletRows || "- (plan not provided)",
+  ].join("\n");
+}
+
+function parseGitHubOwnerRepo(sourceUrl: string): { owner: string; repo: string } | null {
+  try {
+    const parsed = new URL(sourceUrl);
+    const pathname = parsed.pathname.replace(/^\/+/, "");
+    const parts = pathname.split("/").filter(Boolean);
+    if (parts.length >= 2 && parsed.hostname === "github.com") {
+      const owner = parts[0];
+      const rawRepo = parts[1];
+      if (!owner || !rawRepo) {
+        return null;
+      }
+      return {
+        owner,
+        repo: rawRepo.replace(/\.git$/, ""),
+      };
+    }
+  } catch {
+    // Fall through to SSH-style fallback parsing.
+  }
+
+  const sshMatch = sourceUrl.match(/^git@github\.com:([^/]+)\/([^/.]+)(?:\.git)?$/i);
+  if (!sshMatch) {
+    return null;
+  }
+  const owner = sshMatch[1];
+  const repo = sshMatch[2];
+  if (!owner || !repo) {
+    return null;
+  }
+
+  return {
+    owner,
+    repo,
+  };
 }
 
 function appendTrimmedLog(logs: string[], value: string): void {
@@ -525,7 +791,8 @@ function replaceSingleExactMatch(
   return currentContent.replace(change.original, change.updated);
 }
 
-function resolveWorkspaceFilePath(filePath: string): string {
+function resolveWorkspaceFilePath(filePath: string, baseDirectory?: string): string {
+  const workingDirectory = baseDirectory ?? repoRootDir;
   const trimmedPath = filePath.trim();
   if (!trimmedPath) {
     throw new Error("File path must not be empty");
@@ -535,8 +802,8 @@ function resolveWorkspaceFilePath(filePath: string): string {
     throw new Error(`Absolute file paths are not allowed: ${filePath}`);
   }
 
-  const absolutePath = path.resolve(repoRootDir, trimmedPath);
-  const relativePath = path.relative(repoRootDir, absolutePath);
+  const absolutePath = path.resolve(workingDirectory, trimmedPath);
+  const relativePath = path.relative(workingDirectory, absolutePath);
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     throw new Error(`File path escapes repo root: ${filePath}`);
   }

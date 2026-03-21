@@ -16,6 +16,8 @@ const {
   applyWorkspacePatch,
   runReviewerAgent,
   runChecksAgent,
+  resolveFixTargetRepository,
+  createFixPullRequest,
   saveFixRunProgress,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: "5 minutes",
@@ -76,6 +78,22 @@ export async function generateFixPRWorkflow(
       }),
     ]);
 
+    const targetRepository = await resolveFixTargetRepository({
+      repositoryIds: context.codexRepositoryIds,
+      filePaths: codeContext.editScope,
+      preferredOwner: context.github.owner,
+      preferredRepo: context.github.repo,
+      configuredBaseBranch: context.github.baseBranch,
+    });
+    const githubToken = context.github.token;
+    const canCreatePullRequest = Boolean(
+      targetRepository?.canCreatePullRequest
+      && targetRepository.owner
+      && targetRepository.repo
+      && githubToken,
+    );
+    const workingDirectory = targetRepository?.localPath;
+
     const testPlan = await runTestAgent({
       codeContext,
       requiredCheckNames: context.requiredCheckNames,
@@ -113,6 +131,7 @@ export async function generateFixPRWorkflow(
         priorFailures,
         model: context.models.fix,
         codexFindings: context.codexFindings,
+        workingDirectory,
       });
 
       if (fixerOutput.changedFiles.length === 0) {
@@ -140,6 +159,7 @@ export async function generateFixPRWorkflow(
 
       const applied = await applyWorkspacePatch({
         fixerOutput,
+        workingDirectory,
       });
 
       const [reviewerOutput, checksOutput] = await Promise.all([
@@ -151,6 +171,7 @@ export async function generateFixPRWorkflow(
         }),
         runChecksAgent({
           commands: testPlan.commands,
+          workingDirectory,
         }),
       ]);
 
@@ -174,15 +195,83 @@ export async function generateFixPRWorkflow(
       });
 
       if (reviewerOutput.approved && checksOutput.passed) {
+        if (canCreatePullRequest && targetRepository && githubToken) {
+          try {
+            const pr = await createFixPullRequest({
+              runId: input.runId,
+              summary: fixerOutput.summary,
+              patchPlan: fixerOutput.patchPlan,
+              changedFiles: applied.appliedFiles,
+              targetRepository,
+              workingDirectory: targetRepository.localPath,
+              githubToken,
+              iteration,
+            });
+
+            await saveFixRunProgress({
+              runId: input.runId,
+              status: "PASSED",
+              currentStage: "PASSED",
+              headSha: pr.headSha,
+              branchName: pr.branchName,
+              prUrl: pr.prUrl,
+              prNumber: pr.prNumber,
+              summary: fixerOutput.summary,
+              lastError: null,
+            });
+
+            return {
+              runId: input.runId,
+              status: "PASSED",
+            };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            await saveFixRunProgress({
+              runId: input.runId,
+              status: "WAITING_REVIEW",
+              currentStage: "WAITING_REVIEW",
+              headSha: applied.headSha,
+              summary: fixerOutput.summary,
+              lastError: `Automatic PR creation failed: ${message}`,
+              iteration: {
+                iteration,
+                status: "FAILED",
+                fixPlan: fixerOutput,
+                reviewFindings: reviewerOutput,
+                checkResults: checksOutput,
+                appliedFiles: applied.appliedFiles,
+                completed: true,
+              },
+            });
+
+            return {
+              runId: input.runId,
+              status: "WAITING_REVIEW",
+            };
+          }
+        }
+
         await saveFixRunProgress({
           runId: input.runId,
-          status: "PASSED",
-          currentStage: "PASSED",
+          status: "WAITING_REVIEW",
+          currentStage: "WAITING_REVIEW",
+          headSha: applied.headSha,
+          summary: fixerOutput.summary,
+          lastError: "Automatic PR creation is disabled or not configured for this workspace/repo.",
+          iteration: {
+            iteration,
+            status: "PASSED",
+            fixPlan: fixerOutput,
+            reviewFindings: reviewerOutput,
+            checkResults: checksOutput,
+            appliedFiles: applied.appliedFiles,
+            completed: true,
+          },
         });
 
         return {
           runId: input.runId,
-          status: "PASSED",
+          status: "WAITING_REVIEW",
         };
       }
 

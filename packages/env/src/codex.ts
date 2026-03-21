@@ -21,6 +21,7 @@ export const codexEnv = createEnv({
     LLM_MODEL_DEFAULT: LlmModelDefaultSchema,
     WEB_APP_URL: WebAppUrlSchema,
     INTERNAL_API_SECRET: InternalApiSecretSchema,
+    CODEX_GITHUB_TOKEN: z.string().optional(),
     CODEX_EMBEDDING_API_KEY: z.string().min(1),
     CODEX_EMBEDDING_MODEL: z.string().default("text-embedding-3-small"),
     CODEX_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(1536),
