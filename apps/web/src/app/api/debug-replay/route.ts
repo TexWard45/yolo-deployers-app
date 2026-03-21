@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@shared/database";
+import { getSession } from "@/actions/auth";
 
 export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const sessionId = req.nextUrl.searchParams.get("sessionId");
   
   // If no sessionId, list all sessions with their first event info

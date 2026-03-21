@@ -234,7 +234,7 @@ export default function ReplaysPage() {
                         <div className="absolute left-8 top-0 bottom-0 w-px bg-border" />
                         <div className="space-y-8">
                           {timelineData && timelineData.length > 0 ? (
-                            timelineData.sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).map((t: any) => (
+                            [...timelineData].sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()).map((t: any) => (
                               <div key={t.id} className="relative pl-12">
                                 <div className={cn(
                                   "absolute left-6 w-4 h-4 rounded-full border-4 border-background -translate-x-1/2 flex items-center justify-center",

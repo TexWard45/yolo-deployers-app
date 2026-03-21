@@ -126,6 +126,7 @@ export const telemetryRouter = createTRPCRouter({
         ctx.prisma.replayEvent.findMany({
           where: { sessionId: input.sessionId },
           orderBy: { sequence: "asc" },
+          take: 5000,
         }),
       ]);
 
