@@ -1,8 +1,19 @@
 import { PrismaClient } from "@shared/types/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { randomBytes, scrypt } from "node:crypto";
 import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16).toString("hex");
+  return new Promise((resolve, reject) => {
+    scrypt(password, salt, 64, (err, derived) => {
+      if (err) reject(err);
+      else resolve(`${salt}:${derived.toString("hex")}`);
+    });
+  });
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, "../../../.env") });
@@ -13,14 +24,16 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log("Seeding database...");
 
+  const pw = await hashPassword("password123");
+
   // ── Users ─────────────────────────────────────────────────────────
   const alice = await prisma.user.upsert({
     where: { username: "alice" },
-    update: {},
+    update: { password: pw },
     create: {
       username: "alice",
       email: "alice@demo.local",
-      password: "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewCjT3J5s5z5Q8Gy", // "password123"
+      password: pw,
       name: "Alice Demo",
       isSystemAdmin: true,
     },
@@ -28,22 +41,22 @@ async function main() {
 
   const bob = await prisma.user.upsert({
     where: { username: "bob" },
-    update: {},
+    update: { password: pw },
     create: {
       username: "bob",
       email: "bob@demo.local",
-      password: "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewCjT3J5s5z5Q8Gy", // "password123"
+      password: pw,
       name: "Bob Demo",
     },
   });
 
   const carol = await prisma.user.upsert({
     where: { username: "carol" },
-    update: {},
+    update: { password: pw },
     create: {
       username: "carol",
       email: "carol@demo.local",
-      password: "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewCjT3J5s5z5Q8Gy", // "password123"
+      password: pw,
       name: "Carol Demo",
     },
   });
