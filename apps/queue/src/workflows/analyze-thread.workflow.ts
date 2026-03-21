@@ -175,6 +175,7 @@ export async function analyzeThreadWorkflow(
     workspaceId: input.workspaceId,
     threadId: input.threadId,
     analysis: {
+      threadLabel: analysisResult.threadLabel ?? null,
       issueCategory: analysisResult.issueCategory,
       severity: analysisResult.severity,
       affectedComponent: analysisResult.affectedComponent,

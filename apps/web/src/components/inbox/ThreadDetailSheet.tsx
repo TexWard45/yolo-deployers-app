@@ -18,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ThreadStatusBadge } from "@/components/inbox/ThreadStatusBadge";
 import { renderMessageBody, type MentionsMap, type AttachmentInfo } from "@/components/inbox/render-message-body";
-import { getThreadDetail, sendReply } from "@/actions/inbox";
+import { getThreadDetail, sendReply, getWorkspaceMembers, assignThreadAction } from "@/actions/inbox";
 import { AnalysisPanel, DraftChatBubble, type AnalysisDraft } from "@/components/inbox/AnalysisPanel";
 import {
   getDefaultReplySegmentId,
@@ -59,6 +59,11 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   const [draft, setDraft] = useState<AnalysisDraft | null>(null);
   const analysisRefreshRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [members, setMembers] = useState<Array<{ id: string; name: string | null; email: string; role: string }>>([]);
+  const [assignDropdownOpen, setAssignDropdownOpen] = useState(false);
+  const [assignSearch, setAssignSearch] = useState("");
+  const [assigning, startAssigning] = useTransition();
+  const assignDropdownRef = useRef<HTMLDivElement>(null);
 
   const handleDraftAvailable = useCallback((d: AnalysisDraft | null) => {
     setDraft(d);
@@ -78,6 +83,40 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [thread?.messages.length]);
+
+  // Fetch workspace members for the assignment dropdown
+  useEffect(() => {
+    if (thread?.workspaceId) {
+      getWorkspaceMembers(thread.workspaceId).then(setMembers);
+    }
+  }, [thread?.workspaceId]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (assignDropdownRef.current && !assignDropdownRef.current.contains(e.target as Node)) {
+        setAssignDropdownOpen(false);
+      }
+    }
+    if (assignDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [assignDropdownOpen]);
+
+  function handleAssign(userId: string | null) {
+    startAssigning(async () => {
+      const result = await assignThreadAction({
+        threadId,
+        assignedToId: userId,
+      });
+      if (result.success) {
+        fetchThread(threadId);
+      }
+      setAssignDropdownOpen(false);
+      setAssignSearch("");
+    });
+  }
 
   const segments = useMemo(() => {
     if (!thread) return [];
@@ -438,15 +477,98 @@ function ThreadSheetContent({ threadId }: { threadId: string }) {
           </div>
 
           {/* Assignee */}
-          <div>
+          <div ref={assignDropdownRef}>
             <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
               Assigned To
             </h3>
-            <p className="text-sm text-muted-foreground">
-              {thread.assignedTo
-                ? thread.assignedTo.name ?? thread.assignedTo.email
-                : "Unassigned"}
-            </p>
+            <div className="relative">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-md border px-3 py-2 text-sm hover:bg-accent/50 transition-colors"
+                onClick={() => setAssignDropdownOpen(!assignDropdownOpen)}
+                disabled={assigning}
+              >
+                <span className={thread.assignedTo ? "text-foreground" : "text-muted-foreground"}>
+                  {assigning
+                    ? "Updating..."
+                    : thread.assignedTo
+                      ? thread.assignedTo.name ?? thread.assignedTo.email
+                      : "Unassigned"}
+                </span>
+                <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+
+              {assignDropdownOpen && (
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-md border bg-popover shadow-md">
+                  <div className="p-2">
+                    <input
+                      type="text"
+                      className="w-full rounded-md border px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="Search members..."
+                      value={assignSearch}
+                      onChange={(e) => setAssignSearch(e.target.value)}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="max-h-48 overflow-y-auto">
+                    {/* Unassign option */}
+                    {thread.assignedTo && (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent"
+                        onClick={() => handleAssign(null)}
+                      >
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed text-[9px] text-muted-foreground">
+                          -
+                        </span>
+                        <span className="text-muted-foreground">Unassign</span>
+                      </button>
+                    )}
+                    {members
+                      .filter((m) => {
+                        if (!assignSearch) return true;
+                        const q = assignSearch.toLowerCase();
+                        return (
+                          (m.name?.toLowerCase().includes(q) ?? false) ||
+                          m.email.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((m) => {
+                        const isCurrentAssignee = thread.assignedTo?.id === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-accent ${
+                              isCurrentAssignee ? "bg-accent/50" : ""
+                            }`}
+                            onClick={() => handleAssign(m.id)}
+                          >
+                            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                              {getInitial(m.name ?? m.email)}
+                            </span>
+                            <span className="flex-1 truncate">
+                              {m.name ?? m.email}
+                            </span>
+                            {isCurrentAssignee && (
+                              <svg className="h-3 w-3 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                        );
+                      })}
+                    {members.length === 0 && (
+                      <p className="px-3 py-2 text-xs text-muted-foreground">
+                        No members found
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Summary */}

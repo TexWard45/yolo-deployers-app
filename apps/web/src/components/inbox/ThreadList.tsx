@@ -38,16 +38,26 @@ interface ThreadListItem {
     displayName: string;
   };
   assignedTo?: {
+    id: string;
     name: string | null;
     email: string;
+  } | null;
+  lastAnalysis?: {
+    severity: string | null;
+    issueCategory: string | null;
+    sufficient: boolean;
   } | null;
   _count: {
     messages: number;
   };
 }
 
+type ThreadFilter = "all" | "assigned_to_me" | "unassigned";
+
 interface ThreadListProps {
   threads: ThreadListItem[];
+  currentUserId: string;
+  initialThreadId?: string;
 }
 
 const STATUS_COLOR: Record<ThreadStatusValue, string> = {
@@ -59,14 +69,15 @@ const STATUS_COLOR: Record<ThreadStatusValue, string> = {
   CLOSED: "text-muted-foreground",
 };
 
-export function ThreadList({ threads }: ThreadListProps) {
+export function ThreadList({ threads, currentUserId, initialThreadId }: ThreadListProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [localThreads, setLocalThreads] = useState(threads);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialThreadId ?? null);
   const [dragOverColumn, setDragOverColumn] = useState<ThreadStatusValue | null>(null);
   const [refreshInterval, setRefreshInterval] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [threadFilter, setThreadFilter] = useState<ThreadFilter>("all");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const doRefresh = useCallback(() => {
@@ -144,6 +155,16 @@ export function ThreadList({ threads }: ThreadListProps) {
     });
   }
 
+  const filteredThreads = useMemo(() => {
+    if (threadFilter === "assigned_to_me") {
+      return localThreads.filter((t) => t.assignedTo?.id === currentUserId);
+    }
+    if (threadFilter === "unassigned") {
+      return localThreads.filter((t) => !t.assignedTo);
+    }
+    return localThreads;
+  }, [localThreads, threadFilter, currentUserId]);
+
   const grouped = useMemo(() => {
     const map: Record<ThreadStatusValue, ThreadListItem[]> = {
       NEW: [],
@@ -153,14 +174,44 @@ export function ThreadList({ threads }: ThreadListProps) {
       IN_PROGRESS: [],
       CLOSED: [],
     };
-    for (const thread of localThreads) {
+    for (const thread of filteredThreads) {
       map[thread.status]?.push(thread);
     }
     return map;
-  }, [localThreads]);
+  }, [filteredThreads]);
+
+  const myThreadCount = localThreads.filter((t) => t.assignedTo?.id === currentUserId).length;
+  const unassignedCount = localThreads.filter((t) => !t.assignedTo).length;
 
   return (
     <>
+      {/* Filter tabs + refresh toolbar */}
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1">
+          {([
+            { key: "all" as const, label: "All", count: localThreads.length },
+            { key: "assigned_to_me" as const, label: "Assigned to Me", count: myThreadCount },
+            { key: "unassigned" as const, label: "Unassigned", count: unassignedCount },
+          ]).map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                threadFilter === tab.key
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+              onClick={() => setThreadFilter(tab.key)}
+            >
+              {tab.label}
+              <span className="ml-1.5 text-[10px] text-muted-foreground">
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Refresh toolbar — pinned top-right, overlapping the layout header row */}
       <div className="fixed right-6 top-4 z-10 flex items-center gap-2">
         <DropdownMenu>
@@ -248,6 +299,8 @@ export function ThreadList({ threads }: ThreadListProps) {
                           thread.assignedTo?.email ??
                           null
                         }
+                        severity={thread.lastAnalysis?.severity ?? null}
+                        issueCategory={thread.lastAnalysis?.issueCategory ?? null}
                         selected={selectedId === thread.id}
                         onClick={() => selectThread(thread.id)}
                       />

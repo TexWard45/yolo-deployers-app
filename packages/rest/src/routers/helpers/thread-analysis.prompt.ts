@@ -24,6 +24,7 @@ Produce a structured analysis of the customer's issue: classify it, assess sever
 - If you cannot determine root cause, say so — do NOT fabricate
 
 # Rules
+- threadLabel should be a short, action-oriented label (5-10 words max) describing what the user is trying to do or what the issue is, e.g. "User unable to connect Discord bot", "Request to add CSV export feature", "Login page returning 500 error"
 - summary should be 1-3 sentences describing the issue from an engineering perspective
 - rcaSummary should explain the likely root cause and cite evidence (code findings, error data, or conversation clues)
 - affectedComponent should be the feature, page, or system area (e.g., "authentication", "billing page", "API rate limiter")
@@ -31,7 +32,7 @@ Produce a structured analysis of the customer's issue: classify it, assess sever
 
 # Output Format
 Respond with ONLY valid JSON, no markdown fences:
-{"issueCategory": "...", "severity": "...", "affectedComponent": "...", "summary": "...", "rcaSummary": "...", "confidence": 0.0-1.0}`;
+{"threadLabel": "...", "issueCategory": "...", "severity": "...", "affectedComponent": "...", "summary": "...", "rcaSummary": "...", "confidence": 0.0-1.0}`;
 
 // ── Types ────────────────────────────────────────────────────────────
 

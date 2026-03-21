@@ -217,14 +217,12 @@ export function AnalysisPanel({ threadId, workspaceId, onDraftAvailable, refresh
           <SentryFindings findings={analysis.sentryFindings} />
         ) : null}
 
-        {/* Triage section */}
-        {analysis.sufficient ? (
-          <TriageSection
-            threadId={threadId}
-            workspaceId={workspaceId}
-            analysisId={analysis.id}
-          />
-        ) : null}
+        {/* Triage section — show even for insufficient/escalated threads */}
+        <TriageSection
+          threadId={threadId}
+          workspaceId={workspaceId}
+          analysisId={analysis.id}
+        />
       </div>
     </div>
   );

@@ -52,7 +52,7 @@ export function ManualIntakeForm({ workspaceId }: ManualIntakeFormProps) {
 
     form.reset();
     setLoading(false);
-    router.push(`/inbox/${result.threadId}`);
+    router.push(`/inbox`);
     router.refresh();
   }
 

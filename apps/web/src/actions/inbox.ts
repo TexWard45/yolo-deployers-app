@@ -60,6 +60,27 @@ export async function getThreadDetail(threadId: string): Promise<Awaited<
   }
 }
 
+export async function getWorkspaceMembers(workspaceId: string) {
+  const session = await getSession();
+  if (!session) return [];
+
+  try {
+    const { prisma } = await import("@shared/database");
+    const members = await prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: { user: { omit: { password: true } } },
+    });
+    return members.map((m) => ({
+      id: m.user.id,
+      name: m.user.name,
+      email: m.user.email,
+      role: m.role,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function sendReply(data: {
   threadId: string;
   body: string;
@@ -365,6 +386,31 @@ export async function updateThreadStatusAction(data: {
     const updated = await trpc.thread.updateStatus({
       threadId: data.threadId,
       status: data.status,
+    });
+    revalidatePath("/inbox");
+    return { success: true, thread: updated } as const;
+  } catch (error) {
+    if (error instanceof TRPCError) {
+      return { success: false, error: error.message } as const;
+    }
+    return { success: false, error: "Something went wrong" } as const;
+  }
+}
+
+export async function assignThreadAction(data: {
+  threadId: string;
+  assignedToId: string | null;
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    const updated = await trpc.thread.assign({
+      threadId: data.threadId,
+      assignedToId: data.assignedToId,
     });
     revalidatePath("/inbox");
     return { success: true, thread: updated } as const;

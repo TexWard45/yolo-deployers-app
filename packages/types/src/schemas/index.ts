@@ -407,6 +407,7 @@ export const SufficiencyCheckResultSchema = z.object({
 export type SufficiencyCheckResult = z.infer<typeof SufficiencyCheckResultSchema>;
 
 export const ThreadAnalysisResultSchema = z.object({
+  threadLabel: z.string().nullable().optional(),
   issueCategory: z.string().nullable(),
   severity: z.string().nullable(),
   affectedComponent: z.string().nullable(),
@@ -426,6 +427,7 @@ export const SaveAnalysisInputSchema = z.object({
   workspaceId: z.string(),
   threadId: z.string(),
   analysis: z.object({
+    threadLabel: z.string().nullable().optional(),
     issueCategory: z.string().nullable(),
     severity: z.string().nullable(),
     affectedComponent: z.string().nullable(),
