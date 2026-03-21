@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Replayer } from "rrweb";
-import "rrweb/dist/style.css";
+import rrwebPlayer from "rrweb-player";
+import type { eventWithTime } from "@rrweb/types";
+import "rrweb-player/dist/style.css";
 import { AlertCircle } from "lucide-react";
 
 interface ReplayViewerProps {
@@ -11,63 +12,71 @@ interface ReplayViewerProps {
 
 export function ReplayViewer({ events }: ReplayViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const replayerRef = useRef<Replayer | null>(null);
+  const playerRef = useRef<rrwebPlayer | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
 
-    // Cleanup previous instance
-    if (replayerRef.current) {
-      try { replayerRef.current.pause(); } catch { /* ignore */ }
-      el.innerHTML = "";
-      replayerRef.current = null;
-    }
-
     const rrwebEvents = events
       .filter((e) => e.type === "rrweb")
-      .map((e) => e.payload);
+      .map((e) => e.payload) as eventWithTime[];
 
     if (rrwebEvents.length < 2) return;
 
-    replayerRef.current = new Replayer(rrwebEvents as Parameters<typeof Replayer>[0], {
-      root: el,
-      speed: 1,
-      showController: true,
-      useVirtualDom: false,
+    // Wait one animation frame so the container has real layout dimensions
+    const raf = requestAnimationFrame(() => {
+      if (!containerRef.current) return;
+
+      // Cleanup any previous player
+      if (playerRef.current) {
+        el.innerHTML = "";
+        playerRef.current = null;
+      }
+
+      const width = el.clientWidth || 800;
+      const height = Math.max(el.clientHeight, 400);
+
+      playerRef.current = new rrwebPlayer({
+        target: el,
+        props: {
+          events: rrwebEvents,
+          width,
+          height,
+          autoPlay: false,
+          showController: true,
+          speed: 1,
+          maxScale: 1,
+        },
+      });
     });
 
-    replayerRef.current.play();
-
     return () => {
-      try { replayerRef.current?.pause(); } catch { /* ignore */ }
-      replayerRef.current = null;
+      cancelAnimationFrame(raf);
       if (el) el.innerHTML = "";
+      playerRef.current = null;
     };
   }, [events]);
 
   const rrwebCount = events.filter((e) => e.type === "rrweb").length;
   if (rrwebCount < 2) {
     return (
-      <div className="flex-1 w-full flex flex-col items-center justify-center p-12 text-center bg-muted/10">
-        <div className="w-16 h-16 rounded-full bg-warning/5 flex items-center justify-center mb-4">
-          <AlertCircle className="w-8 h-8 text-warning/60" />
+      <div className="flex-1 w-full flex flex-col items-center justify-center p-12 text-center">
+        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+          <AlertCircle className="w-8 h-8 text-muted-foreground" />
         </div>
-        <h3 className="text-lg font-semibold text-slate-900 mb-2">
+        <h3 className="text-lg font-semibold mb-2">
           {rrwebCount === 0 ? "No Recording Data" : "Session Too Brief"}
         </h3>
-        <p className="text-sm text-slate-500 max-w-xs mx-auto leading-relaxed">
+        <p className="text-sm text-muted-foreground max-w-xs">
           {rrwebCount === 0
             ? "No playback events found for this session."
-            : `This session only captured ${rrwebCount} event. Replays require at least 2 events.`}
+            : `Only ${rrwebCount} event captured — need at least 2 to replay.`}
         </p>
       </div>
     );
   }
 
-  return (
-    <div className="relative w-full h-full min-h-[500px] bg-slate-900 overflow-hidden">
-      <div ref={containerRef} className="w-full h-full" />
-    </div>
-  );
+  // min-h ensures the container has height before rrweb-player reads clientHeight
+  return <div ref={containerRef} className="w-full min-h-[500px] h-full" />;
 }
