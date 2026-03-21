@@ -9,10 +9,22 @@ import {
   GetLatestAnalysisInputSchema,
   TriggerAnalysisInputSchema,
   SaveAnalysisInputSchema,
+  TriageToLinearSchema,
+  GetTriageStatusSchema,
+  GenerateSpecSchema,
 } from "@shared/types";
 import type { Prisma } from "@shared/types/prisma";
 import { dispatchAnalyzeThreadWorkflow } from "../temporal";
 import { sendDraftToChannel } from "./helpers/send-draft";
+import {
+  createLinearClient,
+  createLinearIssue,
+  updateLinearIssue,
+  getLinearIssue,
+  severityToPriority,
+} from "./helpers/linear-client";
+import { generateLinearIssueBody, generateEngSpec } from "./helpers/triage-spec.prompt";
+import type { TriagePromptInput } from "./helpers/triage-spec.prompt";
 
 export const agentRouter = createTRPCRouter({
   /** Get workspace AI agent config */
@@ -38,7 +50,11 @@ export const agentRouter = createTRPCRouter({
 
       // Return default config if none exists (redact sentryAuthToken)
       if (config) {
-        return { ...config, sentryAuthToken: config.sentryAuthToken ? "***" : null };
+        return {
+          ...config,
+          sentryAuthToken: config.sentryAuthToken ? "***" : null,
+          linearApiKey: config.linearApiKey ? "***" : null,
+        };
       }
       return {
         id: null,
@@ -58,6 +74,9 @@ export const agentRouter = createTRPCRouter({
         sentryOrgSlug: null,
         sentryProjectSlug: null,
         sentryAuthToken: null,
+        linearApiKey: null,
+        linearTeamId: null,
+        linearDefaultLabels: [] as string[],
         threadRecencyWindowMinutes: 0,
         createdAt: null,
         updatedAt: null,
@@ -406,5 +425,266 @@ export const agentRouter = createTRPCRouter({
       }
 
       return { analysisId: analysis.id, draftId: draft.id };
+    }),
+
+  /** Triage thread to Linear — create or update a Linear issue */
+  triageToLinear: publicProcedure
+    .input(TriageToLinearSchema)
+    .mutation(async ({ ctx, input }) => {
+      const member = await ctx.prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+          },
+        },
+      });
+
+      if (!member) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
+      }
+
+      // Fetch workspace config for Linear credentials
+      const config = await ctx.prisma.workspaceAgentConfig.findUnique({
+        where: { workspaceId: input.workspaceId },
+      });
+
+      if (!config?.linearApiKey || !config.linearTeamId) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: "Linear not configured for this workspace. Add API key and team ID in settings.",
+        });
+      }
+
+      // Fetch analysis
+      const analysis = await ctx.prisma.threadAnalysis.findUnique({
+        where: { id: input.analysisId },
+        include: { thread: { include: { messages: { orderBy: { createdAt: "asc" }, take: 20 } } } },
+      });
+
+      if (!analysis || analysis.workspaceId !== input.workspaceId) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Analysis not found" });
+      }
+
+      const thread = analysis.thread;
+      const client = createLinearClient(config.linearApiKey);
+
+      // Build triage prompt input
+      const promptInput: TriagePromptInput = {
+        analysis: {
+          issueCategory: analysis.issueCategory,
+          severity: analysis.severity,
+          affectedComponent: analysis.affectedComponent,
+          summary: analysis.summary,
+          rcaSummary: analysis.rcaSummary,
+          codexFindings: analysis.codexFindings,
+          sentryFindings: analysis.sentryFindings,
+        },
+        messages: thread.messages.map((m) => ({ direction: m.direction, body: m.body })),
+        customerDisplayName: "Customer",
+        threadTitle: thread.title,
+      };
+
+      // Generate Linear issue body via LLM
+      const llmApiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
+      const generated = llmApiKey
+        ? await generateLinearIssueBody(promptInput, { apiKey: llmApiKey, model: config.model ?? undefined })
+        : null;
+
+      const title = input.overrides?.title ?? generated?.title ?? analysis.summary.slice(0, 100);
+      const description = input.overrides?.description ?? generated?.description ?? analysis.summary;
+      const priority = severityToPriority(input.overrides?.severity ?? analysis.severity);
+      const labelNames = input.overrides?.labels ?? config.linearDefaultLabels;
+
+      let action: "created" | "updated";
+      let linearResult: { id: string; identifier: string; url: string };
+
+      if (thread.linearIssueId) {
+        // Check if existing issue still exists
+        const existing = await getLinearIssue(client, thread.linearIssueId);
+        if (existing) {
+          linearResult = await updateLinearIssue(client, thread.linearIssueId, {
+            title,
+            description,
+            priority,
+          });
+          action = "updated";
+        } else {
+          // Issue was deleted externally — re-create
+          linearResult = await createLinearIssue(client, {
+            teamId: config.linearTeamId,
+            title,
+            description,
+            priority,
+            labelNames: labelNames.length > 0 ? labelNames : undefined,
+          });
+          action = "created";
+        }
+      } else {
+        linearResult = await createLinearIssue(client, {
+          teamId: config.linearTeamId,
+          title,
+          description,
+          priority,
+          labelNames: labelNames.length > 0 ? labelNames : undefined,
+        });
+        action = "created";
+      }
+
+      // Save to thread
+      await ctx.prisma.supportThread.update({
+        where: { id: thread.id },
+        data: {
+          linearIssueId: linearResult.id,
+          linearIssueUrl: linearResult.url,
+        },
+      });
+
+      // Audit log
+      await ctx.prisma.triageAction.create({
+        data: {
+          threadId: thread.id,
+          workspaceId: input.workspaceId,
+          analysisId: input.analysisId,
+          action: action === "created" ? "CREATE_TICKET" : "UPDATE_TICKET",
+          linearIssueId: linearResult.identifier,
+          linearIssueUrl: linearResult.url,
+          createdById: input.userId,
+        },
+      });
+
+      return {
+        linearIssueId: linearResult.identifier,
+        linearIssueUrl: linearResult.url,
+        action,
+      };
+    }),
+
+  /** Get triage status + history for a thread */
+  getTriageStatus: publicProcedure
+    .input(GetTriageStatusSchema)
+    .query(async ({ ctx, input }) => {
+      const member = await ctx.prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+          },
+        },
+      });
+
+      if (!member) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
+      }
+
+      const thread = await ctx.prisma.supportThread.findFirst({
+        where: { id: input.threadId, workspaceId: input.workspaceId },
+        select: {
+          linearIssueId: true,
+          linearIssueUrl: true,
+        },
+      });
+
+      if (!thread) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
+      }
+
+      const history = await ctx.prisma.triageAction.findMany({
+        where: { threadId: input.threadId, workspaceId: input.workspaceId },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        include: { createdBy: { select: { username: true } } },
+      });
+
+      return {
+        linearIssueId: thread.linearIssueId,
+        linearIssueUrl: thread.linearIssueUrl,
+        history: history.map((h) => ({
+          id: h.id,
+          action: h.action,
+          linearIssueId: h.linearIssueId,
+          linearIssueUrl: h.linearIssueUrl,
+          specMarkdown: h.specMarkdown,
+          createdBy: h.createdBy.username,
+          createdAt: h.createdAt.toISOString(),
+        })),
+      };
+    }),
+
+  /** Generate an engineering spec from the analysis */
+  generateSpec: publicProcedure
+    .input(GenerateSpecSchema)
+    .mutation(async ({ ctx, input }) => {
+      const member = await ctx.prisma.workspaceMember.findUnique({
+        where: {
+          userId_workspaceId: {
+            userId: input.userId,
+            workspaceId: input.workspaceId,
+          },
+        },
+      });
+
+      if (!member) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Not a member of this workspace" });
+      }
+
+      // Get latest analysis for the thread
+      const analysis = await ctx.prisma.threadAnalysis.findFirst({
+        where: { threadId: input.threadId, workspaceId: input.workspaceId },
+        orderBy: { createdAt: "desc" },
+        include: { thread: { include: { messages: { orderBy: { createdAt: "asc" }, take: 20 } } } },
+      });
+
+      if (!analysis) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "No analysis found for this thread" });
+      }
+
+      const config = await ctx.prisma.workspaceAgentConfig.findUnique({
+        where: { workspaceId: input.workspaceId },
+      });
+
+      const llmApiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY ?? "";
+      if (!llmApiKey) {
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "LLM API key not configured" });
+      }
+
+      const promptInput: TriagePromptInput = {
+        analysis: {
+          issueCategory: analysis.issueCategory,
+          severity: analysis.severity,
+          affectedComponent: analysis.affectedComponent,
+          summary: analysis.summary,
+          rcaSummary: analysis.rcaSummary,
+          codexFindings: analysis.codexFindings,
+          sentryFindings: analysis.sentryFindings,
+        },
+        messages: analysis.thread.messages.map((m) => ({ direction: m.direction, body: m.body })),
+        customerDisplayName: "Customer",
+        threadTitle: analysis.thread.title,
+      };
+
+      const result = await generateEngSpec(promptInput, {
+        apiKey: llmApiKey,
+        model: config?.model ?? undefined,
+      });
+
+      if (!result) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to generate spec" });
+      }
+
+      // Save triage action
+      await ctx.prisma.triageAction.create({
+        data: {
+          threadId: input.threadId,
+          workspaceId: input.workspaceId,
+          analysisId: analysis.id,
+          action: "GENERATE_SPEC",
+          linearIssueId: input.linearIssueId,
+          specMarkdown: result.specMarkdown,
+          createdById: input.userId,
+        },
+      });
+
+      return result;
     }),
 });

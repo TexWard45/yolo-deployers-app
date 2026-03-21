@@ -1,7 +1,6 @@
 export type MatchStrategy =
   | "external_thread_id"
   | "reply_chain"
-  | "awaiting_customer_response"
   | "time_proximity"
   | "new_thread";
 
@@ -82,7 +81,7 @@ export function buildThreadSummary(previousSummary: string | null, incomingMessa
 
 /**
  * Deterministic thread matching — fast, no LLM.
- * Strategies: external_thread_id → reply_chain → awaiting_customer_response → time_proximity → new_thread.
+ * Strategies: external_thread_id → reply_chain → time_proximity → new_thread.
  * Jaccard/LLM matching removed — handled by async review workflow instead.
  */
 export function decideDeterministicThreadMatch(input: DeterministicMatchInput): MatchDecision {
@@ -106,29 +105,6 @@ export function decideDeterministicThreadMatch(input: DeterministicMatchInput): 
       strategy: "reply_chain",
       issueFingerprint,
     };
-  }
-
-  // Awaiting customer response: same customer has a thread where we sent a reply and are waiting
-  if (!input.externalThreadId && !input.inReplyToExternalMessageId) {
-    const awaitingThreads = input.candidates.filter(
-      (c) => c.status === "WAITING_CUSTOMER" && c.customerId === input.customerId,
-    );
-
-    if (awaitingThreads.length > 0) {
-      // Pick the thread with the most recent outbound (most recently asked question)
-      const best = awaitingThreads.reduce((a, b) => {
-        const aTs = a.lastOutboundAt?.getTime() ?? 0;
-        const bTs = b.lastOutboundAt?.getTime() ?? 0;
-        return bTs > aTs ? b : a;
-      });
-
-      return {
-        threadId: best.id,
-        confidence: 0.95,
-        strategy: "awaiting_customer_response",
-        issueFingerprint,
-      };
-    }
   }
 
   // Time-proximity: any recent thread in the workspace, no explicit new thread boundary

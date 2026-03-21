@@ -4,4 +4,6 @@ export const workflowRegistry = {
   sessionEnrichment: "sessionEnrichmentWorkflow",
   analyzeThread: "analyzeThreadWorkflow",
   sendOutboundMessage: "sendOutboundMessageWorkflow",
+  triageThread: "triageThreadWorkflow",
+  supportPipeline: "supportPipelineWorkflow",
 } as const;

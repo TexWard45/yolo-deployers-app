@@ -1,6 +1,11 @@
 import { Client, Connection, WorkflowExecutionAlreadyStartedError } from "@temporalio/client";
 import { webEnv } from "@shared/env/web";
-import type { ThreadReviewWorkflowInput, AnalyzeThreadWorkflowInput } from "@shared/types";
+import type {
+  ThreadReviewWorkflowInput,
+  AnalyzeThreadWorkflowInput,
+  TriageThreadWorkflowInput,
+  SupportPipelineWorkflowInput,
+} from "@shared/types";
 
 let _clientPromise: Promise<Client> | null = null;
 
@@ -56,6 +61,51 @@ export async function dispatchAnalyzeThreadWorkflow(
       args: [input],
       taskQueue: webEnv.TEMPORAL_TASK_QUEUE,
       workflowId: `analyze-thread-${input.threadId}`,
+    });
+  } catch (error: unknown) {
+    if (error instanceof WorkflowExecutionAlreadyStartedError) return;
+    _clientPromise = null;
+    throw error;
+  }
+}
+
+/**
+ * Dispatch the triage-thread workflow — one per thread+analysis.
+ * Runs the full triage pipeline: context → codex → sentry → Linear → spec.
+ */
+export async function dispatchTriageThreadWorkflow(
+  input: TriageThreadWorkflowInput,
+): Promise<void> {
+  const client = await getClient();
+
+  try {
+    await client.workflow.start("triageThreadWorkflow", {
+      args: [input],
+      taskQueue: webEnv.TEMPORAL_TASK_QUEUE,
+      workflowId: `triage-thread-${input.threadId}-${input.analysisId}`,
+    });
+  } catch (error: unknown) {
+    if (error instanceof WorkflowExecutionAlreadyStartedError) return;
+    _clientPromise = null;
+    throw error;
+  }
+}
+
+/**
+ * Dispatch the master support pipeline workflow — one per thread.
+ * Replaces separate analyze + triage workflows with a single orchestrator.
+ * If already running for this thread, skip (debounce catches later messages).
+ */
+export async function dispatchSupportPipelineWorkflow(
+  input: SupportPipelineWorkflowInput,
+): Promise<void> {
+  const client = await getClient();
+
+  try {
+    await client.workflow.start("supportPipelineWorkflow", {
+      args: [input],
+      taskQueue: webEnv.TEMPORAL_TASK_QUEUE,
+      workflowId: `support-pipeline-${input.threadId}`,
     });
   } catch (error: unknown) {
     if (error instanceof WorkflowExecutionAlreadyStartedError) return;

@@ -88,6 +88,11 @@ model WorkspaceAgentConfig {
   sentryProjectSlug  String?
   sentryAuthToken    String?
 
+  // Linear integration (per-workspace)
+  linearApiKey        String?
+  linearTeamId        String?
+  linearDefaultLabels String[]
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -128,8 +133,39 @@ model ThreadAnalysis {
   createdAt         DateTime @default(now())
 
   drafts            ReplyDraft[]
+  triageActions     TriageAction[]
   latestForThread   SupportThread? @relation("latestAnalysis")
 
   @@index([threadId, createdAt])
+  @@index([workspaceId, createdAt])
+}
+
+// ── Triage Actions (audit log) ──────────────────────────────────────
+
+enum TriageActionType {
+  CREATE_TICKET
+  UPDATE_TICKET
+  GENERATE_SPEC
+}
+
+model TriageAction {
+  id             String           @id @default(cuid())
+  threadId       String
+  thread         SupportThread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  workspaceId    String
+  workspace      Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  analysisId     String
+  analysis       ThreadAnalysis   @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  action         TriageActionType
+  linearIssueId  String?
+  linearIssueUrl String?
+  prUrl          String?
+  specMarkdown   String?
+  metadata       Json?
+  createdById    String
+  createdBy      User             @relation(fields: [createdById], references: [id])
+  createdAt      DateTime         @default(now())
+
+  @@index([threadId])
   @@index([workspaceId, createdAt])
 }

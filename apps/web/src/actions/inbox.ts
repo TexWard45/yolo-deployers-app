@@ -176,6 +176,79 @@ export async function dismissDraftAction(data: {
   }
 }
 
+export async function triageToLinearAction(data: {
+  threadId: string;
+  workspaceId: string;
+  analysisId: string;
+  overrides?: {
+    title?: string;
+    description?: string;
+    severity?: "urgent" | "high" | "medium" | "low" | "none";
+    labels?: string[];
+  };
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    const result = await trpc.agent.triageToLinear({
+      threadId: data.threadId,
+      workspaceId: data.workspaceId,
+      userId: session.id,
+      analysisId: data.analysisId,
+      overrides: data.overrides,
+    });
+    return { success: true, ...result } as const;
+  } catch (error) {
+    const message = error instanceof TRPCError ? error.message : String(error);
+    return { success: false, error: message } as const;
+  }
+}
+
+export async function getTriageStatusAction(threadId: string, workspaceId: string) {
+  const session = await getSession();
+  if (!session) return null;
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    return await trpc.agent.getTriageStatus({
+      threadId,
+      workspaceId,
+      userId: session.id,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function generateSpecAction(data: {
+  threadId: string;
+  workspaceId: string;
+  linearIssueId?: string;
+}) {
+  const session = await getSession();
+  if (!session) {
+    return { success: false, error: "Not authenticated" } as const;
+  }
+
+  try {
+    const trpc = createCaller(createTRPCContext({ sessionUserId: session.id }));
+    const result = await trpc.agent.generateSpec({
+      threadId: data.threadId,
+      workspaceId: data.workspaceId,
+      userId: session.id,
+      linearIssueId: data.linearIssueId,
+    });
+    return { success: true, ...result } as const;
+  } catch (error) {
+    const message = error instanceof TRPCError ? error.message : String(error);
+    return { success: false, error: message } as const;
+  }
+}
+
 export async function updateThreadStatusAction(data: {
   threadId: string;
   status:
