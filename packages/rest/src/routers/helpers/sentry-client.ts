@@ -4,6 +4,7 @@ export interface SentryConfig {
   orgSlug: string;
   projectSlug: string;
   authToken: string;
+  projectSlugs?: string[];  // multi-project support (takes precedence over projectSlug)
 }
 
 export interface SentryFinding {
@@ -31,10 +32,16 @@ export function extractErrorSignals(messageBodies: string[]): string[] {
       for (const match of sentryUrlMatch) signals.add(match);
     }
 
-    // Error-like patterns: "Error:", "TypeError:", "Exception", etc.
-    const errorMatch = body.match(/\b(\w*Error|Exception|FATAL|CRITICAL):\s*[^\n]{5,80}/gi);
-    if (errorMatch) {
-      for (const match of errorMatch) signals.add(match.trim());
+    // Error type names: "TypeError", "RangeError", "DatabaseError", etc.
+    const errorTypeMatch = body.match(/\b\w*(?:Error|Exception)\b/g);
+    if (errorTypeMatch) {
+      for (const match of errorTypeMatch) signals.add(match.trim());
+    }
+
+    // Short error messages: "Error: <first few words>" (capped at 40 chars for search)
+    const errorMsgMatch = body.match(/\b(\w*Error|Exception|FATAL|CRITICAL):\s*[^\n.]{5,40}/gi);
+    if (errorMsgMatch) {
+      for (const match of errorMsgMatch) signals.add(match.trim());
     }
 
     // HTTP status codes: "500", "404", "502" etc.
@@ -86,17 +93,30 @@ interface SentryEventResponse {
   }>;
 }
 
-async function searchSentryIssues(
+async function searchSentryIssuesForProject(
   config: SentryConfig,
+  projectSlug: string,
   query: string,
   signal: AbortSignal,
 ): Promise<SentryIssueResponse[]> {
-  const url = `${SENTRY_BASE}/projects/${config.orgSlug}/${config.projectSlug}/issues/?query=${encodeURIComponent(query)}&sort=date&limit=5`;
+  const url = `${SENTRY_BASE}/projects/${config.orgSlug}/${projectSlug}/issues/?query=${encodeURIComponent(query)}&sort=date&limit=5`;
 
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     headers: { Authorization: `Bearer ${config.authToken}` },
     signal,
   });
+
+  // Retry once on 429 with Retry-After header
+  if (response.status === 429) {
+    const retryAfter = parseInt(response.headers.get("Retry-After") ?? "2", 10);
+    const delay = Math.min(retryAfter * 1000, 5000);
+    console.warn(`[sentry] rate limited, retrying after ${delay}ms`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${config.authToken}` },
+      signal,
+    });
+  }
 
   if (!response.ok) {
     console.warn(`[sentry] issues search failed (${response.status})`);
@@ -104,6 +124,22 @@ async function searchSentryIssues(
   }
 
   return (await response.json()) as SentryIssueResponse[];
+}
+
+async function searchSentryIssues(
+  config: SentryConfig,
+  query: string,
+  signal: AbortSignal,
+): Promise<SentryIssueResponse[]> {
+  const projects = config.projectSlugs && config.projectSlugs.length > 0
+    ? config.projectSlugs
+    : [config.projectSlug];
+
+  const results = await Promise.all(
+    projects.map((slug) => searchSentryIssuesForProject(config, slug, query, signal)),
+  );
+
+  return results.flat();
 }
 
 async function getLatestEvent(
@@ -135,6 +171,44 @@ async function getLatestEvent(
     .join("\n");
 
   return frames || null;
+}
+
+/**
+ * Test Sentry API connection with the given credentials.
+ * Returns project name on success, error message on failure.
+ */
+export async function testSentryConnection(
+  orgSlug: string,
+  projectSlug: string,
+  authToken: string,
+): Promise<{ ok: boolean; projectName?: string; error?: string }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const url = `${SENTRY_BASE}/projects/${orgSlug}/${projectSlug}/`;
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${authToken}` },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) return { ok: false, error: "Invalid auth token" };
+      if (response.status === 403) return { ok: false, error: "Token lacks required permissions" };
+      if (response.status === 404) return { ok: false, error: `Project '${orgSlug}/${projectSlug}' not found` };
+      return { ok: false, error: `Sentry API returned ${response.status}` };
+    }
+
+    const project = (await response.json()) as { name?: string; slug?: string };
+    return { ok: true, projectName: project.name ?? project.slug ?? projectSlug };
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      return { ok: false, error: "Connection timed out (10s)" };
+    }
+    return { ok: false, error: (error as Error).message };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**

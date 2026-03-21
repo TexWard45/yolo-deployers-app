@@ -1,4 +1,5 @@
 import { prisma } from "@shared/database";
+import type { Prisma } from "@shared/types/prisma";
 import {
   checkSufficiency,
   analyzeThread,
@@ -44,6 +45,7 @@ export interface AnalysisContext {
   };
   codexRepositoryIds: string[];
   sentryConfig: SentryConfig | null;
+  investigationABEnabled: boolean;
 }
 
 // ── Activity 1: Fetch thread analysis context ───────────────────────
@@ -80,11 +82,12 @@ export async function getThreadAnalysisContext(
   }
 
   const sentryConfig: SentryConfig | null =
-    config.sentryOrgSlug && config.sentryProjectSlug && config.sentryAuthToken
+    config.sentryOrgSlug && (config.sentryProjectSlug || (config.sentryProjectSlugs && config.sentryProjectSlugs.length > 0)) && config.sentryAuthToken
       ? {
           orgSlug: config.sentryOrgSlug,
-          projectSlug: config.sentryProjectSlug,
+          projectSlug: config.sentryProjectSlug ?? config.sentryProjectSlugs[0]!,
           authToken: config.sentryAuthToken,
+          projectSlugs: config.sentryProjectSlugs.length > 0 ? config.sentryProjectSlugs : undefined,
         }
       : null;
 
@@ -110,6 +113,7 @@ export async function getThreadAnalysisContext(
     },
     codexRepositoryIds: config.codexRepositoryIds,
     sentryConfig,
+    investigationABEnabled: config.investigationABEnabled,
   };
 }
 
@@ -145,6 +149,9 @@ export async function searchCodebaseActivity(params: {
   codexRepositoryIds: string[];
   messages: Array<{ body: string }>;
   issueFingerprint: string | null;
+  rerank?: boolean;
+  investigationABEnabled?: boolean;
+  threadId?: string;
 }): Promise<unknown | null> {
   if (params.codexRepositoryIds.length === 0) return null;
 
@@ -171,12 +178,14 @@ export async function searchCodebaseActivity(params: {
             repositoryId,
             taskDescription,
             maxResults: 5,
+            rerank: params.rerank ?? false,
           }),
           signal: AbortSignal.timeout(30_000),
         });
 
         if (!response.ok) {
-          console.warn(`[analyze-thread] agent-grep failed for repo ${repositoryId} (${response.status})`);
+          const errorBody = await response.json().catch(() => ({ error: "unknown" })) as { error?: string; code?: string };
+          console.warn(`[analyze-thread] agent-grep failed for repo ${repositoryId} (${response.status}): ${errorBody.error ?? "no details"}`);
           return null;
         }
 
@@ -200,6 +209,59 @@ export async function searchCodebaseActivity(params: {
     const mergedChunks = [...chunkMap.values()]
       .sort((a, b) => b.score - a.score)
       .slice(0, 5);
+
+    // A/B logging for rerank: compare reranked vs non-reranked results
+    if (params.investigationABEnabled && params.rerank && params.threadId) {
+      try {
+        // Run a control search (without rerank) for comparison
+        const controlResults = await Promise.all(
+          params.codexRepositoryIds.map(async (repositoryId) => {
+            const resp = await fetch(agentGrepUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                workspaceId: params.workspaceId,
+                repositoryId,
+                taskDescription,
+                maxResults: 5,
+                rerank: false,
+              }),
+              signal: AbortSignal.timeout(30_000),
+            });
+            if (!resp.ok) return null;
+            return (await resp.json()) as { chunks?: GrepChunk[] };
+          }),
+        );
+
+        const controlChunks: GrepChunk[] = [];
+        for (const r of controlResults) {
+          if (r?.chunks) controlChunks.push(...r.chunks);
+        }
+        const controlTop5 = controlChunks.sort((a, b) => b.score - a.score).slice(0, 5);
+
+        // Calculate chunk overlap: how many of the top-5 IDs are the same
+        const variantIds = new Set(mergedChunks.map((c) => c.id));
+        const controlIds = new Set(controlTop5.map((c) => c.id));
+        const overlap = [...variantIds].filter((id) => controlIds.has(id)).length;
+        const chunkOverlap = Math.max(variantIds.size, controlIds.size) > 0
+          ? overlap / Math.max(variantIds.size, controlIds.size)
+          : 1;
+
+        await prisma.analysisABLog.create({
+          data: {
+            threadId: params.threadId,
+            analysisId: "pending",
+            workspaceId: params.workspaceId,
+            phase: "rerank",
+            controlResult: JSON.parse(JSON.stringify(controlTop5)) as Prisma.InputJsonValue,
+            variantResult: JSON.parse(JSON.stringify(mergedChunks)) as Prisma.InputJsonValue,
+            chunkOverlap,
+          },
+        });
+      } catch (abError) {
+        console.warn("[analyze-thread] rerank A/B log failed:", abError);
+      }
+    }
 
     // Return in the same shape as before (chunks array) so downstream consumers don't break
     return { chunks: mergedChunks };
@@ -252,22 +314,40 @@ async function searchCodebaseFallback(params: {
 }
 
 // ── Activity 4: Sentry error lookup ─────────────────────────────────
-// TODO: Phase 2 — plug in real Sentry Web API integration here.
-// Currently returns [] via the stub in sentry-client.ts.
-// When implementing:
-//   1. Fill in fetchSentryContext() in packages/rest/src/routers/helpers/sentry-client.ts
-//      - extractErrorSignals() from message bodies (already implemented)
-//      - GET /api/0/projects/{org}/{project}/issues/?query=... to search issues
-//      - GET /api/0/issues/{issueId}/events/latest/ to get stack traces
-//   2. This activity is already wired into the workflow (step 4, parallel with Codex)
-//   3. Results flow into generateAnalysisActivity as sentryFindings
-//   4. The analysis LLM prompt already handles Sentry data in its buildUserMessage()
 
 export async function fetchSentryErrorsActivity(params: {
   sentryConfig: SentryConfig;
   messageBodies: string[];
+  investigationABEnabled?: boolean;
+  threadId?: string;
+  workspaceId?: string;
 }): Promise<unknown[]> {
-  return fetchSentryContext(params.sentryConfig, params.messageBodies);
+  const start = performance.now();
+  console.log("[sentry-ab] searching with config:", { org: params.sentryConfig.orgSlug, project: params.sentryConfig.projectSlug, bodiesCount: params.messageBodies.length });
+  const findings = await fetchSentryContext(params.sentryConfig, params.messageBodies);
+  const latencyMs = Math.round(performance.now() - start);
+  console.log("[sentry-ab] findings:", findings.length, "latency:", latencyMs, "ms");
+
+  // A/B logging: record Sentry latency and results
+  if (params.investigationABEnabled && params.threadId && params.workspaceId) {
+    try {
+      await prisma.analysisABLog.create({
+        data: {
+          threadId: params.threadId,
+          analysisId: "pending", // updated after analysis is saved
+          workspaceId: params.workspaceId,
+          phase: "sentry",
+          controlResult: JSON.parse("[]") as Prisma.InputJsonValue,
+          variantResult: JSON.parse(JSON.stringify(findings)) as Prisma.InputJsonValue,
+          latencyMs,
+        },
+      });
+    } catch (error) {
+      console.warn("[analyze-thread] A/B log write failed:", error);
+    }
+  }
+
+  return findings;
 }
 
 // ── Activity 5: Generate structured analysis ────────────────────────

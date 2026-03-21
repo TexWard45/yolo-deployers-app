@@ -199,12 +199,18 @@ export async function supportPipelineWorkflow(
           codexRepositoryIds: context.codexRepositoryIds,
           messages: context.messages,
           issueFingerprint: context.issueFingerprint,
+          rerank: true,
+          investigationABEnabled: context.investigationABEnabled,
+          threadId: input.threadId,
         })
       : Promise.resolve(null),
     context.sentryConfig
       ? fetchSentryErrorsActivity({
           sentryConfig: context.sentryConfig,
           messageBodies: context.messages.map((m) => m.body),
+          investigationABEnabled: context.investigationABEnabled,
+          threadId: input.threadId,
+          workspaceId: input.workspaceId,
         })
       : Promise.resolve([]),
     // TODO: Step 2c — session replay lookup

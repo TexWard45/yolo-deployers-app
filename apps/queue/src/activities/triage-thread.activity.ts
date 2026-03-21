@@ -75,11 +75,12 @@ export async function getTriageContext(
   });
 
   const sentryConfig: SentryConfig | null =
-    config?.sentryOrgSlug && config.sentryProjectSlug && config.sentryAuthToken
+    config?.sentryOrgSlug && (config.sentryProjectSlug || (config.sentryProjectSlugs && config.sentryProjectSlugs.length > 0)) && config.sentryAuthToken
       ? {
           orgSlug: config.sentryOrgSlug,
-          projectSlug: config.sentryProjectSlug,
+          projectSlug: config.sentryProjectSlug ?? config.sentryProjectSlugs[0]!,
           authToken: config.sentryAuthToken,
+          projectSlugs: config.sentryProjectSlugs.length > 0 ? config.sentryProjectSlugs : undefined,
         }
       : null;
 

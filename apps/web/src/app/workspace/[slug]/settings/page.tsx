@@ -40,6 +40,11 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
           maxClarifications: config.maxClarifications,
           tone: config.tone,
           systemPrompt: config.systemPrompt,
+          sentryOrgSlug: config.sentryOrgSlug,
+          sentryProjectSlug: config.sentryProjectSlug,
+          hasSentryToken: config.sentryAuthToken === "***",
+          linearTeamId: config.linearTeamId,
+          hasLinearKey: config.linearApiKey === "***",
         }}
       />
     </div>

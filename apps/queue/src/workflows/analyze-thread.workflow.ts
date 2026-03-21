@@ -113,12 +113,18 @@ export async function analyzeThreadWorkflow(
           codexRepositoryIds: context.codexRepositoryIds,
           messages: context.messages,
           issueFingerprint: context.issueFingerprint,
+          rerank: true,
+          investigationABEnabled: context.investigationABEnabled,
+          threadId: input.threadId,
         })
       : Promise.resolve(null),
     context.sentryConfig
       ? fetchSentryErrorsActivity({
           sentryConfig: context.sentryConfig,
           messageBodies: context.messages.map((m) => m.body),
+          investigationABEnabled: context.investigationABEnabled,
+          threadId: input.threadId,
+          workspaceId: input.workspaceId,
         })
       : Promise.resolve([]),
   ]);
