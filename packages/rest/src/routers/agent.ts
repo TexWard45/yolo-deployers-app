@@ -868,6 +868,19 @@ export const agentRouter = createTRPCRouter({
         throw new TRPCError({ code: "NOT_FOUND", message: "Thread not found" });
       }
 
+      let linearIssueTitle: string | null = null;
+      if (thread.linearIssueId) {
+        const config = await ctx.prisma.workspaceAgentConfig.findUnique({
+          where: { workspaceId: input.workspaceId },
+          select: { linearApiKey: true },
+        });
+        if (config?.linearApiKey) {
+          const client = createLinearClient(config.linearApiKey);
+          const issue = await getLinearIssue(client, thread.linearIssueId);
+          linearIssueTitle = issue?.title ?? null;
+        }
+      }
+
       const history = await ctx.prisma.triageAction.findMany({
         where: { threadId: input.threadId, workspaceId: input.workspaceId },
         orderBy: { createdAt: "desc" },
@@ -878,6 +891,7 @@ export const agentRouter = createTRPCRouter({
       return {
         linearIssueId: thread.linearIssueId,
         linearIssueUrl: thread.linearIssueUrl,
+        linearIssueTitle,
         history: history.map((h) => ({
           id: h.id,
           action: h.action,

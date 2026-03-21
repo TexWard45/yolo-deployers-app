@@ -92,6 +92,7 @@ export interface LinearIssueResult {
   id: string;
   identifier: string;
   url: string;
+  title: string;
 }
 
 export async function createLinearIssue(
@@ -124,6 +125,7 @@ export async function createLinearIssue(
     id: issue.id,
     identifier: issue.identifier,
     url: issue.url,
+    title: issue.title,
   };
 }
 
@@ -148,6 +150,7 @@ export async function updateLinearIssue(
     id: issue.id,
     identifier: issue.identifier,
     url: issue.url,
+    title: issue.title,
   };
 }
 
@@ -161,6 +164,7 @@ export async function getLinearIssue(
       id: issue.id,
       identifier: issue.identifier,
       url: issue.url,
+      title: issue.title,
     };
   } catch {
     return null;

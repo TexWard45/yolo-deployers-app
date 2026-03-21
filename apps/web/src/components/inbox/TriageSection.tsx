@@ -32,6 +32,7 @@ interface TriageSectionProps {
 export function TriageSection({ threadId, workspaceId, analysisId }: TriageSectionProps) {
   const [linearIssueId, setLinearIssueId] = useState<string | null>(null);
   const [linearIssueUrl, setLinearIssueUrl] = useState<string | null>(null);
+  const [linearIssueTitle, setLinearIssueTitle] = useState<string | null>(null);
   const [history, setHistory] = useState<TriageHistory[]>([]);
   const [specMarkdown, setSpecMarkdown] = useState<string | null>(null);
   const [fixPrStatus, setFixPrStatus] = useState<FixPRStatusResult | null>(null);
@@ -41,7 +42,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
   const [cancellingFixPr, startCancellingFixPr] = useTransition();
   const [copied, setCopied] = useState(false);
   const isFixRunActive = fixPrStatus ? isActiveFixPrStatus(fixPrStatus.status) : false;
-  const linearIssueLabel = formatLinearIssueLabel(linearIssueId, linearIssueUrl);
+  const linearIssueLabel = formatLinearIssueLabel(linearIssueTitle, linearIssueId, linearIssueUrl);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +53,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
         fixPrResult,
         setLinearIssueId,
         setLinearIssueUrl,
+        setLinearIssueTitle,
         setHistory,
         setSpecMarkdown,
         setFixPrStatus,
@@ -84,6 +86,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       fixPrResult,
       setLinearIssueId,
       setLinearIssueUrl,
+      setLinearIssueTitle,
       setHistory,
       setSpecMarkdown,
       setFixPrStatus,
@@ -126,6 +129,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
               fixPrResult: fixPrStatus,
               setLinearIssueId,
               setLinearIssueUrl,
+              setLinearIssueTitle,
               setHistory,
               setSpecMarkdown,
               setFixPrStatus,
@@ -450,6 +454,7 @@ function applyTriageSectionState(params: {
   fixPrResult: FixPRStatusResult | null;
   setLinearIssueId: (value: string | null) => void;
   setLinearIssueUrl: (value: string | null) => void;
+  setLinearIssueTitle: (value: string | null) => void;
   setHistory: (value: TriageHistory[]) => void;
   setSpecMarkdown: (value: string | null) => void;
   setFixPrStatus: (value: FixPRStatusResult | null) => void;
@@ -457,6 +462,7 @@ function applyTriageSectionState(params: {
   if (params.triageResult) {
     params.setLinearIssueId(params.triageResult.linearIssueId);
     params.setLinearIssueUrl(params.triageResult.linearIssueUrl);
+    params.setLinearIssueTitle((params.triageResult as { linearIssueTitle?: string | null }).linearIssueTitle ?? null);
     params.setHistory(params.triageResult.history);
     const latestSpec = params.triageResult.history.find((entry) => entry.specMarkdown)?.specMarkdown ?? null;
     params.setSpecMarkdown(latestSpec);
@@ -515,9 +521,13 @@ function timeAgo(dateStr: string): string {
 }
 
 function formatLinearIssueLabel(
+  linearIssueTitle: string | null,
   linearIssueId: string | null,
   linearIssueUrl: string | null,
 ): string {
+  const title = linearIssueTitle?.trim();
+  if (title) return title;
+
   const issueKeyFromUrl = getLinearIssueKeyFromUrl(linearIssueUrl);
   if (issueKeyFromUrl) return issueKeyFromUrl;
 
