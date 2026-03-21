@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import {
   triageToLinearAction,
@@ -33,18 +33,25 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
   const [generating, startGenerating] = useTransition();
   const [copied, setCopied] = useState(false);
 
-  const fetchStatus = useCallback(async () => {
+  useEffect(() => {
+    let cancelled = false;
+    getTriageStatusAction(threadId, workspaceId).then((result) => {
+      if (cancelled || !result) return;
+      setLinearIssueId(result.linearIssueId);
+      setLinearIssueUrl(result.linearIssueUrl);
+      setHistory(result.history);
+    });
+    return () => { cancelled = true; };
+  }, [threadId, workspaceId]);
+
+  const refreshStatus = async () => {
     const result = await getTriageStatusAction(threadId, workspaceId);
     if (result) {
       setLinearIssueId(result.linearIssueId);
       setLinearIssueUrl(result.linearIssueUrl);
       setHistory(result.history);
     }
-  }, [threadId, workspaceId]);
-
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+  };
 
   const handleTriage = () => {
     startTriaging(async () => {
@@ -56,7 +63,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       if (result.success) {
         setLinearIssueId(result.linearIssueId ?? null);
         setLinearIssueUrl(result.linearIssueUrl ?? null);
-        await fetchStatus();
+        await refreshStatus();
       } else {
         alert(result.error);
       }
@@ -72,7 +79,7 @@ export function TriageSection({ threadId, workspaceId, analysisId }: TriageSecti
       });
       if (result.success) {
         setSpecMarkdown(result.specMarkdown ?? null);
-        await fetchStatus();
+        await refreshStatus();
       } else {
         alert(result.error);
       }
