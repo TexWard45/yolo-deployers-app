@@ -3,10 +3,36 @@ import { prisma } from "@shared/database";
 
 export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("sessionId");
+  
+  // If no sessionId, list all sessions with their first event info
   if (!sessionId) {
-    return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
+    const sessions = await prisma.session.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      include: { _count: { select: { events: true } } },
+    });
+    
+    const result = [];
+    for (const s of sessions) {
+      const firstEvent = await prisma.replayEvent.findFirst({
+        where: { sessionId: s.id },
+        orderBy: { sequence: "asc" },
+      });
+      result.push({
+        id: s.id,
+        createdAt: s.createdAt,
+        eventCount: s._count.events,
+        firstSeq: firstEvent?.sequence ?? null,
+        firstType: firstEvent ? (firstEvent.payload as any)?.type : null,
+        firstTypeLabel: firstEvent
+          ? { 0: "DomContentLoaded", 1: "Load", 2: "FullSnapshot", 3: "IncrementalSnapshot", 4: "Meta" }[(firstEvent.payload as any)?.type] ?? "Unknown"
+          : null,
+      });
+    }
+    return NextResponse.json({ sessions: result });
   }
 
+  // Existing: show first 5 events for a specific session
   const events = await prisma.replayEvent.findMany({
     where: { sessionId },
     orderBy: { sequence: "asc" },
@@ -33,7 +59,6 @@ export async function GET(req: NextRequest) {
       hasNode: !!p?.data?.node,
       nodeChildCount: p?.data?.node?.childNodes?.length ?? 0,
       payloadSize: JSON.stringify(p).length,
-      containsCSS: JSON.stringify(p).length > 1000 ? JSON.stringify(p).slice(0, 500).includes("style") : false,
     };
   });
 

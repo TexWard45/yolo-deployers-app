@@ -62,6 +62,7 @@ export class TelemetryClient {
 
     // Throttle if we are constantly erroring out (simple exponential backoff style drop logic would be better but this limits buffer bloat)
     if (this._consecutiveErrors > 5) {
+      console.warn(`[Telemetry] Dropping ${this._buffer.length} events after ${this._consecutiveErrors} consecutive errors`);
       this._buffer = []; // Drop everything if network is hopelessly dead
       this._consecutiveErrors = 0;
       this._isFlushing = false;
@@ -72,28 +73,35 @@ export class TelemetryClient {
     const batch = this._buffer.splice(0, Math.min(this._buffer.length, maxBatch));
     
     try {
+      const body = JSON.stringify({
+        "0": {
+          json: {
+            sessionId: this._sessionId,
+            events: batch.map((e) => ({
+              ...e,
+              timestamp: e.timestamp.toISOString(),
+            })),
+          },
+        },
+      });
+
       const res = await fetch(`${this._config.endpoint}/telemetry.ingestEvents`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          "0": {
-            json: {
-              sessionId: this._sessionId,
-              events: batch.map((e) => ({
-                ...e,
-                timestamp: e.timestamp.toISOString(),
-              })),
-            },
-          },
-        }),
-        keepalive: true,
+        body,
+        // NOTE: Do NOT set keepalive: true here. Browsers enforce a 64KB
+        // body limit on keepalive requests, which silently rejects the
+        // FullSnapshot batch (~350KB+). Without keepalive, in-flight
+        // requests may be cancelled on page unload, but the critical
+        // FullSnapshot will always be delivered successfully.
       });
 
-      if (!res.ok) throw new Error("Fetch failed");
+      if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
       
       this._consecutiveErrors = 0;
-    } catch {
+    } catch (err) {
       this._consecutiveErrors++;
+      console.warn(`[Telemetry] Flush failed (attempt #${this._consecutiveErrors}):`, err);
       // Retry: put events back if buffer is not full
       if (this._buffer.length + batch.length <= this._config.maxBufferSize) {
         this._buffer.unshift(...batch);

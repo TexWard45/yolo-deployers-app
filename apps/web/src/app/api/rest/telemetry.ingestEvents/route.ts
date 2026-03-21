@@ -3,12 +3,9 @@ import { createCaller, createTRPCContext } from "@shared/rest";
 import { TRPCError } from "@trpc/server";
 import { dispatchSessionEnrichment } from "@/lib/temporal";
 
-// The FullSnapshot event (rrweb type 2) with inlined CSS / fonts / images
-// can be 2-5MB+. Raise the body limit so the first batch isn't silently dropped.
+// App Router uses the native Web API Request.json() which has no body
+// size limit, so large FullSnapshot payloads are handled automatically.
 export const maxDuration = 30;
-export const config = {
-  api: { bodyParser: { sizeLimit: "10mb" } },
-};
 
 // Safe fallback CORS origin — deferred to request time so the build step
 // doesn't throw when NEXT_PUBLIC_APP_URL is absent during `next build`.
