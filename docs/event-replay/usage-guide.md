@@ -155,7 +155,7 @@ Hiện tại, enrichment workflow KHÔNG tự động trigger từ ingest API (�
 ```bash
 temporal workflow start \
   --type sessionEnrichmentWorkflow \
-  --task-queue template-task-queue \
+  --task-queue resolveai-support-queue \
   --input '"SESSION_ID_HERE"'
 ```
 
@@ -168,7 +168,7 @@ const client = new Client({ connection });
 
 await client.workflow.start("sessionEnrichmentWorkflow", {
   args: [sessionId],
-  taskQueue: "template-task-queue",
+  taskQueue: "resolveai-support-queue",
   workflowId: `enrichment-${sessionId}`,
 });
 ```

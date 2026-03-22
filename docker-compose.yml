@@ -33,7 +33,7 @@ services:
       DATABASE_URL: postgresql://user:password@postgres:5432/mydb?schema=public
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_NAMESPACE: default
-      TEMPORAL_TASK_QUEUE: template-task-queue
+      TEMPORAL_TASK_QUEUE: resolveai-support-queue
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_MODEL_DEFAULT: ${LLM_MODEL_DEFAULT:-claude-sonnet-4-20250514}

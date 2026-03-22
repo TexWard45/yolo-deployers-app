@@ -40,7 +40,7 @@ Example (from repo root):
 doppler secrets set DATABASE_URL="postgresql://user:password@localhost:5432/mydb?schema=public"
 doppler secrets set TEMPORAL_ADDRESS="localhost:7233"
 doppler secrets set TEMPORAL_NAMESPACE="default"
-doppler secrets set TEMPORAL_TASK_QUEUE="template-task-queue"
+doppler secrets set TEMPORAL_TASK_QUEUE="resolveai-support-queue"
 ```
 
 ## Run with Injected Env Vars

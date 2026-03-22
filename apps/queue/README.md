@@ -17,7 +17,7 @@ Template Temporal queue worker app.
 - Env parsing/validation is centralized in `@shared/env` (`packages/env`).
 - `TEMPORAL_ADDRESS` (default: `localhost:7233`)
 - `TEMPORAL_NAMESPACE` (default: `default`)
-- `TEMPORAL_TASK_QUEUE` (default: `template-task-queue`)
+- `TEMPORAL_TASK_QUEUE` (default: `resolveai-support-queue`)
 
 For team-shared env management, use Doppler. See:
 

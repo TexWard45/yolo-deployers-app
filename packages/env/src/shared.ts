@@ -6,7 +6,7 @@ export const NodeEnvSchema = z
 
 export const TemporalAddressSchema = z.string().default("localhost:7233");
 export const TemporalNamespaceSchema = z.string().default("default");
-export const TemporalTaskQueueSchema = z.string().default("template-task-queue");
+export const TemporalTaskQueueSchema = z.string().default("resolveai-support-queue");
 
 // Support / AI agent env schemas
 export const LlmApiKeySchema = z.string().min(1);
